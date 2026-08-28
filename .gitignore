@@ -1,0 +1,81 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Dependencies
+.env
+*.egg-info/
+.eggs/
+
+# Logs
+logs/
+*.log
+app.log
+
+# Models
+models/
+
+# Data (exclude experiment results)
+*.db
+nvidia_smi_snapshot.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+test.jpg
+
+# Testing
+.pytest_cache/
+coverage/
+
+# Build
+build/
+dist/
+cpp_scheduler/build_*/
+cpp_scheduler/*.pyd
+cpp_scheduler/*.so
+
+# Report (ignore generated report files, keep source)
+# System_Architecture_and_Performance_Report.pdf
+System_Architecture_and_Performance_Report.toc
+System_Architecture_and_Performance_Report.aux
+System_Architecture_and_Performance_Report.log
+System_Architecture_and_Performance_Report.out
+System_Architecture_and_Performance_Report.synctex.gz
+# One_Page_Executive_Summary.pdf
+One_Page_Executive_Summary.aux
+One_Page_Executive_Summary.log
+One_Page_Executive_Summary.out
+One_Page_Executive_Summary.synctex.gz
+# *.pdf
+*.aux
+*.out
+*.synctex.gz
+
+# Allow experiment result plots (which are PDFs)
+!experiments/experiment_results/*.pdf
+
+# Generated Images and Results
+outputs/
+output/
+results/
+results_real/
+# 运行产物（工作产物，非论文正文数据源），不提交
+experiment_results/
+
+# Debug and Test Scripts (exclude as requested)
+experiments/debug_*.py
+experiments/mock_tts_server.py
+experiments/debug_vl_test.jpg
+
+# Include test image for experiments
+!experiments/test.jpg
