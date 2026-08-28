@@ -143,6 +143,8 @@ class ResourceSampler:
         self._gpu_data: dict[str, float | bool] = {"available": False}
         self._gpu_sample_time = 0.0
         self._gpu_sample_count = 0
+        self._gpu_sample_times: list[float] = []
+        self._gpu_probe_durations_ms: list[float] = []
         self._gpu_first_success = threading.Event()
         self._gpu_ready_before_timeline = False
         self._sampler_thread_affinity: tuple[int, ...] = ()
@@ -158,6 +160,8 @@ class ResourceSampler:
         self._stop_event.clear()
         self._gpu_first_success.clear()
         self._gpu_ready_before_timeline = False
+        self._gpu_sample_times.clear()
+        self._gpu_probe_durations_ms.clear()
         self._error = None
         self._gpu_error = None
         self._gpu_thread = threading.Thread(
@@ -199,11 +203,25 @@ class ResourceSampler:
         available_gpu_samples = [
             sample for sample in self.samples if sample.gpu_available
         ]
+        gpu_sample_gaps_ms = [
+            (right - left) * 1000.0
+            for left, right in zip(
+                self._gpu_sample_times, self._gpu_sample_times[1:]
+            )
+        ]
         return {
             "sample_count": len(self.samples),
             "interval_s": self.interval_s,
             "gpu_interval_s": self.gpu_interval_s,
             "gpu_sample_count": self._gpu_sample_count,
+            "gpu_actual_gap_p95_ms": _percentile(gpu_sample_gaps_ms, 0.95),
+            "gpu_actual_gap_max_ms": max(gpu_sample_gaps_ms, default=0.0),
+            "gpu_probe_duration_p95_ms": _percentile(
+                self._gpu_probe_durations_ms, 0.95
+            ),
+            "gpu_probe_duration_max_ms": max(
+                self._gpu_probe_durations_ms, default=0.0
+            ),
             "gpu_ready_before_timeline": self._gpu_ready_before_timeline,
             "gpu_available_timeline_sample_count": len(available_gpu_samples),
             "gpu_unavailable_timeline_sample_count": (
@@ -317,11 +335,17 @@ class ResourceSampler:
         try:
             self._gpu_thread_affinity = self._apply_current_thread_affinity()
             while not self._stop_event.is_set():
+                probe_started = time.monotonic()
                 sampled = self.gpu_probe.sample(self.process_pid)
+                sampled_at = time.monotonic()
                 with self._gpu_lock:
                     self._gpu_data = sampled
-                    self._gpu_sample_time = time.monotonic()
+                    self._gpu_sample_time = sampled_at
                     self._gpu_sample_count += 1
+                    self._gpu_sample_times.append(sampled_at)
+                    self._gpu_probe_durations_ms.append(
+                        (sampled_at - probe_started) * 1000.0
+                    )
                 if bool(sampled.get("available", False)):
                     self._gpu_first_success.set()
                 if self._stop_event.wait(self.gpu_interval_s):

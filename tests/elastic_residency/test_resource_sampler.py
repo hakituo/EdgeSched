@@ -37,6 +37,8 @@ def test_resource_sampler_writes_resource_and_jitter_timeline(tmp_path) -> None:
     assert summary["gpu_ready_before_timeline"] is True
     assert summary["gpu_unavailable_timeline_sample_count"] == 0
     assert summary["gpu_max_sample_age_ms"] >= 0
+    assert summary["gpu_actual_gap_max_ms"] >= 0
+    assert summary["gpu_probe_duration_max_ms"] >= 0
     assert summary["cpu_warmup_samples_discarded"] == 1
     assert summary["cpu_valid_sample_count"] == summary["sample_count"] - 1
     assert sampler.samples[0].cpu_sample_valid is False

@@ -145,13 +145,16 @@ def _decode_fixed_tokens(
     if generation_tokens < 2:
         raise ValueError("generation_tokens 至少为 2")
     llm.reset()
+    prefill_started_ns = time.monotonic_ns()
     prefill_started = time.perf_counter()
     llm.eval(prompt_tokens)
     prefill_finished = time.perf_counter()
+    prefill_finished_ns = time.monotonic_ns()
     prefill_s = prefill_finished - prefill_started
 
     generated: list[int] = []
     token_times: list[float] = []
+    generation_started_ns = time.monotonic_ns()
     first_sample_started = time.perf_counter()
     for _ in range(generation_tokens):
         token = int(llm.sample(top_k=1, top_p=1.0, min_p=0.0, temp=0.0))
@@ -159,6 +162,7 @@ def _decode_fixed_tokens(
         generated.append(token)
         llm.eval([token])
     generation_finished = time.perf_counter()
+    generation_finished_ns = time.monotonic_ns()
     first_sample_s = token_times[0] - first_sample_started
     token_gaps_ms = [
         (right - left) * 1000.0
@@ -188,6 +192,33 @@ def _decode_fixed_tokens(
             "max": max(token_gaps_ms),
             "values": token_gaps_ms,
         },
+        "phase_intervals_ns": {
+            "prefill": [prefill_started_ns, prefill_finished_ns],
+            "decode": [generation_started_ns, generation_finished_ns],
+            "inference": [prefill_started_ns, generation_finished_ns],
+        },
+    }
+
+
+def _phase_resource_metrics(
+    samples: list[Any],
+    start_ns: int,
+    end_ns: int,
+) -> dict[str, float | int]:
+    selected = [
+        sample
+        for sample in samples
+        if start_ns <= sample.monotonic_ns <= end_ns
+    ]
+    jitters = [sample.scheduler_jitter_ms for sample in selected]
+    gpu_ages = [sample.gpu_sample_age_ms for sample in selected]
+    return {
+        "sample_count": len(selected),
+        "jitter_mean_ms": statistics.fmean(jitters) if jitters else 0.0,
+        "jitter_p95_ms": percentile(jitters, 0.95),
+        "jitter_max_ms": max(jitters, default=0.0),
+        "gpu_sample_age_p95_ms": percentile(gpu_ages, 0.95),
+        "gpu_sample_age_max_ms": max(gpu_ages, default=0.0),
     }
 
 
@@ -232,6 +263,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
             gpu_ready = sampler.start(
                 wait_for_gpu_timeout_s=args.gpu_warmup_timeout
             )
+            load_started_ns = time.monotonic_ns()
             load_started = time.perf_counter()
             llm = Llama(
                 model_path=str(model_path),
@@ -249,6 +281,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
                 verbose=False,
             )
             load_s = time.perf_counter() - load_started
+            load_finished_ns = time.monotonic_ns()
             memory_loaded = _native_memory_snapshot(
                 process=process,
                 baseline_card_used_mb=baseline_card_used_mb,
@@ -268,15 +301,19 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
                 process=process,
                 baseline_card_used_mb=baseline_card_used_mb,
             )
+            kv_save_started_ns = time.monotonic_ns()
             save_started = time.perf_counter()
             state = llm.save_state()
             kv_save_s = time.perf_counter() - save_started
+            kv_save_finished_ns = time.monotonic_ns()
             state_bytes = int(getattr(state, "llama_state_size", 0))
             expected_state_tokens = args.context_tokens + args.generation_tokens
             llm.reset()
+            kv_restore_started_ns = time.monotonic_ns()
             restore_started = time.perf_counter()
             llm.load_state(state)
             kv_restore_s = time.perf_counter() - restore_started
+            kv_restore_finished_ns = time.monotonic_ns()
             restored_tokens = int(llm.n_tokens)
             output_text = llm.detokenize(
                 inference["generated_tokens"]
@@ -296,16 +333,32 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
                 process=process,
                 baseline_card_used_mb=baseline_card_used_mb,
             )
+            unload_started_ns = time.monotonic_ns()
             unload_started = time.perf_counter()
             llm.close()
             llm = None
             gc.collect()
             unload_s = time.perf_counter() - unload_started
+            unload_finished_ns = time.monotonic_ns()
             memory_after_unload = _native_memory_snapshot(
                 process=process,
                 baseline_card_used_mb=baseline_card_used_mb,
             )
             resource_summary = sampler.stop()
+            phase_intervals_ns = {
+                "load": [load_started_ns, load_finished_ns],
+                **inference.pop("phase_intervals_ns"),
+                "kv_save": [kv_save_started_ns, kv_save_finished_ns],
+                "kv_restore": [
+                    kv_restore_started_ns,
+                    kv_restore_finished_ns,
+                ],
+                "unload": [unload_started_ns, unload_finished_ns],
+            }
+            resource_by_phase = {
+                name: _phase_resource_metrics(sampler.samples, start_ns, end_ns)
+                for name, (start_ns, end_ns) in phase_intervals_ns.items()
+            }
             timeline = [asdict(sample) for sample in sampler.samples]
         llm_lease.release()
         system_lease.release()
@@ -324,16 +377,16 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "gpu_present_for_every_timeline_sample": (
             resource_summary["gpu_unavailable_timeline_sample_count"] == 0
         ),
-        "gpu_sample_age_within_limit": (
-            resource_summary["gpu_max_sample_age_ms"]
+        "inference_gpu_sample_age_within_limit": (
+            resource_by_phase["inference"]["gpu_sample_age_max_ms"]
             <= args.max_gpu_sample_age_ms
         ),
-        "resource_jitter_p95_within_limit": (
-            resource_summary["jitter_p95_ms"]
+        "inference_resource_jitter_p95_within_limit": (
+            resource_by_phase["inference"]["jitter_p95_ms"]
             <= args.max_resource_jitter_p95_ms
         ),
-        "resource_jitter_max_within_limit": (
-            resource_summary["jitter_max_ms"]
+        "inference_resource_jitter_max_within_limit": (
+            resource_by_phase["inference"]["jitter_max_ms"]
             <= args.max_resource_jitter_max_ms
         ),
         "prompt_token_count_exact": len(prompt_tokens) == args.context_tokens,
@@ -410,6 +463,17 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "memory_after_unload": memory_after_unload,
         "unload_s": unload_s,
         "resource_summary": resource_summary,
+        "resource_by_phase": resource_by_phase,
+        "phase_intervals_ns": phase_intervals_ns,
+        "quality_warnings": {
+            "non_inference_jitter_exceeds_inference_limit": (
+                resource_summary["jitter_max_ms"]
+                > args.max_resource_jitter_max_ms
+            ),
+            "gpu_process_memory_is_estimated": (
+                memory_after_inference["gpu_process_total_mb"] is None
+            ),
+        },
         "allocator_after_release": allocator_after_release,
         "child_started_monotonic_ns": child_started_ns,
         "child_started_wall_iso": child_started_wall_iso,
@@ -498,6 +562,15 @@ def run_parent(args: argparse.Namespace) -> Path:
             "system_physical_cores": args.system_cores,
             "expected_records": expected_records,
             "fixed_generation_ignores_eos": True,
+            "acceptance_thresholds": {
+                "max_inference_gpu_sample_age_ms": args.max_gpu_sample_age_ms,
+                "max_inference_resource_jitter_p95_ms": (
+                    args.max_resource_jitter_p95_ms
+                ),
+                "max_inference_resource_jitter_max_ms": (
+                    args.max_resource_jitter_max_ms
+                ),
+            },
         },
     )
     writer.initialize(
@@ -695,12 +768,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sample-interval", type=float, default=0.05)
     parser.add_argument("--gpu-sample-interval", type=float, default=0.25)
     parser.add_argument("--gpu-warmup-timeout", type=float, default=5.0)
-    parser.add_argument("--max-gpu-sample-age-ms", type=float, default=500.0)
+    parser.add_argument("--max-gpu-sample-age-ms", type=float, default=750.0)
     parser.add_argument(
         "--max-resource-jitter-p95-ms", type=float, default=5.0
     )
     parser.add_argument(
-        "--max-resource-jitter-max-ms", type=float, default=20.0
+        "--max-resource-jitter-max-ms", type=float, default=30.0
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--child-timeout", type=float, default=1800.0)

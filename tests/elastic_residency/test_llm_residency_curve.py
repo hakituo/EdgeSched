@@ -1,7 +1,10 @@
+from types import SimpleNamespace
+
 import pytest
 
 from experiments.elastic_residency.llm_residency_curve import (
     _build_exact_prompt_tokens,
+    _phase_resource_metrics,
     _token_ids_sha256,
     resolve_config,
 )
@@ -26,3 +29,27 @@ def test_build_prompt_has_exact_token_count_and_stable_hash() -> None:
     assert len(tokens) == 512
     assert _token_ids_sha256(tokens) == _token_ids_sha256(list(tokens))
     assert len(_token_ids_sha256(tokens)) == 64
+
+
+def test_phase_resource_metrics_excludes_other_phases() -> None:
+    samples = [
+        SimpleNamespace(
+            monotonic_ns=100,
+            scheduler_jitter_ms=1.0,
+            gpu_sample_age_ms=20.0,
+        ),
+        SimpleNamespace(
+            monotonic_ns=200,
+            scheduler_jitter_ms=3.0,
+            gpu_sample_age_ms=40.0,
+        ),
+        SimpleNamespace(
+            monotonic_ns=300,
+            scheduler_jitter_ms=99.0,
+            gpu_sample_age_ms=500.0,
+        ),
+    ]
+    metrics = _phase_resource_metrics(samples, 100, 200)
+    assert metrics["sample_count"] == 2
+    assert metrics["jitter_max_ms"] == 3.0
+    assert metrics["gpu_sample_age_max_ms"] == 40.0
