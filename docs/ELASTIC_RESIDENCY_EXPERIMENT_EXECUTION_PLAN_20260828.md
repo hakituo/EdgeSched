@@ -221,6 +221,8 @@ H_D   = max k: M_L(k) + M_D + G_safe <= V_GPU
 
 在两个临界点分别补测 `k±2`、`k±4`，裁剪到 `[0,32]`、去重，并再次真实共置验证。若 `H_TTS` 或 `H_D` 在不同上下文下变化，保留按 context 分组的档位，不强行合并成一个常数。
 
+**C1 完成记录（2026-08-29）**：`c1_llm_residency_512_20260829_verified_v1` 基于干净 commit `234d2df686998fbb82f51068f6b55ee886cf0205`，使用实际 32 层 Qwen3.5-9B GGUF 完成 K0/FULL、512-token、固定生成 128-token 的真实端点 smoke。两条记录均通过 19/19 项门禁，0 failure、0 fallback，KV state 均保存并恢复到 640 tokens，核心和租约完全归还。K0/FULL 的 TTFT 为 10.659/0.326 s，prefill 为 48.05/1593.58 tok/s，decode 为 2.77/51.03 tok/s，GPU 占用增量估计为 127/5543 MiB，推理后 RSS 为 6.253/1.139 GiB。WSL 进程显存精确值仍不可用，增量只作为估计。KV save/restore 存在独立短时 jitter 尖峰，已经分阶段保留，不能声称系统全程无尖峰。完整分析见 `docs/LLM_RESIDENCY_C1_20260829.md`。该单轮端点 smoke 不用于正式曲线、`H_TTS/H_D` 或论文性能结论。
+
 ### 阶段 D：辅助任务动态核心预算
 
 初始固定 `R_sys=2` 个物理核。辅助任务在独立进程中运行，结束后进程退出并释放 affinity，主流水线不得永久少核。
@@ -300,8 +302,8 @@ experiment_results/elastic_residency/<run_id>/
 - [x] **A1**：GPU/jitter/CPU 首样本/provenance 硬门槛已通过。证据：`a1_smoke_20260829_verified_v7`；v6 仅作历史调试记录。
 - [x] **B1**：T0–T3 真实单文本 smoke 通过。证据：`b1_tts_components_20260829_verified_v2`。
 - [x] **B2**：完成 `4 配置 × 3 句长 × 5 轮`；Pareto 候选为 T0/T3，证据为 `b2_tts_matrix_20260829_verified_v1`。
-- [ ] **当前 C1**：实现 LLM 粗测 profiler，先跑 `k=0/FULL` 的 512-token smoke。
-- [ ] **C2**：运行完整粗测、计算 `H_TTS/H_D`、再运行临界补测。
+- [x] **C1**：K0/FULL 的 512-token 真实端点 smoke 已通过。证据：`c1_llm_residency_512_20260829_verified_v1`。
+- [ ] **当前 C2**：运行完整粗测、同日复测 Forge、计算 `H_TTS/H_D`，再运行临界补测。
 - [ ] **D1**：实现 JSON RAG 和 BGE 核心曲线；冻结辅助 SLA。
 - [ ] **D2**：接入已验证的 Faster-Whisper，并在音频路由就绪后接入真实 underrun 探针。
 - [ ] **D3**：运行 `R_sys={0,1,2,4}` 正式验证。

@@ -119,6 +119,20 @@ python -m experiments.elastic_residency.tts_component_offload_matrix \
 
 B2 固定使用恰好 20/50/100 字文本，每配置独立加载和预热一次，然后运行 15 个测量请求。当前通过记录为 `b2_tts_matrix_20260829_verified_v1`，共 60/60 条，条件式 Pareto 为 T0/T3；详细结果见 [B2 TTS 组件卸载矩阵](../docs/TTS_COMPONENT_OFFLOAD_MATRIX_20260829.md)。全部 RTF 均大于 1，因此该结果不能证明无 underrun。
 
+### 10. 弹性驻留 C1/C2 LLM 驻留曲线
+
+```bash
+python -m experiments.elastic_residency.llm_residency_curve \
+  --run-id <new_run_id> --configs K0 FULL --runs 1 \
+  --context-tokens 512 --generation-tokens 128 \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false --source-git-status-entry-count 0
+```
+
+入口从 GGUF 元数据读取实际 block 数；`K<number>` 映射到明确的 `n_gpu_layers`，`FULL` 单独使用 llama.cpp 完整 offload 语义。每配置在独立子进程中固定 14 个物理核，构造精确 token 数 prompt，手工分离 prefill/decode，记录每个 token gap、阶段资源指标、KV save/restore 和卸载。推理期 GPU 新鲜度与采样 jitter 是硬门槛；KV save/restore 的短时尖峰单独记录为阶段成本和质量告警。
+
+C1 权威记录 `c1_llm_residency_512_20260829_verified_v1` 基于干净 commit `234d2df`，K0/FULL 均为 19/19 项通过。它只有 512-token、每端点 1 轮，是 profiler 与端点 smoke，不是 C2 正式曲线或论文性能证据；详细结果见 [C1 LLM 驻留端点 smoke](../docs/LLM_RESIDENCY_C1_20260829.md)。
+
 WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：
 
 ```bash

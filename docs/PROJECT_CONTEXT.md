@@ -235,6 +235,7 @@ GPU burst arrives
 - A1 最终 smoke `a1_smoke_20260829_verified_v7` 基于干净且已推送的 commit `ae68608` 通过全部 17 项硬门禁：GPU 首样本在时间线前就绪，41/41 点均可用且最大年龄 422.719 ms；资源 jitter p95/max 为 0.309/1.680 ms，事件循环为 2.165/3.081 ms；首个 CPU 样本被明确排除，swap 为 0，线程 affinity 正确且结束后 16 个物理核全部归还。旧 v6 已降级为调试记录。A1 仍不包含 TTS/LLM 正式负载或真实并发音频。
 - B1 最终 smoke `b1_tts_components_20260829_verified_v2` 基于干净 commit `38f4d81` 使用真实 Qwen3-TTS/CUDA 后端，T0–T3 为 4/4 通过。实际组件设备、prompt device、`cuda:0→cpu` code 传输、分段时间、分阶段 PyTorch 显存峰值和非静音 WAV 均已验证。WSL 的进程显存接口返回 `[N/A]`，因此记录明确 unavailable，并以整卡相对空闲基线增量交叉估计；不把该估计伪装为精确进程显存。B1 是单轮冷态可行性证据，当前不能用于 Pareto 或论文性能结论。
 - B2 `b2_tts_matrix_20260829_verified_v1` 基于干净 commit `ce024a0` 完成 60/60 条真实 TTS 迭代。T0/T3 为条件式 Pareto，T1/T2 被 T3 严格支配；T3 比 T0 少约 1304 MiB 最大整卡增量，但 TTFA p95 增加 26.1%。60 条 RTF 全部大于 1，所以当前后端不具备持续实时播放能力；T3 是否值得保留还要等 LLM 层驻留曲线。该数据没有晋升论文正文。
+- C1 `c1_llm_residency_512_20260829_verified_v1` 基于干净 commit `234d2df`，用真实 32 层 Qwen3.5-9B GGUF 完成 K0/FULL 的 512-token 端点 smoke，两端均通过 19/19 项门禁并正确保存/恢复 640-token KV state。FULL 相对 K0 的 TTFT 为 0.326/10.659 s、decode 为 51.03/2.77 tok/s，GPU 增量估计为 5543/127 MiB，推理后 RSS 为 1.139/6.253 GiB。进程显存仍是整卡基线差值估计，KV 阶段存在单独 jitter 尖峰；本轮单次端点结果没有晋升论文正文，C2 仍须完成全部档位、上下文和重复轮次。
 
 该快照只确认当前依赖和绑定加载链路。模型加载、CUDA offload、真实推理、迁移以及 Forge 仍须用对应验证单独证明。
 
@@ -267,6 +268,7 @@ GPU burst arrives
 | 弹性驻留 A1/环境 | `tests/elastic_residency/` + WSL2 `smoke_a1.py` / `audio_playback_probe.py` | GPU/jitter/CPU 首样本/provenance 硬门禁、物理核租约/归还、实际线程 affinity 与跨宿主真实音频输出 |
 | 弹性驻留 B1 | WSL2 `tts_component_offload.py` + `b1_tts_components_20260829_verified_v2` | T0–T3 组件发现、实际设备、code 传输、分段时间、显存证据和非静音单文本 WAV；不证明 Pareto |
 | 弹性驻留 B2 | WSL2 `tts_component_offload_matrix.py` + `b2_tts_matrix_20260829_verified_v1` | 60 条 TTS 组件放置矩阵、分组统计与条件式 Pareto；不证明端到端无 underrun |
+| 弹性驻留 C1 | WSL2 `llm_residency_curve.py` + `c1_llm_residency_512_20260829_verified_v1` | K0/FULL 真实端点、精确 token/gap、阶段资源与 KV 保存恢复；不代替 C2 多轮曲线 |
 | 恢复/持久化 | `tests/verify_state_backplane_recovery.py` | mmap 读写和恢复闭合 |
 | C++ 绑定 | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` | 扩展导入与 API 契约 |
 | 真实 LLM | `tests/test_llama_gpu.py`, migration experiments | 当前模型/驱动下的推理与迁移 |
