@@ -6,18 +6,22 @@ websockets>=11.0
 
 # Machine Learning & AI
 torch>=2.0.0
-transformers>=4.41.0
-accelerate>=0.27.0
+# qwen-tts 0.1.1 的运行时契约；旧版 transformers 会在导入时缺少
+# ALL_ATTENTION_FUNCTIONS。WSL/CUDA 的精确 PyTorch 版本见 requirements-wsl-cu128.txt。
+transformers==4.57.3
+accelerate==1.12.0
 diffusers>=0.25.0
 peft>=0.17.0
-safetensors>=0.4.0
+safetensors==0.8.0
 numpy>=1.26.0
 pillow>=10.0.0
 sentencepiece>=0.1.99
 protobuf>=4.25.0
 qwen-vl-utils
-llama-cpp-python>=0.2.0
-qwen-tts>=0.1.0
+# 0.3.35 起支持本项目 Qwen3.5 GGUF 的 qwen35 架构。
+# CUDA 环境不得直接接受 CPU wheel，构建要求见 requirements-wsl-cu128.txt。
+llama-cpp-python==0.3.35
+qwen-tts==0.1.1
 
 # Utilities
 psutil>=5.9.0

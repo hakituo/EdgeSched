@@ -52,6 +52,8 @@ ResourceIsolationScheduler (C++ execution plane)
 
 Windows 到 WSL2 使用 `scripts/sync_to_wsl2_safe.ps1` 增量同步。该脚本不删除 WSL2 独有模型和 Forge 文件；不要改成镜像删除模式。
 
+WSL2 的可复现实验依赖使用 `requirements-wsl-cu128.txt`。它锁定当前已验证的 PyTorch CUDA 12.8、Qwen3-TTS、Transformers 和 llama-cpp-python 版本，并强制后者从源码构建 CUDA 版。安装前还需按文件头部说明安装 SoX；通用依赖仍以 `requirements.txt` 为准。
+
 ## 演示服务
 
 在依赖和配置已准备好的环境中：
@@ -108,4 +110,3 @@ C++ 绑定、真实 GGUF、迁移和 Forge 测试必须在对应 WSL2 环境单�
 ## 版本管理提示
 
 父仓库 `.gitignore` 当前忽略整个 `/legacy/`，所以本目录修改默认不会显示在父仓库 Git 状态中。需要正式纳入版本管理时，应先决定独立仓库方案或有意识地调整父仓库忽略策略。
-

@@ -1,24 +1,11 @@
-name: xiaoyou-mvp
+name: xiaoyou-mvp-cu128
 channels:
-  - pytorch
-  - nvidia
   - conda-forge
   - defaults
 dependencies:
   - python=3.10
-  - pytorch
-  - torchvision
-  - torchaudio
-  - pytorch-cuda=12.1
   - pip
   - pip:
-    - aiohttp
-    - psutil
-    - diffusers
-    - transformers
-    - accelerate
-    - safetensors
-    - pillow
-    - matplotlib
-    - numpy
-    - llama-cpp-python
+      # CUDA 12.8、Qwen3-TTS 与 Qwen3.5 的版本真源统一放在该文件。
+      # 创建环境后仍需按文件头部命令设置 CUDA 构建变量。
+      - -r requirements-wsl-cu128.txt
