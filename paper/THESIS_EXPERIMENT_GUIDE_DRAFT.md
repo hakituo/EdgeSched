@@ -1,6 +1,6 @@
 # EdgeSched 论文与实验指南（弹性驻留重构版）
 
-> **版本**：v4.6
+> **版本**：v4.7
 > **最后更新**：2026-08-29
 > **状态**：研究设计与实验路线草案。本文档描述目标、口径和验收条件，不代表所有机制已经实现或已有真实实验支持。
 
@@ -1389,8 +1389,8 @@ No-Go：
 - [x] 真实 Qwen3-TTS-0.6B-Base worker 与基础可复现 smoke
 - [x] A1：`a1_smoke_20260829_verified_v7` 已在干净 commit `ae68608` 上通过 GPU/jitter/CPU 首样本/provenance 全部 17 项硬门槛；v6 仅保留为旧门槛调试记录
 - [x] B1：`b1_tts_components_20260829_verified_v2` 已在真实 Qwen3-TTS/CUDA 后端完成 T0–T3 组件发现与单文本 smoke，4/4 配置通过；该冷态单轮数据不用于性能结论
-- [ ] **当前 B2**：TTS T0–T3 的 `4 配置 × 3 句长 × 5 轮` 正式 Pareto profiling
-- [ ] LLM `k={0,8,16,24,32,FULL}` 驻留曲线、Forge b=1 同日复测与临界补测
+- [x] B2：`b2_tts_matrix_20260829_verified_v1` 已完成 60/60 条；T0/T3 为条件式 Pareto，T1/T2 被支配，且 60 条 RTF 全部大于 1
+- [ ] **当前 C1/C2**：LLM `k={0,8,16,24,32,FULL}` 驻留曲线、Forge b=1 同日复测与临界补测
 - [ ] JSON RAG/BGE/Faster-Whisper 核心预算；音频路由就绪后补真实播放探针
 - [ ] `R_sys={0,1,2,4}` 正式辅助任务验证
 - [ ] S0 无图像真实重叠静态放置实验

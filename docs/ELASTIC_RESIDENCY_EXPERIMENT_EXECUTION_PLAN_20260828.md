@@ -178,6 +178,8 @@ tests/elastic_residency/
 
 单次冷态 smoke 中，T0/T1/T2/T3 的 ready 整卡增量估计分别为 2362/1914/1902/1906 MiB，TTFA 分别为 5.939/7.075/6.496/7.043 s，RTF 分别为 1.954/2.327/2.538/2.317。该数字只用于检查量纲与发现明显错误：每个配置只有一轮、没有独立预热，T2 的 CPU speaker 还改变了输出时长，因此不能据此判断 Pareto、质量等价性或“节省显存值得卸载”。这些裁决留给 B2 的冻结文本矩阵和多轮统计。
 
+**B2 完成记录（2026-08-29）**：`b2_tts_matrix_20260829_verified_v1` 基于干净 commit `ce024a051e2e878600eb53611b1ea1ee72ddf7fa` 完成 60/60 条真实迭代，12 个配置/句长分组各 5 条，0 fallback、0 failure。Pareto 候选为 T0/T3；T1/T2 被 T3 在最大整卡增量、TTFA p95 和 RTF p95 上严格支配。T3 相对 T0 的最大整卡增量少 1304 MiB，但 TTFA p95 增加 26.1%，RTF p95 增加 9.4%，最终是否保留要由 C 阶段验证这部分显存能否增加有效 LLM 层。全部 60 条的 RTF 均大于 1，当前后端无法支持持续实时播放，因此组件放置不能直接满足无 underrun 目标。完整分析见 `docs/TTS_COMPONENT_OFFLOAD_MATRIX_20260829.md`。
+
 正式矩阵：4 配置 × 20/50/100 字 × 5 轮，另加每配置独立预热。记录 TTFA（当前语义为完整句 WAV ready）、合成时间、RTF、allocated/reserved/进程总显存、主机内存、CPU 利用率和组件传输时间。
 
 裁决顺序：
@@ -297,8 +299,8 @@ experiment_results/elastic_residency/<run_id>/
 
 - [x] **A1**：GPU/jitter/CPU 首样本/provenance 硬门槛已通过。证据：`a1_smoke_20260829_verified_v7`；v6 仅作历史调试记录。
 - [x] **B1**：T0–T3 真实单文本 smoke 通过。证据：`b1_tts_components_20260829_verified_v2`。
-- [ ] **当前 B2**：运行 `4 配置 × 3 句长 × 5 轮` 完整 TTS 矩阵并生成 Pareto 候选。
-- [ ] **C1**：实现 LLM 粗测 profiler，先跑 `k=0/FULL` 的 512-token smoke。
+- [x] **B2**：完成 `4 配置 × 3 句长 × 5 轮`；Pareto 候选为 T0/T3，证据为 `b2_tts_matrix_20260829_verified_v1`。
+- [ ] **当前 C1**：实现 LLM 粗测 profiler，先跑 `k=0/FULL` 的 512-token smoke。
 - [ ] **C2**：运行完整粗测、计算 `H_TTS/H_D`、再运行临界补测。
 - [ ] **D1**：实现 JSON RAG 和 BGE 核心曲线；冻结辅助 SLA。
 - [ ] **D2**：接入已验证的 Faster-Whisper，并在音频路由就绪后接入真实 underrun 探针。

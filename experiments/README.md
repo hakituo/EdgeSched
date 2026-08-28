@@ -108,6 +108,17 @@ python -m experiments.elastic_residency.tts_component_offload \
 
 每个配置在独立子进程中加载真实 Qwen3-TTS，记录 talker、speech codec、speaker encoder 和 prompt 的实际设备，分别测量 tokenize、talker、code transfer、codec decode，并保存整卡/进程估计/PyTorch 显存、CPU/RSS 和非静音 WAV 检查。若 WSL 驱动把进程显存报告为 `[N/A]`，结果必须保留 unavailable 原因，只能把相对空闲整卡基线的增量标为 estimate。当前通过记录为 `b1_tts_components_20260829_verified_v2`，源 commit 为 `38f4d81`。它是单文本冷态可行性 smoke，不代替 B2 多轮矩阵。
 
+### 9. 弹性驻留 B2 TTS 正式矩阵
+
+```bash
+python -m experiments.elastic_residency.tts_component_offload_matrix \
+  --run-id <new_run_id> --configs T0 T1 T2 T3 --rounds 5 \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false --source-git-status-entry-count 0
+```
+
+B2 固定使用恰好 20/50/100 字文本，每配置独立加载和预热一次，然后运行 15 个测量请求。当前通过记录为 `b2_tts_matrix_20260829_verified_v1`，共 60/60 条，条件式 Pareto 为 T0/T3；详细结果见 [B2 TTS 组件卸载矩阵](../docs/TTS_COMPONENT_OFFLOAD_MATRIX_20260829.md)。全部 RTF 均大于 1，因此该结果不能证明无 underrun。
+
 WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：
 
 ```bash
