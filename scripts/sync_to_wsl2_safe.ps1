@@ -23,10 +23,30 @@ rsync -a --info=stats2 \
   --exclude 'experiment_results' \
   --exclude 'output/' \
   --exclude 'stable-diffusion-webui-forge-main/' \
+  --exclude '.git/' \
   '$SourceWslPath/' '$DestWslPath/'
 "@
 
 wsl -e bash -lc $RsyncCmd
 
 Write-Host ""
-Write-Host "Done: synced to WSL2 safely (no deletion on WSL2 side)."
+Write-Host "Step 2: auto-commit & push to GitHub (EdgeSched)..."
+
+Push-Location $SourceWinPath
+try {
+    git add -A
+    $HasChanges = (git status --porcelain | Measure-Object -Line).Lines
+    if ($HasChanges -gt 0) {
+        $Stamp = [DateTime]::Now.ToString("yyyy-MM-dd HH:mm")
+        git -c user.name=hakituo -c user.email=hakituo@users.noreply.github.com commit -m "auto: 同步后自动提交（$Stamp）"
+        git push origin main
+        Write-Host "Auto-commit & push OK."
+    } else {
+        Write-Host "No changes to commit, skip push."
+    }
+} finally {
+    Pop-Location
+}
+
+Write-Host ""
+Write-Host "Done: synced to WSL2 safely (no deletion on WSL2 side) and pushed to GitHub."

@@ -22,6 +22,8 @@
 - Forge 使用独立环境 `/home/leslie/.venvs/forge-cu128`，服务目录为 `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/`。
 - Windows 侧只做编辑、静态验证和结果收集；可用父仓库 `venv_core` 运行不依赖 GPU 的验证。
 - Windows 到 WSL2 只使用 `scripts/sync_to_wsl2_safe.ps1` 的增量同步语义，禁止 `--delete`、镜像覆盖或清理 WSL2 模型目录。
+- 本目录是独立 git 仓库（remote: `origin` = `https://github.com/hakituo/EdgeSched`），与父仓库 `d:\AI\xiaoyou-core` 的版本管理分开；`.git` 不同步到 WSL2，git 提交/推送只在 Windows 侧进行。
+- `scripts/sync_to_wsl2_safe.ps1` 同步到 WSL2 后会自动 `git add -A && commit && push origin main`（无变化则跳过）；因此运行该脚本即同时备份到 GitHub 私人仓库。
 - 不修改虚拟环境；确需修改依赖时先与用户讨论。
 
 ## 实验与证据规则
