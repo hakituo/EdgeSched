@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Any, Dict, List
+from typing import AsyncGenerator, AsyncIterator, Any, Dict, List
+
+from ..models.tts import TTSChunkRequest, TTSChunkResult
 
 class LLMInterface(ABC):
     @abstractmethod
@@ -28,6 +30,30 @@ class TTSInterface(ABC):
     async def synthesize(self, text: str, emotion: str = None, **kwargs) -> str:
         """Returns path to audio file"""
         pass
+
+    async def synthesize_chunk(
+        self,
+        request: TTSChunkRequest,
+    ) -> TTSChunkResult:
+        """合成一个已完成断句的语音块；旧适配器可暂不实现。"""
+        raise NotImplementedError
+
+    async def stream_synthesize(
+        self,
+        request_id: str,
+        token_stream: AsyncIterator[str],
+        *,
+        voice_profile_id: str,
+        language: str,
+        **kwargs,
+    ) -> AsyncIterator[TTSChunkResult]:
+        """将文本 token 流转换为句子级音频结果流。"""
+        raise NotImplementedError
+        yield  # pragma: no cover
+
+    async def cancel(self, request_id: str, **kwargs) -> None:
+        """取消该请求尚未派发的语音块。"""
+        raise NotImplementedError
 
 class STTInterface(ABC):
     @abstractmethod

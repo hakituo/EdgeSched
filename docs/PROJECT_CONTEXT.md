@@ -1,7 +1,7 @@
 # EdgeSched / MVP Core 项目上下文
 
 **文档版本**：1.0  
-**最后核对**：2026-08-28  
+**最后核对**：2026-08-29
 **核对范围**：当前 Windows 工作副本中的源码、测试、实验入口、论文数据目录和 WSL2 脚本。
 
 ## 1. 项目定位
@@ -108,6 +108,10 @@ GlobalTaskScheduler (services/task_scheduler.py)
 | `data/adapters/gguf_llm_adapter.py` | llama-cpp-python GGUF 适配 |
 | `data/adapters/forge_ui_adapter.py` | Forge API 图像适配 |
 | `data/adapters/synthetic_image_adapter.py` | 无真实图像后端时的可控替代 |
+| `services/tts/` | 独立句子级流式 TTS：断句、有界队列、取消、spawn Worker 与顺序检查 |
+| `data/adapters/qwen3_tts_adapter.py` | Qwen3-TTS Base 真实适配器；模型仅存在于子进程 |
+
+独立 TTS 的音色画像、真实运行方式和证据边界见 `docs/TTS_SUBSYSTEM.md`。当前尚未接入 Phase-Aware，既有 TTS 静态资源值仅是未校准占位。
 
 ## 5. 关键运行数据流
 
@@ -138,6 +142,20 @@ WebSocket image request
 ```
 
 队列容量和并发数来自调度配置。队列满时是受控拒绝，不应绕过队列直接启动新任务。
+
+### 独立 TTS 请求
+
+```text
+token stream
+  -> 跨 token 内部标签过滤
+  -> 确定性完整句子
+  -> 有界队列
+  -> 单 spawn Qwen3-TTS Base Worker
+  -> prompt 缓存复用
+  -> 有序 WAV chunk
+```
+
+取消会在锁内移除待执行块；正在执行的块自然完成后作为迟到结果丢弃。当前是句子级流式，`non_streaming_mode=True`，不是模型内部的增量音频流；延迟指标统一命名为 `first_chunk_ready`，不声称第一音频采样延迟。2026-08-28 GPU 句长画像中 45/45 条 RTF 均大于 1，详见 `docs/TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md`。
 
 ### 迁移
 
@@ -171,6 +189,7 @@ GPU burst arrives
 | `experiments/workload/` | 真实交互 workload/trace |
 | `experiments/phase_aware/` | Phase-Aware 三组实验 |
 | `experiments/overhead/` | 实现开销、综合实验和消融套件 |
+| `experiments/elastic_residency/` | 弹性驻留统一契约、物理核租约、资源与调度 jitter 采样及后续可行性实验 |
 | `experiment_results/` | 工作区运行产物和中间结果 |
 | `paper/experiment_data/01_paper_main/` | 当前正文聚合数据 |
 | `paper/experiment_data/02_auxiliary/` | 辅助说明数据 |
@@ -197,10 +216,11 @@ GPU burst arrives
 | 主实验环境 | `/home/leslie/.venvs/mvp_core-cu128` |
 | Forge 环境 | `/home/leslie/.venvs/forge-cu128` |
 | GGUF 模型 | `/home/leslie/mvp_core/models/llm` |
+| 辅助模型 | `/home/leslie/mvp_core/models/auxiliary`（Faster-Whisper Small、BGE-small-zh-v1.5） |
 | 图像模型 | `/home/leslie/mvp_core/models/Image` |
 | Forge 服务 | `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/` |
 
-`scripts/sync_to_wsl2_safe.ps1` 是安全同步入口，只增量复制源码，不删除 WSL2 独有的模型、Forge 或构建产物。真实运行前仍应核对目标文件时间戳或哈希。
+`scripts/sync_to_wsl2_safe.ps1` 是安全同步入口，只增量复制源码，不删除 WSL2 独有的模型、Forge 或构建产物。根目录模型排除必须写成 `/models/`，避免误排除 `domain/models/` 等源码包；Python 缓存和测试临时目录不参与同步。默认会提交并推送 Windows 独立仓库；存在其他未完成改动时使用 `-SkipGit`，避免把无关文件加入提交。真实运行前仍应核对目标文件时间戳或哈希。
 
 ### 7.1 当前 WSL2 运行快照
 
@@ -209,6 +229,10 @@ GPU burst arrives
 - `/home/leslie/.venvs/mvp_core-cu128` 能导入 `llama_cpp`；
 - 配置 `cpp_scheduler/build/bin` 与 `cpp_scheduler/build/llama.cpp/src` 到 `LD_LIBRARY_PATH` 后，能导入 `/home/leslie/mvp_core/cpp_scheduler/build/scheduler_py.cpython-310-x86_64-linux-gnu.so`；
 - Windows `venv_core` 中 benchmark 降级到 Mock，只表示 Windows 验证环境没有 `llama_cpp`，不能据此判断 WSL2 缺少依赖。
+- `faster-whisper==1.2.1`、`ctranslate2==4.7.2`、`onnxruntime==1.23.2`、`sounddevice==0.5.5` 与 `libportaudio2` 已安装；Faster-Whisper CPU int8 真实接口 smoke 可运行。
+- WSL2 已安装 ALSA→Pulse 桥接并能通过 WSLg Pulse 打开真实 PortAudio 输出；若 WSLg 音频端点失效，`experiments/elastic_residency/audio_playback_probe.py` 可回退到 Windows WASAPI，并显式记录重采样与传输路径。两条路径的 1 s 静音 smoke 均为 0 underflow，但正式结论仍须使用真实 TTS chunk 和并发负载。
+- `blendmodes==2025`、`pillow==10.4.0` 与当前 NumPy/Gradio 形成兼容集合；WSL2 `pip check` 无破损依赖，Qwen-TTS、Gradio 与 Torch 导入通过。
+- A1 最终 smoke `a1_smoke_20260828_verified_v6` 已证明物理核互斥租约、线程实际 affinity、资源时间线、原始/聚合产物和退出归还链路可用；manifest 记录了 Windows 源仓库 commit/dirty，并诚实标记 WSL2 运行副本无 `.git`。该证据不包含 TTS/LLM 正式负载。
 
 该快照只确认当前依赖和绑定加载链路。模型加载、CUDA offload、真实推理、迁移以及 Forge 仍须用对应验证单独证明。
 
@@ -238,6 +262,7 @@ GPU burst arrives
 |---|---|---|
 | 文档/静态 | `tests/scripts/verify_project_context.py` | 索引存在、路径有效、入口一致 |
 | Mock 单元 | `tests/test_chat_service.py`, `tests/test_phase_aware_quick.py` | 协议和调度语义 |
+| 弹性驻留 A1/环境 | `tests/elastic_residency/` + WSL2 `smoke_a1.py` / `audio_playback_probe.py` | 实验契约、物理核租约/归还、实际线程 affinity、资源/jitter 采样与跨宿主真实音频输出 |
 | 恢复/持久化 | `tests/verify_state_backplane_recovery.py` | mmap 读写和恢复闭合 |
 | C++ 绑定 | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` | 扩展导入与 API 契约 |
 | 真实 LLM | `tests/test_llama_gpu.py`, migration experiments | 当前模型/驱动下的推理与迁移 |

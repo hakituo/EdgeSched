@@ -13,8 +13,10 @@ accelerate==1.12.0
 diffusers>=0.25.0
 peft>=0.17.0
 safetensors==0.8.0
-numpy>=1.26.0
-pillow>=10.0.0
+numpy>=2.0.2
+pillow==10.4.0
+# 2022 版要求 numpy<2；2025 版已正式要求 numpy>=2.0.2。
+blendmodes==2025
 sentencepiece>=0.1.99
 protobuf>=4.25.0
 qwen-vl-utils
@@ -22,6 +24,13 @@ qwen-vl-utils
 # CUDA 环境不得直接接受 CPU wheel，构建要求见 requirements-wsl-cu128.txt。
 llama-cpp-python==0.3.35
 qwen-tts==0.1.1
+
+# Elastic-residency auxiliary CPU stages. These versions match the verified
+# Windows-side runtime and are installed into the WSL2 experiment environment.
+onnxruntime==1.23.2
+faster-whisper==1.2.1
+ctranslate2==4.7.2
+sounddevice==0.5.5
 
 # Utilities
 psutil>=5.9.0

@@ -48,6 +48,8 @@ class EnvironmentInfo:
         
         relevant_vars = [
             "XIAOYOU_BENCH_LLM_PATH",
+            "XIAOYOU_BENCH_TTS_PATH",
+            "XIAOYOU_TTS_REF_AUDIO_PATH",
             "XIAOYOU_BENCH_SD_PATH",
             "XIAOYOU_BENCH_N_CTX",
             "XIAOYOU_BENCH_N_GPU_LAYERS",

@@ -18,6 +18,8 @@
 | `overhead/` | 实现开销、综合实验、论文消融套件 |
 | `charts/` | JSON 到 PNG/PDF/CSV/LaTeX 图表 |
 | `scaling/` | Forge batch scaling 特性曲线 (T(b)/吞吐/加速比) |
+| `tts/` | Qwen3-TTS Base 独立 CPU/GPU smoke 与 10 块 prompt 复用验收 |
+| `elastic_residency/` | 弹性驻留实验契约、物理核租约、资源与调度 jitter 采样；后续承载 T0–T3、LLM 驻留和动态核心预算 |
 
 ## 推荐入口
 
@@ -68,6 +70,42 @@ python experiments/phase_aware/exp3_n_phase_workflow.py
 
 `exp1_real_migration_avoidance.py` 涉及真实迁移，必须在 WSL2 模型环境单独核对，不要与纯策略模拟混合报告。
 
+### 6. 独立 TTS
+
+```bash
+python experiments/tts/smoke_qwen3_tts_base.py --device cuda:0 --ref-text '准确转写'
+python experiments/tts/smoke_qwen3_tts_base.py --device cpu --cpu-threads 8 --x-vector-only
+python experiments/tts/profile_qwen3_tts.py --device cuda:0 --x-vector-only
+python experiments/tts/profile_qwen3_tts_gpu_sentence_lengths.py \
+  --device cuda:0 --x-vector-only --rounds 3 \
+  --git-root /mnt/d/AI/xiaoyou-core/legacy/mvp_core
+```
+
+默认 ICL 必须提供参考音频准确转写；`--x-vector-only` 仅用于显式消融。smoke 产物位于 `experiment_results/tts/smoke/<run_id>/`，句长画像位于 `experiment_results/tts/profiling/gpu_sentence_length/<run_id>/`。指标使用 `first_chunk_ready`，不声称第一音频采样延迟。这里验证独立句子级 TTS，不证明 LLM→TTS 流水线或 Diffusion 共置性能。
+
+### 7. 弹性驻留 A1 基础设施
+
+```bash
+python -m experiments.elastic_residency.smoke_a1 \
+  --run-id <new_run_id> --duration 2.0 \
+  --source-git-commit <windows_source_commit> \
+  --source-git-dirty <true_or_false> \
+  --source-git-status-entry-count <count>
+```
+
+A1 产物位于 `experiment_results/elastic_residency/a1/<run_id>/`，包含冻结配置、环境 manifest、单轮原始 JSONL、事件、统一资源时间线、JSON/CSV 汇总和失败记录。WSL2 运行副本按规则不带 `.git`，因此正式运行必须把 Windows 源仓库 commit/dirty 快照显式传入；缺少该证据时 smoke 不会标记通过。该 smoke 会真实绑定工作核与系统预留核、调用 OS 和 NVIDIA 资源探针，并在退出时核验核心全部归还；它不运行 TTS/LLM，因此不能作为后续性能目标或无 underrun 的证据。
+
+WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：
+
+```bash
+python -m experiments.elastic_residency.audio_playback_probe \
+  --wav <pcm16_wav> --backend auto --output-json <summary.json>
+python -m experiments.elastic_residency.audio_playback_probe \
+  --wav <pcm16_wav> --backend windows --output-json <summary.json>
+```
+
+探针记录源/输出采样率、设备、host API、callback 数、状态、underflow 和最大 callback gap；不支持的 24 kHz 单声道会显式协商到设备格式。静音 smoke 只验证输出链路，正式 underrun 结论必须来自真实 TTS chunk 和并发工作流。
+
 ## 环境变量
 
 高频变量包括：
@@ -105,4 +143,3 @@ paper/tables/                             当前 LaTeX 表格
 ```
 
 真实实验请在 `/home/leslie/mvp_core` 中激活 `/home/leslie/.venvs/mvp_core-cu128` 后运行，并保存完整日志和 manifest。
-

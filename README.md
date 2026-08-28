@@ -35,6 +35,7 @@ ResourceIsolationScheduler (C++ execution plane)
 - `services/cpp_scheduler_engine.py`：C++ 调度器和模型迁移桥接。
 - `services/phase_aware/`：Phase-Aware workflow、GPU lease、代价决策和 backfill。
 - `experiments/run_all_experiments.py`：论文实验统一编排。
+- `services/tts/`：独立句子级流式 Qwen3-TTS Base 子系统。
 - `paper/main_en.tex`：当前英文论文主文件。
 
 ## 运行环境
@@ -50,9 +51,9 @@ ResourceIsolationScheduler (C++ execution plane)
 | 图像模型 | `/home/leslie/mvp_core/models/Image` |
 | Forge | `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/` |
 
-Windows 到 WSL2 使用 `scripts/sync_to_wsl2_safe.ps1` 增量同步。该脚本不删除 WSL2 独有模型和 Forge 文件；不要改成镜像删除模式。
+Windows 到 WSL2 使用 `scripts/sync_to_wsl2_safe.ps1` 增量同步。该脚本不删除 WSL2 独有模型和 Forge 文件；不要改成镜像删除模式。工作区另有未完成改动时使用 `-SkipGit`，避免默认自动提交把无关文件一起纳入。
 
-WSL2 的可复现实验依赖使用 `requirements-wsl-cu128.txt`。它锁定当前已验证的 PyTorch CUDA 12.8、Qwen3-TTS、Transformers 和 llama-cpp-python 版本，并强制后者从源码构建 CUDA 版。安装前还需按文件头部说明安装 SoX；通用依赖仍以 `requirements.txt` 为准。
+WSL2 的可复现实验依赖使用 `requirements-wsl-cu128.txt`。它锁定当前已验证的 PyTorch CUDA 12.8、Qwen3-TTS、Transformers 和 llama-cpp-python 版本，并强制后者从源码构建 CUDA 版。安装前还需按文件头部说明安装 SoX、PortAudio 与 ALSA→Pulse 桥接；通用依赖中的 ONNX Runtime、Faster-Whisper/CTranslate2、sounddevice、blendmodes 和 Pillow 以 `requirements.txt` 的固定兼容版本为准。音频探针优先使用 WSLg Pulse，并在端点不可用时回退到 Windows WASAPI；静音链路通过不等于真实并发 TTS 已满足无 underrun。
 
 ## 演示服务
 
@@ -83,7 +84,12 @@ python experiments/run_all_experiments.py --experiments all --iterations 5
 
 # Mock/Real 性能套件
 python experiments/run_performance_suite.py --workload mock
+
+# 独立 Qwen3-TTS GPU smoke（默认 ICL，需准确转写）
+python experiments/tts/smoke_qwen3_tts_base.py --device cuda:0 --ref-text '准确转写'
 ```
+
+TTS 的音色画像、x-vector 消融、CPU/GPU smoke 和证据边界见 [Qwen3-TTS Base 独立子系统](docs/TTS_SUBSYSTEM.md)。2026-08-28 的 [GPU 句长画像](docs/TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md) 显示 45/45 条真实样本 RTF 均大于 1，因此当前先研究真正音频流式或后端优化，不直接铺开 CPU 核心组合。
 
 `experiment_results/` 是运行产物；论文正文当前采用的数据位于 `paper/experiment_data/01_paper_main/`。新结果必须经过多次迭代、manifest、聚合检查和人工确认，不能自动覆盖正文数据。
 

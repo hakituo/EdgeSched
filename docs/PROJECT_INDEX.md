@@ -11,6 +11,8 @@
 | Python 调度器 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#4-核心模块索引) | `services/task_scheduler.py`（门面）+ `task_models.py` / `python_worker.py` / `scheduler_image_pipeline.py` / `scheduler_llm_pipeline.py` | `tests/test_chat_service.py`, `tests/verify_todo_optimizations.py` |
 | 准入/背压 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/admission_controller.py`, `presentation/websocket/handler.py` | `experiments/admission/`, `tests/test_chat_service.py` |
 | 显存迁移 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/resource_manager.py`, `services/cpp_scheduler_engine.py`（门面）+ `cpp_engine_migration.py` / `cpp_engine_llm.py` / `cpp_engine_image.py` / `cpp_engine_utils.py` | `experiments/migration/` |
+| 独立 TTS | [TTS_SUBSYSTEM.md](TTS_SUBSYSTEM.md)、[GPU 句长画像](TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md) | `services/tts/`, `data/adapters/qwen3_tts_adapter.py` | `tests/tts/`, `experiments/tts/` |
+| 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md) | `experiments/elastic_residency/`；A1 契约/分核/采样已完成，当前进入 B1 TTS 组件发现 | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，不得自动晋升正文 |
 | Phase-Aware | `.trae/skills/xiaoyou-mvp-core/SKILL.md` | `services/phase_aware/`, `cpp_scheduler/core/phase_strategy.*` | `tests/test_phase_aware_quick.py`, `experiments/phase_aware/` |
 | 崩溃恢复 | `docs/PROJECT_CONTEXT.md` | `services/state_backplane.py`, `services/task_scheduler.py` | `experiments/recovery/`, `experiments/semantic_validation/` |
 | C++ 调度器 | [cpp_scheduler/README.md](../cpp_scheduler/README.md) | `cpp_scheduler/core/`, `workers/`, `queue/`, `bindings/` | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` |
@@ -27,6 +29,8 @@
 | `experiments/run_no_forge_experiments.py` | 无 Forge 实验集合 | 适合先验证 LRU、恢复、压力与实现开销 |
 | `experiments/run_forge_experiments.py` | Forge 相关真实实验 | 运行前确认 Forge API 和模型可用 |
 | `experiments/run_performance_suite.py` | Mock/Real 性能套件 | 产物写入 `experiment_results/`，不自动成为论文正文数据 |
+| `experiments/tts/smoke_qwen3_tts_base.py` | Qwen3-TTS Base CPU/GPU 独立 smoke | 句子级流式；不代表 LLM→TTS 端到端结果 |
+| `experiments/tts/profile_qwen3_tts_gpu_sentence_lengths.py` | GPU 短/中/长句正式 profiling | 预热后 5 文本 × 3 档 × 3 轮，生成原始记录、汇总、拟合与图表 |
 | `paper/compile_en.bat` | Windows 英文论文编译 | LaTeX 产物属于生成文件 |
 | `cpp_scheduler/build_wsl2.sh` | WSL2 原生扩展构建 | 使用 `mvp_core-cu128` 环境 |
 
@@ -45,4 +49,3 @@
 - C++ 扩展能导入，不等于真实 GGUF 推理、KV Cache 保存恢复或端到端迁移已经通过。
 - Windows 文件存在，不等于 WSL2 运行副本和模型目录已同步。
 - 父仓库 `.gitignore` 当前忽略整个 `/legacy/`；本目录修改默认不会出现在父仓库 Git 状态中。
-

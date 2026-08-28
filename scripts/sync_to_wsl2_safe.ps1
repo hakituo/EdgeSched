@@ -1,3 +1,7 @@
+param(
+    [switch]$SkipGit
+)
+
 $ErrorActionPreference = "Stop"
 
 $SourceWinPath = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -19,15 +23,28 @@ $RsyncCmd = @"
 set -euo pipefail
 mkdir -p '$DestWslPath'
 rsync -a --info=stats2 \
-  --exclude 'models/' \
-  --exclude 'experiment_results' \
-  --exclude 'output/' \
-  --exclude 'stable-diffusion-webui-forge-main/' \
+  --exclude '/models/' \
+  --exclude '/experiment_results/' \
+  --exclude '/output/' \
+  --exclude '/stable-diffusion-webui-forge-main/' \
   --exclude '.git/' \
+  --exclude '__pycache__/' \
+  --exclude '*.pyc' \
+  --exclude '.pytest_cache/' \
+  --exclude '.ruff_cache/' \
+  --exclude '.test_tmp*/' \
   '$SourceWslPath/' '$DestWslPath/'
 "@
 
 wsl -e bash -lc $RsyncCmd
+
+if ($SkipGit) {
+    Write-Host ""
+    Write-Host "Step 2: skipped Git commit/push (-SkipGit)."
+    Write-Host ""
+    Write-Host "Done: synced to WSL2 safely (no deletion on WSL2 side)."
+    exit 0
+}
 
 Write-Host ""
 Write-Host "Step 2: auto-commit & push to GitHub (EdgeSched)..."

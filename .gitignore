@@ -13,8 +13,8 @@ logs/
 *.log
 app.log
 
-# Models
-models/
+# Root model weights only; domain/models is source code.
+/models/
 
 # Data (exclude experiment results)
 *.db
@@ -42,6 +42,7 @@ test.jpg
 
 # Testing
 .pytest_cache/
+.test_tmp/
 coverage/
 
 # Build
@@ -76,6 +77,9 @@ outputs/
 output/
 results/
 results_real/
+/TTS/
+/experiment_results/elastic_residency/
+/experiment_results/tts/
 
 # Debug and Test Scripts (exclude as requested)
 experiments/debug_*.py

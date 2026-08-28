@@ -1,6 +1,6 @@
 # EdgeSched / MVP Core 项目规则（Codex 局部入口）
 
-本文件补充父仓库 `../../AGENTS.md`，只约束 `legacy/mvp_core/`。冲突时以本文件的局部规则为准；父仓库的安全、中文注释、虚拟环境和记录规则仍然有效。
+本文件补充父仓库 `../../AGENTS.md`，只约束 `legacy/mvp_core/`。冲突时以本文件的局部规则为准；父仓库的安全、中文注释和虚拟环境规则仍然有效。EdgeSched 是独立仓库，更新记录只维护在本目录的 `docs/`、README 和实验 manifest，禁止调用父仓库 `scripts/doc_records/update_project_records.py` 修改父目录的 `UPDATES.md` 或 `Question_Reviewer/`。
 
 ## 开始任务前
 
@@ -42,4 +42,3 @@
 - 每次优化补充或更新 `tests/` 下的验证；默认先跑静态/Mock 测试，真实 GPU/Forge 测试在 WSL2 单独执行。
 - 修改目录、入口、环境、数据口径或模块职责时，同步更新 `docs/PROJECT_INDEX.md`、`docs/PROJECT_CONTEXT.md` 和相关 README。
 - 不把 `cpp_scheduler/build/`、模型、运行日志、临时输出或本地 mmap 数据当作源码。
-

@@ -1,1572 +1,1420 @@
-# EdgeSched 论文写作指南（优化版）
+# EdgeSched 论文与实验指南（弹性驻留重构版）
 
-> 本指南基于你的实际项目，提供论文写作的具体建议和模板
-> 
-> **版本**: v3.5 (实验重构版)  
-> **最后更新**: 2026-04-16
+> **版本**：v4.5
+> **最后更新**：2026-08-28
+> **状态**：研究设计与实验路线草案。本文档描述目标、口径和验收条件，不代表所有机制已经实现或已有真实实验支持。
 
-## 路径（WSL2）
+## 0. 使用原则
 
-- Windows 侧访问路径：`\\wsl.localhost\Ubuntu-24.04-E\home\leslie\mvp_core`
-- WSL2 内部路径：`/home/leslie/mvp_core`
-- 推荐实际运行路径：`/home/leslie/mvp_core`
-- 约定：Windows 侧改完代码后，同步到 `/home/leslie/mvp_core`（WSL2 侧保持完整代码+模型）
-- 结果落盘：实验运行在 WSL2，但 `experiment_results` 建议指向 Windows 侧目录（例如软链到 `d:\AI\xiaoyou-core\legacy\mvp_core\experiment_results`），便于统一收集与提交
-- WSL2 虚拟环境：`/home/leslie/.venvs/mvp_core-cu128`（实验与调度器）、`/home/leslie/.venvs/forge-cu128`（Forge）
-- 模型目录：`/home/leslie/mvp_core/models/llm`（GGUF）、`/home/leslie/mvp_core/models/Image`（图像模型相关）
-- Forge 位置：`/home/leslie/mvp_core/stable-diffusion-webui-forge-main/`（保持在 WSL2 侧，不建议同步回 Windows）
-- 当前论文补实验实际使用环境：`mvp_core-cu128` 为主；如要直接验证 Forge WebUI API 是否在线，再切 `forge-cu128`
+本指南用于统一 EdgeSched 的研究问题、实现顺序、实验口径和论文证据链。当前实现、测试与真实运行结果的优先级高于本文档中的设计设想。
 
-## 当前实验现状（2026-04-16）
+开始相关工作前，应依次核对：
 
-这部分先把现状说清楚，避免后续论文继续沿用不够严谨的口径。
+1. `docs/PROJECT_INDEX.md`
+2. `docs/PROJECT_CONTEXT.md`
+3. `experiments/README.md`
+4. `paper/experiment_data/README.md`
+5. `docs/ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md`
+6. 对应源码、测试、原始 JSON 与运行 manifest
 
-### 先说结论
+必须遵守以下边界：
 
-1. **旧的 C++ 调度器最小实验脚本是能跑的**
-   - 例如：`tests/test_initial_load_only.py`、`tests/test_experiment_setup.py`
-   - 在 WSL2 中补充正确的 `LD_LIBRARY_PATH` 与 `XIAOYOU_LLM_MODEL_PATH` 后，可正常完成：
-     - C++ 调度器启动
-     - GGUF 模型加载到 GPU
-     - 单条 LLM 推理
-     - 正常 `stop()`
-2. **新补的系统级实验脚本目前还不够稳定**
-   - `tests/test_real_workload.py` 目前在“补实验”过程中被多次修改，混入了：
-     - `GlobalTaskScheduler`
-     - Python fallback
-     - 本地图像权重工作负载
-     - 手动动态库预加载
-   - 当前这条路径还**不能直接作为论文主结果来源**
-3. **因此现在的正确策略不是“直接引用新图”，而是先重构实验分层**
-   - 旧的 C++ 路径：保留为**机制层验证**
-   - 新的系统级 workload / baseline：按旧路径风格重做
+- Mock 结果只能验证调度语义和统计链路，不能证明真实模型性能。
+- `experiment_results/` 是探索性运行产物；只有人工核对后，结果才可晋升到 `paper/experiment_data/01_paper_main/`。
+- 换用新模型、修改调度策略或改变运行环境后，旧性能数字默认失效。
+- 本文档不再把历史设计报告、旧稿或 `paper/previous/` 当成当前实现真源。
+- 论文只陈述已经由真实运行和可追溯证据支持的能力。
 
-### 本轮主实验应该回答的核心问题
+- --
 
-老师当前真正想看的，不是“Python 原语写得好不好”，而是：
+## 1. 当前研究定位
 
-1. **为什么不用手动 `llama.cpp` 切换？**
-2. **为什么不用朴素 LRU / Unified Memory？**
-3. **你的调度器在第二个重任务到来时，到底调度得更好吗？**
+### 1.1 目标场景
 
-所以正文主实验应该围绕下面这条主线组织：
+EdgeSched 面向单用户、单机、资源受限的本地多模态 AI 助手。目标不是多租户云服务，也不是分布式集群调度，而是在一台消费级设备上协调长期交互服务与短时异构任务。
 
-- `Manual llama.cpp switch`（Restart-based recovery）
-- `LRU / Unified Memory`（OS-managed memory）
-- `Symmetric Migration`（GPU→CPU 和 CPU→GPU 使用同一恢复逻辑）
-- `EdgeSched`
+当前计划使用的主要工作负载为：
 
-而不是再把 `naive async / semaphore` 放在主文里占据主要篇幅。
+| 工作负载 | 计划模型/后端 | 运行语义 |
+|---|---|---|
+| LLM | Qwen3.5-9B-Q4_K_M，GGUF + llama.cpp | 常驻、流式、可在 CPU/GPU 间重新配置 |
+| TTS | Qwen3-TTS-12Hz-0.6B-Base | 下游、句子级流式、CPU/GPU 均可运行 |
+| Image | SDXL Turbo + Forge | GPU 必需、非硬抢占、一次性或短队列任务 |
+| ASR | Faster-Whisper Small，CTranslate2 FP16 权重 | CPU 辅助阶段，不作为主要显存竞争者 |
+| RAG embedding | BGE-small-zh-v1.5，ONNX，512 维 | CPU 辅助阶段；dense embedding/rerank，不冒充 cross-encoder |
 
-### A. Cold-Start vs Hot-Swap（可保留的机制层基线）
+上述模型文件已在当前 WSL2 副本完成路径和关键权重核验，但量化方式、运行参数和哈希仍必须写入每次正式实验 manifest，不能只引用本指南中的快照。
 
-- 结果文件：`experiment_results/baseline_cold_start_results.json`
-- 图表文件：`experiment_results/chart_cold_start_comparison.pdf`
-- 对应脚本：`tests/test_baseline_cold_start.py`
-- 解释口径：
-  - 这是**真实本地 GGUF + llama-cpp-python** 跑出来的数据，不是 Mock。
-  - 这组结果**主要证明的是机制层差异**：`kill & restart` 与 `save_state / load_state` 的恢复中断差距。
-  - 它不是“完整 C++/Python 混合调度系统”的全链路主结果。
-  - `512 tokens` 明显包含首次加载/预热开销，因此把它当作 **warm-up affected point**。
-  - 真正要在正文里强调的是 `1024/2048/3072` 三个点：Cold-Start 随上下文增大而升高，而 Hot-Swap 基本保持在 `0.72s ~ 0.79s`。
-- 当前实测（最新一轮）：
+### 1.2 权威实验环境
 
-| Context | Naive Cold-Start (s) | EdgeSched Hot-Swap (s) |
-|---|---:|---:|
-| 512 | 7.809 | 0.766 |
-| 1024 | 1.896 | 0.787 |
-| 2048 | 2.387 | 0.720 |
-| 3072 | 3.040 | 0.757 |
+- GPU：NVIDIA GeForce RTX 5070 Laptop GPU，8151 MiB 可见显存
+- CPU：AMD Ryzen 9 8940HX
+- 主机内存：32GB DDR5
+- 正式实验约束：WSL2 实际可用内存上限约 16GB；必须在 manifest 中记录当次内存上限与 swap 状态
+- WSL2 运行副本：`/home/leslie/mvp_core`
+- 调度与实验环境：`/home/leslie/.venvs/mvp_core-cu128`
+- Forge 环境：`/home/leslie/.venvs/forge-cu128`
 
-### B. Real Workload Trace（待重做）
+论文不得只写“32GB RAM”而隐藏 WSL2 的有效内存约束。宿主机容量与实验进程实际可用容量需要同时报告。
 
-- 结果文件：`experiment_results/real_workload_trace.json`
-- 图表文件：`experiment_results/chart_real_workload_trace.pdf`
-- 对应脚本：`tests/test_real_workload.py`
-- 当前判断：
-  - 这组实验脚本在“补实验”过程中引入了太多额外逻辑，已经偏离旧的可稳定 C++ 路径。
-  - 后续一旦强行打开 C++ worker，又出现：
-    - 原生层 `Aborted (core dumped)`
-    - `double free or corruption (!prev)`
-    - 长时间超时后自动 fallback
-  - 因此这张图**目前不能直接作为正文主图**。
-- 正确口径：
-  - 这份 `real_workload_trace.json` 只能作为“临时探索结果/趋势草稿”，不能直接当作最终主结果引用。
-  - 后续应按**旧 C++ 实验脚本风格**重写该实验，而不是继续沿用当前版本。
+### 1.3 新版核心问题
 
-### C. LRU / Unified Memory Thrashing（待重做）
+原稿主要研究：
 
-- 结果文件：`experiment_results/baseline_lru_thrashing_results.json`
-- 图表文件：`experiment_results/chart_lru_thrashing.pdf`
-- 对应脚本：`tests/test_baseline_lru.py`
-- 当前判断：
-  - 当前版本的图像侧并未严格沿用与正文一致的真实执行栈。
-  - 当前得到的是“超时型失败态”，它能说明系统在 8GB VRAM 下会进入严重 thrashing，但**还不够干净，不适合作为最终基线图**。
-- 当前实测摘要（仅供内部参考）：
+> 当图像任务到达时，将整个 LLM 从 GPU 迁到 CPU；图像完成后再恢复 LLM。
 
-| Metric | Value |
-|---|---:|
-| LLM only latency | 0.469 s |
-| Image only latency | 7.179 s |
-| Concurrent status | Timeout (>60s) due to severe Thrashing |
+该机制仍然有价值，但如果系统只能在“LLM 占 GPU”和“Diffusion 占 GPU”之间二选一，资源模型仍然过于二元。
 
-### 当前可直接用于论文的图
+新版研究问题是：
 
-- **可以保留**：`chart_cold_start_comparison.pdf`
-- **暂不作为正文主图**：
-  - `chart_real_workload_trace.pdf`
-  - `chart_lru_thrashing.pdf`
+> 在显存、CPU 核心和系统内存同时受限时，如何根据多模态流水线状态、任务时长和迁移代价，联合决定模型驻留程度、设备放置、CPU 核心预算与图像执行方式，从而保持文本、语音和图像交互的可用性？
 
-**论文建议**：当前不要再写“本轮三张图已经是正文主图”。更稳妥的说法是：
-- `Cold-Start vs Hot-Swap`：可以作为机制层主图
-- `Real Workload` / `LRU`：先重做，再决定是否进入正文主图
+建议将核心贡献描述为：
 
-## 目标定位
+> **面向本地多模态流水线的代价感知弹性驻留与异构资源调度。**
 
-- **会议级别**：CCF B（挑战）/ CCF C（保底）
-- **会议**：SEC 2026/ICPADS 2026
-- **论文类型**：工程系统论文
-- **页数**：10-12页
-- **时间**：2个月完成
+“非对称迁移”保留为弹性驻留状态转换中的关键机制，而不是整篇论文唯一的创新点。
 
----
+- --
 
-## 第一部分：你的系统到底是什么
+## 2. 工作流与任务语义
 
-### 1.1 非对称资源迁移（Asymmetric Migration）
+### 2.1 语音工作流
 
-我们发现，不同方向的资源迁移面临的约束条件截然不同，因此设计了**非对称的迁移状态机**：
-
-1.  **下行路径（GPU → CPU Offload）**：
-    *   **约束**：显存是硬约束（Hard Constraint）。当高优先级任务（如 Image Gen）需要显存时，必须先释放 LLM 占用的显存，否则会触发 CUDA OOM。
-    *   **策略（紧急模式/Urgent Mode）**：采用 `Urgent Mode`（紧急模式）。**关键点在于并行性**：首先通过 `save_state()` 将 KV Cache 从显存复制到内存（约 200-300ms），保留对话上下文；然后立即释放 GPU 显存（Unlock VRAM），最后**同时**启动两个操作：(1) 后台加载 CPU 版 LLM（从 SSD/Page Cache 读入 DDR）；(2) GPU 加载 Image Gen 模型（从 SSD/DDR 经 PCIe 读入 GDDR）。
-    *   **带宽权衡**：虽然理论上 GDDR 到 DDR 的带宽（PCIe ~16GB/s）高于 SSD 到 DDR（NVMe ~3GB/s），但我们选择**保存状态后释放**而非回拷（Swap Out）。这是因为：
-        *   **工程稳定性**：保存 KV Cache 后释放能瞬间消除显存碎片，避免 OOM 风险。
-        *   **Page Cache 加速**：操作系统（OS）的 Page Cache 机制通常已在 DDR 中缓存了模型文件。此时重新加载实际上是从 DDR 拷贝到 DDR，速度极快（>20GB/s），并不受限于 SSD。
-    *   **代码体现**：`CPPSchedulerEngine::offload_llm_to_cpu(urgent=True)`，优先保证显存安全性，同时通过 KV Cache 保存兼顾用户体验。
-    *   **实现说明**：紧急模式已实现 `save_state()` 保存 KV Cache 后再释放显存；因此需要重跑实验 1（资源迁移性能测试）。
-
-2.  **上行路径（CPU → GPU Restore）**：
-    *   **约束**：用户体验是软约束（Soft Constraint）。此时显存已空闲，且系统内存（DDR）通常充足（32GB+）。
-    *   **策略（乐观预加载/Double Buffering）**：采用 `Atomic Hot-Swap`（原子热切换）。
-        *   **Step 1（预加载）**：在 GPU 上**全新加载**模型实例（从 SSD/Page Cache 经 PCIe 读入 GDDR）。此时旧的 CPU 实例仍在服务用户请求（不中断）。**注意：如果之前已加载过，OS Page Cache 会加速 DDR 到 PCIe 的传输，无需再次从 SSD 读取。**
-        *   **Step 2（热迁移/Hot Transfer）**：当 GPU 实例就绪后，**立即暂停** CPU 实例，将其内存中的 KV Cache（对话状态）提取出来，并注入到 GPU 实例中。此过程极快（纯内存操作），用户无感知。
-        *   **Step 3（切换与释放）**：状态迁移完成后，瞬间切换流量到 GPU 实例，最后才异步卸载 CPU 实例。
-    *   **代码体现**：`CPPSchedulerEngine::restore_llm_to_gpu()` 实现加载 -> 迁移 -> 切换 -> 卸载的流水线。
-    *   **价值**：最大化服务可用性（Availability），将服务中断时间（Downtime）从几秒级压缩到毫秒级。
-
----
-
-### 1.2 状态背板：软件定义的持久化一致性
-
-我们观察到，企业级服务器常利用 **NVRAM（或 Persistent Memory Semantics）** 来保证系统崩溃后的状态一致性。受此启发，我们在普通消费级硬件上实现了一层**软件定义的 Crash Consistency**：
-
-*   **实现机制**：利用 OS 的 `mmap`（内存映射文件）机制，将任务状态（Running/Pending/Failed）直接映射到磁盘文件。
-*   **特性**：
-    1.  **极低开销**：读写操作发生在内存页（Page Cache）中，几乎零延迟（<10us），不阻塞高频调度循环。
-    2.  **崩溃一致性**：即使 Python 解释器崩溃（Crash），操作系统内核仍会保证脏页（Dirty Page）最终刷入磁盘。
-    3.  **价值**：以极低的软件实现成本，获得了接近硬件 NVRAM 的可靠性，使边缘设备具备了“断电记忆”能力。
-
----
-
-### 1.3 核心组件（对应代码）
-
-```
-调度器 (GlobalTaskScheduler)
-├─ 优先级队列 (PriorityQueue)          # services/task_scheduler.py: PythonWorker._task_queue
-├─ 动态资源迁移 (Resource Migration)   # LLM GPU↔CPU 动态迁移
-├─ 图像队列背压 (Image Queue)          # services/task_scheduler.py: _image_queue
-├─ 取消机制 (Cancellation)             # services/task_scheduler.py: cancel_event / cancel_llm_request
-└─ 持久化状态背板 (State Backplane)    # services/state_backplane.py: mmap 持久化
+```text
+ASR / RAG
+    -> streaming LLM
+    -> deterministic sentence splitter
+    -> bounded TTS chunk queue
+    -> TTS inference
+    -> ordered audio playback
 ```
 
-### 1.3 关键特性
+形式化为：
 
-1. **任务模型清晰**：用“模型大类（Transformer/Diffusion）+ 运行语义（常驻/一次性）+ 设备亲和（CPU/GPU）”定义任务，并优先保障常驻任务连续可用性
-2. **轻量级**：调度器启动与内存开销可解释（峰值内存 ~27MB，CPU 占用率 ~110% 单核）
-3. **GPU 互斥（单卡约束）**：同一时刻只允许一个 GPU 重任务运行（例如 LLM 或图像生成），避免 8GB 显存下的 OOM 与抖动
-4. **关键任务连续性保障**：当 GPU 被其它重任务占用时，关键任务可迁移到 CPU 继续服务，并用“最大卡顿窗口”量化用户感知中断
-5. **背压与互斥**：当 CPU/GPU 的重资源均被占用时，新来的重任务会排队或被拒绝（可解释退化）
-6. **优先级调度**：CRITICAL > HIGH > MEDIUM > LOW（策略可由上层业务定义；调度器保证语义正确）
-7. **崩溃恢复**：基于 mmap 的状态背板，提供最小可用的任务状态恢复与闭合语义
-8. **取消语义**：协作式中断 + 排队取消 + 迟到结果丢弃（承认不可硬中断的边界）
+\[
+ASR/RAG \rightarrow LLM_{\mathrm{stream}}
+\rightarrow TTSChunkQueue \rightarrow TTS \rightarrow Playback.
+\]
 
-### 1.4 任务模型（你要的版本）
+要求：
 
-你的系统核心问题不是“跑了哪些具体应用”，而是 **常驻交互（以 LLM 为代表）与突发重任务（以 Diffusion 为代表）在边缘设备上的共存**：LLM 更适合常驻热态以保障交互体验；Diffusion 属于突发的一次性重任务，若常驻显存会挤爆单卡资源，因此需要调度来做互斥、让位与冷/热加载权衡。
+- LLM 以 token 流产生文本。
+- 断句器在稳定边界产生 TTS chunk。
+- TTS 模型常驻，不能每个 chunk 重新加载。
+- 一个 TTS chunk 内部暂不抢占，chunk 之间允许重新调度。
+- 音频必须按 chunk 序号输出，不允许丢失、重复或乱序。
+- 取消后，排队 chunk 立即清除；正在执行的 chunk 可以自然完成，但结果必须丢弃。
+- 实验中关闭随机逗号断句，保证相同文本得到相同切分。
 
-你可以用“三条轴”定义任务（论文里保持抽象，但叙事上明确 Transformer+Diffusion 这一对矛盾源）：
+### 2.2 图像工作流
 
-- **模型大类（Model Family）**
-  - **LLM（Transformer）**：CPU/GPU 均可推理，但边缘侧“可用的 CPU 兜底”很大程度依赖量化与高效推理栈（GGUF + llama.cpp 最典型）。因此本文将 LLM 作为 CPU/GPU-capable 常驻交互任务的代表，不等价于“所有 Transformer 都同样可 CPU 兜底”。
-  - **Diffusion**：图像生成（理论可 CPU，但在边缘侧通常延迟不可接受，因此工程上视为 GPU 必需）
-- **运行语义（Service Semantics）**
-  - **常驻/持续任务（Resident）**：需要长期在线、持续响应，不能长时间无输出/无响应；默认对应 LLM（交互式）
-  - **一次性任务（One-shot）**：提交后跑完就结束；典型是图像生成，也可以是一次性的 VL 推理、一次性的 TTS
-- **设备亲和（Device Affinity）**
-  - **GPU 必需（GPU-required，按边缘可用时延定义）**：理论上可能能 CPU 跑，但在边缘设备上 CPU 时延不可接受，因此工程上视为必须 GPU 跑（典型是 diffusion 图像生成）
--  - **CPU/GPU 均可（CPU/GPU-capable）**：既能 CPU 跑也能 GPU 跑，但“是否达到边缘可用时延”高度依赖模型与推理栈；LLM（GGUF + llama.cpp）是目前最成熟的 CPU fallback 路线，VL/TTS 往往需要更小模型或专门推理引擎才能达到相近体验
+普通单图请求为：
 
-把它落到你当前的论文叙事就是：
-- **LLM（GGUF + llama.cpp 为主）**：Resident + CPU/GPU-capable（GPU 常驻优先；GPU 被一次性 GPU-required 任务占用时，迁移到 CPU 维持“可用”）
-- **图像生成（Diffusion）**：One-shot + GPU-required（按“边缘可用时延”定义）
-- **TTS/VL**：多数是 One-shot + CPU/GPU-capable（具体放哪边由实现与资源阈值决定）
+\[
+LLM \rightarrow Diffusion(b=1).
+\]
 
-补一句非常关键的工程动机（建议写进 Introduction/Background）：
-- **冷/热加载权衡**：图像生成与部分一次性任务若每次都冷加载，端到端体验会非常差；但让它们长期热驻显存又不现实（单卡 8GB 顶不住）。因此调度系统要提供“让位 + 排队 + 可解释退化”，并确保常驻交互任务持续可用。
+普通请求要求立即进入资源准备和执行流程，不为了收集未来请求而增加主动等待窗口。迁移、模型加载和显存释放时间仍计入第一张图片延迟。
 
-论文主张的“不变量”是：Resident 任务持续可用 + GPU-required 任务互斥与排队可解释 + 冷/热加载权衡可解释 + 在资源占满时背压/互斥行为可预测 + 崩溃恢复提供最小语义；至于“先跑谁/优先级策略”属于上层业务选择，不是调度器论文要锁死的部分。
+### 2.3 多图语义
 
----
+必须区分两类情况：
 
-## 第二部分：论文结构（10-12页）
+1. **同一 prompt 的多候选图**：可以比较 \(b\in\{1,2,4\}\)。
+2. **不同 prompt 的独立请求**：当前 Forge 路径保持有界队列和串行执行，不能根据同一 prompt 的 `batch_size` 实验声称可以任意合批。
 
-### 摘要（200词）
+规则：
 
-**模板**：
-```
-边缘设备上部署多模态大模型面临资源受限、任务异构、故障恢复等挑战。
-现有方案（Ray、K8s）过于重量级，不适合边缘场景。而 8GB 显存无法
-同时容纳多个模型，传统 GPU 资源隔离方案不可行。
+- 不等待尚未到达的图像请求。
+- b=8 不进入默认候选集。
+- 第一张普通图片使用 b=1。
+- 图片队列非空时不在每两个任务之间反复恢复 LLM。
+- 只有同一请求明确要求多候选图时，才允许使用 b=2 或 b=4。
 
-本文提出 EdgeSched，一个轻量级的调度框架，采用：
-1. 动态资源迁移：图像任务抢占 GPU 时，LLM 自动迁移到 CPU
-2. 优先级队列：保证关键任务优先执行
-3. 背压控制：队列满时拒绝新任务，保持系统稳定
-4. 崩溃恢复：基于mmap的状态持久化（恢复时间 < 12ms）
+现有 `experiment_results/batch_scaling/` 结果是探索性特性数据，当前只证明同一 prompt 下的 batch 扩展趋势；正式实验需要对每个 batch shape 独立预热并完善 manifest。
 
-实验表明，EdgeSched 相比 Naive Async 和 Semaphore 基线：
-- 在混合负载下保持稳定（LLM 迁移后仍可用）
-- 崩溃恢复时间 < 12ms
-- 调度开销 < 10% (vs Semaphore)
+### 2.4 轻量任务
 
-代码已开源：https://github.com/[你的仓库]
-```
+ASR、RAG embedding 和文档解析用于证明调度器能够容纳 CPU 辅助阶段，但它们不是论文的主要显存竞争对象。
 
----
+OCR 若由多模态 LLM 完成，不必额外引入独立大模型。不得为了凑任务数量而人为增加不符合应用流程的模型。
 
-### 1. Introduction（1.5页）
+### 2.5 通用任务抽象：设备亲和性与驻留能力
 
-#### 1.1 背景（0.5页）
+EdgeSched 不按 LLM、TTS 或 Diffusion 等模型名称硬编码路由规则。每个阶段首先声明两个正交维度：
 
-**要点**：
-- 边缘AI兴起：智能家居、工业检测、边缘视频分析
-- 多模态需求：用户需要LLM对话、图像生成、语音合成
-- 资源受限：边缘设备显存8GB、内存16GB
+#### 设备亲和性
 
-**写作建议**：
-```
-近年来，边缘AI应用快速增长。用户希望在本地设备上运行多模态大模型，
-以保护隐私、降低延迟。然而，边缘设备资源受限（如8GB显存），
-同时运行LLM、图像生成、TTS等任务面临挑战。
-```
+设备亲和性描述阶段能够或倾向于在哪里执行：
 
-#### 1.2 挑战（0.5页）
+\[
+d_i\in\{
+CPU\_ONLY,
+CPU\_PREFERRED,
+GPU\_PREFERRED,
+GPU\_REQUIRED
+\}.
+\]
 
-**列举3个挑战**：
-1. **显存不足**：8GB 显存无法同时容纳 LLM（4.7GB）和图像模型（6.7GB），传统 GPU 隔离方案不可行
-2. **任务异构**：LLM 需要低延迟（流式），图像可以排队，需要不同的调度策略
-3. **冷/热加载矛盾**：图像生成与部分一次性任务冷加载开销大；但让它们长期热驻显存又不现实，必须靠调度在“体验与资源”之间做可解释权衡
-4. **系统稳定性**：边缘设备可能崩溃，需要快速恢复
+- `CPU_ONLY`：没有可用的 GPU 执行路径；
+- `CPU_PREFERRED`：CPU 路径已足够，使用 GPU 的收益不足以覆盖占用与转换成本；
+- `GPU_PREFERRED`：CPU 和 GPU 均可执行，但 GPU 通常具有明显性能优势；
+- `GPU_REQUIRED`：该阶段的有效执行路径要求 GPU，必要时可以排队或要求其他阶段释放显存。
 
-#### 1.3 现有方案的问题（0.3页）
+#### 驻留能力
 
-**对比表格**：
-| 方案 | 启动时间 | 内存占用 | 适合场景 | 问题 |
-|-----|---------|---------|---------|------|
-| Ray | 慢 | 大 | 分布式集群 | 太重 |
-| K8s | 很慢 | 很大 | 云端部署 | 太重 |
-| Naive Async | 快 | 小 | 单任务 | 无优先级、无背压 |
-| Semaphore | 快 | 小 | 简单并发 | 无优先级、无恢复 |
+驻留能力描述模型状态能否跨 CPU/DDR 与 GPU 拆分，不能再压缩成一个 `migratable` 布尔值：
 
-#### 1.4 我们的方案（0.2页）
+\[
+\rho_i\in\{
+FIXED,
+WHOLE\_MIGRATABLE,
+PARTITIONABLE
+\}.
+\]
 
-**要点**：
-- 轻量级：启动快、内存小
-- 功能完整：优先级、背压、崩溃恢复
-- 易用：开箱即用，无需复杂配置
+- `FIXED`：运行期只允许一个固定驻留方案；
+- `WHOLE_MIGRATABLE`：可以在完整 CPU 与完整 GPU 实例之间切换，但不能拆分模型；
+- `PARTITIONABLE`：允许经过验证的子结构驻留在 GPU，其余部分驻留在主机 DDR 或由 CPU 执行。
 
----
+对于 `PARTITIONABLE` 阶段，还需要声明拆分粒度：
 
-### 2. Background（1页）
+\[
+g_i\in\{LAYER,COMPONENT,STATE\}.
+\]
 
-#### 2.1 边缘设备特点（0.3页）
+- `LAYER`：按连续模型层或计算块划分；
+- `COMPONENT`：按 talker、tokenizer、encoder、decoder 等相对独立组件划分；
+- `STATE`：仅将 KV Cache、条件编码或其他运行状态放置到不同内存层级。
 
-- 资源受限：8GB显存、16GB内存
-- 单机部署：不需要分布式协调
-- 稳定性要求高：家庭/工业场景
+设备亲和性与驻留能力不能互相替代。例如，一个阶段可以同时是 `GPU_REQUIRED + PARTITIONABLE`：主要计算仍必须在 GPU 上，但部分权重或组件可以驻留在 DDR。另一个阶段可以是 `GPU_PREFERRED + WHOLE_MIGRATABLE`：CPU 路径可用，但实现只支持整体切换。
 
-#### 2.2 多模态任务特性（0.4页）
+每个阶段最终提供有限、离散且经过 profiling 的驻留集合：
 
-**表格**：
-| 任务类型 | 资源需求 | 延迟敏感度 | 可排队性 |
-|---------|---------|-----------|---------|
-| LLM 常驻任务（GGUF + llama.cpp 为主） | GPU/CPU（可迁移） | 高（流式） | 低 |
-| Diffusion 一次性任务（图像生成） | GPU（工程上必需） | 中（端到端） | 高 |
-| 一次性重任务（TTS / VL 等） | CPU（或 GPU） | 中-高 | 中 |
+\[
+r_i\in\mathcal R_i=\{R_i^0,R_i^1,\ldots,R_i^m\}.
+\]
 
-**补充说明**：
-- “GPU 必需”指的是按边缘设备可用时延定义的工程约束：理论可 CPU 推理，但体验不可接受
-- 当只有“两个可长期热驻的轻量任务”且允许一个在 CPU、一个在 GPU 长期热驻时，调度收益会显著下降；你的系统主要解决的是 LLM（常驻交互）与 Diffusion（突发重任务）共存时的矛盾。VL/TTS 也可能纳入该框架，但是否能用 CPU 兜底要以边缘可用时延为准，通常不如 GGUF + llama.cpp 的 LLM 路线稳定
+声明 `PARTITIONABLE` 不等于允许任意百分比切分。只有真实后端能够构造、能够正确运行并已有资源画像的配置，才进入 \(\mathcal R_i\)。当前可用于说明抽象的实例包括：LLM 的层级/状态拆分、组件化 TTS 的组件拆分，以及只允许完整 GPU 运行的图像阶段；这些只是任务画像实例，不是调度器中的模型名称分支。
 
-#### 2.3 设计目标（0.3页）
+- --
 
-1. 轻量级（调度器本体轻量；真实模型内存/显存另计）
-2. 关键任务可用性优先（GPU 上尽量低 TTFT；迁移到 CPU 允许退化但持续可用）
-3. 高稳定性（崩溃恢复时间 < 12ms）
-4. 易用性（简单API）
+## 3. 系统状态与决策动作
 
----
+### 3.1 调度状态
 
-### 3. Related Work（1页）
+在调度事件发生时，系统维护状态：
 
-#### 3.1 边缘计算与AI推理
+\[
+x_t = \langle
+q_I, q_T, K, \{r_i\}_{i\in\mathcal A_t}, M_G, U_C, v, h
+\rangle,
+\]
 
-边缘计算将计算能力下沉到网络边缘，以降低延迟并保护隐私\cite{shi2016edge}。随着大模型的发展，边缘智能（Edge Intelligence）成为研究热点\cite{li2018edge, zhou2019edge}。然而，现有工作主要关注云端到边缘的模型部署，缺乏对资源受限设备上多模态任务共存问题的深入探讨。
+其中：
 
-#### 3.2 分布式调度框架
+- \(q_I\)：图像队列及当前图像任务状态；
+- \(q_T\)：待合成 TTS chunk 数量；
+- \(K\)：当前上下文和 KV Cache 规模；
+- \(\mathcal A_t\)：当前活跃或候选执行的阶段集合；
+- \(r_i\)：阶段 \(i\) 当前采用的离散驻留配置；当前工作负载中包括 \(r_L\) 和 \(r_T\)；
+- \(M_G\)：可用显存及近期峰值；
+- \(U_C\)：CPU 利用率、核心拓扑和可用核心预算；
+- \(v\)：是否处于连续语音会话；
+- \(h\)：近期任务时长、到达间隔与转换历史。
 
-Ray\cite{moritz2018ray}和Kubernetes\cite{verma2015borg, bernstein2014containers}是主流的分布式调度框架，但它们面向数据中心设计，启动时间在秒级到分钟级，内存占用GB级别，不适合边缘设备的资源受限场景。EdgeSched专注于单机边缘设备，启动时间在毫秒级，内存占用<30MB。
+调度不需要在每个 token 后重新求解。决策点限定为：
 
-#### 3.3 GPU内存管理与推理优化
+- 新图像请求到达；
+- 新 TTS chunk 入队；
+- 图像任务完成；
+- TTS 队列清空；
+- LLM 回复或语音会话结束；
+- 模型重新配置完成或资源压力越界。
 
-vLLM\cite{kwon2023vllm}提出PagedAttention技术解决KV Cache碎片化问题，FlexGen\cite{sheng2023flexgen}实现了GPU-CPU Offloading方案。然而，这些方案主要面向服务器场景，假设有充足的GPU资源。EdgeSched针对8GB显存的边缘设备，需要更激进的资源迁移策略和任务调度机制。
+### 3.2 调度动作
 
-#### 3.4 故障恢复机制
-
-传统分布式系统的容错方案\cite{cully2008remus, castro1999pbft}依赖外部存储和协调服务，开销较大。Huang等人\cite{huang2023lightweight}提出了轻量级边缘计算崩溃恢复方案，但仍需要额外的持久化层。EdgeSched使用mmap实现轻量级状态持久化，无需外部依赖，恢复时间<12ms。
-
-#### 3.5 与现有方案对比
-
-| 方案 | 目标场景 | 启动时间 | 内存占用 | GPU资源管理 | 崩溃恢复 |
-|-----|---------|---------|---------|------------|---------|
-| Ray | 数据中心 | 秒级 | GB级 | 分布式调度 | 依赖外部 |
-| Kubernetes | 云端集群 | 分钟级 | GB级 | 容器隔离 | 依赖外部 |
-| vLLM | 服务器 | 秒级 | GB级 | PagedAttention | 无 |
-| FlexGen | 单GPU服务器 | 秒级 | 灵活 | CPU Offloading | 无 |
-| **EdgeSched** | **边缘设备** | **毫秒级** | **<30MB** | **动态迁移** | **mmap** |
-
-EdgeSched填补了边缘设备上多模态AI调度系统的空白，提供了轻量级调度、动态资源迁移、轻量级崩溃恢复和完整的任务生命周期管理。
-
----
-
-### 4. System Design（3页）
-
-#### 4.1 架构概览（0.5页）
-
-**架构图**：
-```
-用户请求
-    ↓
-GlobalTaskScheduler (调度器)
-    ├─ 优先级队列 (PriorityQueue)
-    ├─ 动态资源迁移 (Resource Migration)
-    │   ├─ LLM GPU→CPU 迁移（图像任务抢占时）
-    │   └─ LLM CPU→GPU 回迁（图像任务完成后）
-    ├─ 图像队列 (Image Queue + Backpressure)
-    ├─ 取消管理 (Cancel Events)
-    └─ 持久化状态背板管理 (状态持久化)
-    ↓
-执行层
-    ├─ LLM Worker (GPU/CPU 动态切换, 流式)
-    ├─ Image Worker (GPU, 队列化)
-    └─ TTS Worker (CPU)
-```
-
-**代码位置**：
-- 调度器：`services/task_scheduler.py`
-- 持久化状态背板：`services/state_backplane.py`
-
-#### 4.2 优先级队列（0.5页）
-
-**设计**：
-```python
-# task_scheduler.py: PythonWorker._task_queue
-self._task_queue = asyncio.PriorityQueue()
-
-# 提交任务时按优先级排序
-await self._task_queue.put((-priority.value, task_info))
-```
-
-**优先级定义**：
-- CRITICAL (3): 系统关键任务
-- HIGH (2): 用户交互任务
-- MEDIUM (1): 普通任务
-- LOW (0): 后台任务
-
-**价值**：保证关键任务优先执行
-
-#### 4.3 动态资源迁移（0.8页）
-
-**问题背景**：
-8GB 显存无法同时容纳 LLM（4.7GB）和图像模型（6.7GB），传统 GPU 锁隔离方案不可行。
-
-**核心设计**：
-- **关键任务连续性优先**：当 GPU 被其它重任务占用时，关键任务迁移到 CPU 保持“可用”（允许性能退化，但不允许长时间无响应）
-- **资源互斥 + 可解释退化**：GPU_HEAVY 严格互斥；CPU_HEAVY 在边缘设备上按互斥/排队处理，避免多重并发导致不可预测尾延迟
-- **双模式迁移**：紧急模式（快速让位）与平滑模式（尽量减少用户感知卡顿窗口）
-- **状态迁移（KV Cache）**：已实现，用于在迁移/回迁时保留上下文并降低首包抖动（属于增强项，但已纳入实验口径）
-
-**迁移策略**：
-
-```python
-# 原子热替换模式（默认）
-async def offload_llm_to_cpu(self, urgent: bool = False):
-    if urgent:
-        # 紧急模式：闪电让位，优先释放显存
-        await self._unload_llm_locked()
-        # 后台异步加载 CPU 实例
-        asyncio.create_task(background_cpu_load())
-    else:
-        # 原子热替换模式：先加载新实例，再替换
-        old_inst = self.llm
-        
-        # 1. 加载新实例 (CPU)
-        new_inst = await asyncio.to_thread(
-            self._setup_python_llm, cpu_config, return_instance=True
-        )
-        
-        if new_inst:
-            # 2. 迁移 KV Cache（关键：保持对话上下文）
-            if old_inst:
-                state = await asyncio.to_thread(old_inst.save_state)
-                await asyncio.to_thread(new_inst.load_state, state)
-            
-            # 3. 原子替换
-            self.llm = new_inst
-            
-            # 4. 后台释放旧实例
-            asyncio.create_task(delayed_unload(old_inst))
-```
-
-**双模式迁移/卸载**：
-| 模式 | 场景 | 行为 | 优点 | 缺点 |
-|-----|-----|-----|-----|-----|
-| 紧急模式 | 图像任务急需 GPU | 立即卸载，后台加载 CPU 实例 | 快速让位 | 服务短暂中断 |
-| 原子模式 | 正常迁移 | 先加载新实例，再替换 | 服务不中断 | 需要额外内存 |
-
-**可选：KV Cache / 状态迁移**：
-```python
-# 迁移前保存状态
-state = old_inst.save_state()
-
-# 迁移后恢复状态
-new_inst.load_state(state)
-```
-
-**迁移时机决策**：
-| 场景 | 动作 | 原因 |
-|-----|-----|-----|
-| LLM 在 GPU + 图像任务到达 | LLM → CPU（原子模式） | 图像任务需要 GPU |
-| 图像任务紧急 + 显存紧张 | LLM → CPU（紧急模式） | 快速让位 |
-| 图像任务完成 + 有 LLM 请求 | LLM → GPU（可选） | 提升 LLM 性能 |
-| 多个图像任务排队 | 排队等待 | GPU 一次只能跑一个 |
-
-**性能影响**：
-- LLM 在 GPU：TTFT 26.7 ms（均值；实测；见 experiment_results/supplementary/resource_migration_all.json）
-- LLM 在 CPU：TTFT 189.8 ms（均值；实测；见 experiment_results/supplementary/resource_migration_all.json）
-- GPU→CPU 迁移耗时：2366.4 ms（端到端；实测；见 experiment_results/supplementary/resource_migration_all.json）
-- CPU→GPU 回迁耗时：1964.4 ms（端到端；实测；见 experiment_results/supplementary/resource_migration_all.json）
-- GPU→CPU 迁移窗口：max_gap 2990.7 ms / max_ttft 2990.6 ms（实测；见 experiment_results/supplementary/resource_migration_all.json）
-- CPU→GPU 回迁窗口：max_gap 282.1 ms / max_ttft 2300.7 ms（实测；见 experiment_results/supplementary/resource_migration_all.json）
-
-**价值**：
-- 在 8GB 显存限制下实现多模态共存
-- 用户可以同时聊天和生成图像
-- LLM 迁移后仍可用，不会崩溃
-- 关键任务在资源竞争下仍可持续提供服务（用“最大卡顿窗口/TTFT突刺”量化）
-
-#### 4.4 背压控制（0.3页）
-
-**背压控制**：
-```python
-# task_scheduler.py: ImageWorker 队列管理
-self._image_queue = asyncio.Queue(maxsize=total_slots)
-
-# 队列满时拒绝
-try:
-    self._image_queue.put_nowait(job)
-except asyncio.QueueFull:
-    raise RuntimeError("Image queue is full")
-```
-
-**口径（建议正文写清）**：
-- 总槽位 `total_slots = image_queue_capacity + image_max_concurrent_tasks`
-- 示例（`capacity=4, concurrent=1`）：同时发 5 个图像请求 ⇒ 1 个执行 + 4 个排队；第 6 个会被拒绝（触发背压）
-- 这是“强制互斥 + 有界队列”的稳定性策略，与具体模型无关；因此不建议再引入 TTS 作为背压实验变量
-
-**价值**：
-- 队列满时拒绝新任务，避免内存爆炸
-- 让客户端知道系统繁忙，可以重试或降级
-
-#### 4.5 崩溃恢复机制（0.7页）
-
-**持久化状态背板管理设计**：
-```python
-# state_backplane.py
-class StateBackplane:
-    def __init__(self, file_path):
-        self.file = open(file_path, "r+b")
-        self.mmap = mmap.mmap(self.file.fileno(), 0)
-    
-    def register_task(self, task_id, priority, status):
-        # 写入任务状态到mmap
-        ...
-    
-    def get_active_tasks(self):
-        # 读取所有活跃任务
-        ...
-```
-
-**数据布局**：
-```
-Header (64B): Magic + Version
-Task Slots (32个): task_id(32B) + status(4B) + priority(4B) + timestamp(8B)
-```
-
-**恢复策略**：
-1. 读取所有任务槽位
-2. status=Running 且时间戳过旧 → 标记为Failed
-3. status=Pending → 重新加入队列
-4. status=Completed/Failed/Cancelled → 跳过
-
-**对照口径（建议正文写清）**：
-- 有背板：可恢复崩溃前任务状态并闭合运行中任务
-- 无背板：崩溃前任务状态无法恢复，必然丢失
-
-**价值**：
-- 零拷贝：使用mmap直接映射内存
-- 恢复时间：~11.38ms (Mock)
-- 状态一致：避免任务永久卡在Running
-
-#### 4.6 取消语义（0.5页）
-
-**设计**：
-```python
-# task_scheduler.py: cancel_event 管理
-# LLM取消：协作式中断
-cancel_event = asyncio.Event()
-async for token in llm_generate(..., cancel_event=cancel_event):
-    if cancel_event.is_set():
-        break
-
-# 图像取消：排队取消 + 迟到结果丢弃
-await scheduler.cancel_image_job(job_id)
-```
-
-**三种取消**：
-1. **LLM流式取消**：协作式中断（定期检查cancel_event）
-2. **图像排队取消**：队列中的任务直接丢弃
-3. **迟到结果丢弃**：已开始的任务完成后不推送结果
-
-**局限性（诚实写）**：
-- 不支持硬中断（正在运行的GPU任务不能立即停止）
-- 显存不会立即释放（需要等任务自然结束）
-
----
-
-### 4. Implementation（1页）
-
-#### 4.1 技术栈（0.3页）
-
-- **语言**：Python 3.10.19（WSL2 venv_mvp_core_cu128，实验实际运行环境）；系统 Python 3.12.3 不直接用于实验
-- **异步框架**：asyncio
-- **状态持久化**：mmap
-- **代码量**：~3000行
-
-#### 4.2 核心模块（0.4页）
-
-| 模块 | 文件 | 行数 | 说明 |
-|-----|------|------|------|
-| 调度器 | task_scheduler.py | ~1200 | 核心调度逻辑 |
-| 持久化状态背板 | state_backplane.py | ~300 | 状态持久化 |
-| 配置 | config.py | ~200 | 配置管理 |
-| 实验 | experiments/ | ~2500 | 实验脚本 |
-
-#### 4.3 外部依赖（0.3页）
-
-**LLM**：
-- llama.cpp（本地推理）
-- 或 Qwen2.5-7B（Transformers）
-
-**图像生成**：
-- Stable Diffusion WebUI Forge
-- 或 Diffusers库
-
-**TTS**：
-- GPT-SoVITS（外部服务）
-- 或 Qwen3-TTS（进程内）
-（本文核心实验不依赖 TTS，可作为扩展工作）
-
----
-
-## 第三部分：实验设计（优化版）
-
-你的论文主题是：在资源受限的单 GPU 边缘设备上，通过轻量级调度机制优先保障关键交互任务的连续可用性，并对其它重任务提供隔离与可解释控制，同时在不引入重量依赖的情况下提供基础故障恢复语义。
-
-因此实验要围绕三件事展开：
-1. **关键任务可用性**：在 GPU 被重任务占用时，关键任务仍能持续输出/持续响应（允许变慢，但不允许长时间卡死）。
-2. **互斥与控制**：GPU_HEAVY/CPU_HEAVY 的互斥、排队与拒绝行为可解释且可预测（背压、取消、优先级属于控制面）。
-3. **恢复语义**：进程异常退出后，仍能在本地提供最小可用的状态恢复与闭合语义（不依赖外部 DB/分布式系统）。
-
-### 实验重组原则（非常重要）
-
-从论文叙事上，实验应分成三层，而不是把所有结果混在一起：
-
-1. **机制层（Mechanism-Level Validation）**
-   - 回答：`save_state / load_state` 是否真的比 kill & restart 更平滑
-   - 代表图：`Cold-Start vs Hot-Swap`
-2. **系统层（System-Level Comparison Under Contention）**
-   - 回答：当第二个 GPU 重任务到来时，谁调度得更好
-   - 主 baseline：
-     - `Manual llama.cpp switch`（Restart-based recovery）
-     - `LRU / Unified Memory`（OS-managed memory）
-     - `Symmetric Migration`（GPU→CPU 和 CPU→GPU 使用同一恢复逻辑）
-     - `EdgeSched real workload`
-3. **控制面/可靠性层（Control Plane & Reliability）**
-   - 回答：系统是否具备恢复、取消、背压等完整语义
-   - 包括：崩溃恢复、状态背板、取消语义、背压
-
-**注意**：
-- `naive async / semaphore` 只回答“控制面开销”问题，
-- **不再属于老师当前要求的主 baseline**，
-- 因此应降级到 supplementary / appendix，而不是正文主图。
-
-### 指标口径（务必写清）
-
-为了避免“理论合理但无法引用”的尴尬，建议在所有交互相关实验里统一使用这两个口径（至少选一个）：
-
-- **最大卡顿窗口 `max_gap_ms`**：在持续流式输出/持续短请求的背景下，任意相邻输出/响应之间的最大时间间隔（用户感知的“断档”）
-- **TTFT 突刺 `max_ttft_ms` / `p99_ttft_ms`**：在固定频率请求下，切换窗口内的最大/尾部 TTFT（用户感知的“卡一下”）
-
-### 真实模型依赖（务必分清“语义验证”与“真实性能”）
-
-论文里建议把每个实验的“是否必须真实模型”写成明确口径，避免读者质疑“跑得太快是不是假的”：
-
-| 实验 | 是否必须真实模型 | 说明（写作口径） |
-|---|---:|---|
-| 动态资源迁移（resource_migration） | 是（LLM） | 关键指标（LLM TTFT/迁移耗时/回迁卡顿窗口）依赖真实 LLM 推理与真实加载/卸载开销；背压互斥子实验（1.3）推荐通过 Forge API 调用真实生图以获得可引用的“排队等待时间/资源采样” |
-| 背压与队列控制（large_scale_stress_test） | 否 | 证明控制面稳定性，使用 Mock 负载即可；与老师要求的主 baseline 对比不是一类问题 |
-| 故障恢复语义（crash_recovery） | 否 | 目标是状态持久化与闭合语义；任务体只需能制造 RUNNING/PENDING 窗口，不要求真实推理 |
-| 取消语义（cancellation_semantics） | 否（语义）/ 是（数值） | 语义正确性不依赖真实模型；若要引用“LLM 取消延迟数值”，需明确运行时确实启用了真实 LLM 后端（当前仓库内结果为 Mock 语义验证） |
-| 基线对比（baseline_comparison） | 否 | 仅用于解释“纯调度开销”；应降级到 supplementary，不再作为正文主 baseline |
-| 状态背板验证（state_backplane_recovery） | 否 | 纯 mmap 读写与一致性验证，不涉及模型 |
-
-### 当前已固化的实验数据清单（仓库内）
-
-实验结果目录：`legacy/mvp_core/experiment_results/`
-
-| 类别 | 文件 | 依赖真实模型 | 主要结论/可引用口径 |
-|---|---|---:|---|
-| 新增主基线（Cold-Start vs Hot-Swap） | `baseline_cold_start_results.json` | 是（真实 GGUF LLM） | 机制层主基线；目前最干净、最可直接引用 |
-| 新增真实负载（Real Workload Trace） | `real_workload_trace.json` | 部分真实，但脚本路径已混杂 | 仅可作为临时探索结果；待按旧 C++ 路径重做 |
-| 新增失败态基线（LRU / UM Thrashing） | `baseline_lru_thrashing_results.json` | 部分真实，但执行栈不够统一 | 只能说明 thrashing 趋势；待重做后再决定是否正文引用 |
-| 动态资源迁移（resource_migration） | `supplementary/resource_migration_all.json` | 是（真实 GGUF LLM） | 关键指标（LLM TTFT/迁移耗时/回迁卡顿窗口）依赖真实 LLM 推理与真实加载/卸载开销；背压互斥子实验（1.3）推荐通过 Forge API 调用真实生图以获得可引用的“排队等待时间/资源采样” |
-| 背压与队列控制（large_scale_stress_test） | `supplementary/large_scale_stress_test.json` | 否 | 证明控制面稳定性，使用 Mock 负载即可；与具体模型无关 |
-| 崩溃恢复（汇总） | `supplementary/crash_recovery_comparison.json` | 否 | 对比汇总：有/无背板 MTTR 与任务恢复成功率 |
-| 状态背板（语义+微基准） | `core/state_backplane_recovery.json` | 否 | mmap 背板一致性、闭合策略、读写延迟（us 级） |
-| 取消语义（语义验证） | `core/cancellation_semantics.json` | 否（当前为 Mock） | 流式取消不再输出、排队取消立即生效、迟到结果丢弃 |
-| 基线对比（微基准） | `supplementary/baseline_comparison.json` | 否（Mock） | Naive/Semaphore/Threadpool/EdgeSched 的吞吐与尾延迟对比（解释调度成本） |
-| 压力测试（微基准） | `supplementary/large_scale_stress_test.json` | 否（Mock） | 高并发下的完成率、吞吐、延迟分布与资源采样 |
-
-### 实验框架结构
-
-所有实验脚本已统一重构，使用 `experiments/framework/` 提供的基础设施：
-
-```
-experiments/
-├── framework/                    # 统一实验基础设施
-│   ├── __init__.py              # 模块入口
-│   ├── paths.py                 # 路径管理
-│   ├── config.py                # 配置和结果数据结构
-│   ├── statistics.py            # 统计分析（置信区间）
-│   ├── reproducibility.py       # 可重复性保障
-│   ├── mock_tasks.py            # Mock 任务
-│   └── base.py                  # 实验基类
-├── migration/                    # 动态迁移实验（核心）
-│   ├── resource_migration_experiment.py
-│   └── symmetric_migration_experiment.py  # 对称迁移基线（新增）
-├── recovery/                     # 恢复实验
-│   └── crash_recovery_experiment.py
-├── cancellation/                 # 取消语义实验
-│   └── cancellation_semantics_experiment.py
-├── scalability/                  # 压力测试
-│   └── large_scale_stress_test.py
-├── comparison/                   # 基线对比
-│   └── baseline_comparison.py
-└── backplane/                    # 背板测试
-    └── state_backplane_recovery_experiment.py
+通用联合动作表示为：
+
+\[
+a_t=\left(\{(r_i,c_i,b_i)\}_{i\in\mathcal A_t},\mu\right),
+\]
+
+其中：
+
+- \(r_i\)：阶段 \(i\) 的设备和驻留档位；
+- \(c_i\)：阶段 \(i\) 的 CPU 核心预算；
+- \(b_i\)：阶段 \(i\) 的可选 batch 或并发参数；不适用时取 1；
+- \(\mu\)：保持、紧急迁出、原子切换、恢复或重新配置。
+
+对当前 LLM、TTS、Diffusion 工作负载，该动作可具体展开为：
+
+\[
+a_t=(r_L,r_T,c_L,c_T,b_D,\mu).
+\]
+
+该展开只是一种 workload 实例，不是调度接口的固定上限。
+
+### 3.3 候选驻留档位
+
+候选集合由驻留能力生成：
+
+- `FIXED` 只产生一个可选驻留配置；
+- `WHOLE_MIGRATABLE` 可以产生完整 CPU 和完整 GPU 配置；
+- `PARTITIONABLE` 可以在完整配置之间加入经过真实验证的层级、组件级或状态级配置。
+
+LLM 第一版使用离散档位：
+
+\[
+r_L\in\{CPU,H_1,H_2,H_3,FULL\_GPU\}.
+\]
+
+其中 \(H_k\) 对应经过真实 profiling 验证的 `n_gpu_layers` 配置，而不是平均切成固定百分比。
+
+TTS 的基础配置为：
+
+\[
+r_T\in\{CPU,GPU\}.
+\]
+
+如果真实后端验证组件拆分可行，则扩展为：
+
+\[
+r_T\in\{CPU,H_{COMP},GPU\},
+\]
+
+其中 \(H_{COMP}\) 表示显式定义的组件放置方案，例如将主要生成组件放在 GPU、将可独立执行或可缓存的辅助组件放在 CPU/DDR。不得使用不透明的 `device_map=auto` 结果直接充当稳定驻留档位；每个组件放置必须写入 manifest 并单独 profiling。
+
+MVP 不实现 CUDA 通用分页，也不宣称原地逐页迁移。第一版只支持后端明确暴露的层级、组件级或状态级拆分。当前 llama.cpp 的 `n_gpu_layers` 是模型加载配置，因此 LLM 弹性驻留应定义为：
+
+> 创建目标驻留配置的新实例，迁移 KV 状态，并通过紧急替换或原子热替换完成配置切换。
+
+- --
+
+## 4. 三类运行状态
+
+### 4.1 S0：没有图像任务
+
+需要评估的候选配置：
+
+| 配置 | LLM | TTS |
+|---|---|---|
+| S0-A | 全 GPU | CPU |
+| S0-B | CPU | GPU |
+| S0-C(k) | 混合驻留 \(H_k\) | GPU |
+| S0-D | 全 GPU | GPU，仅在真实显存画像允许时测试 |
+
+选择依据不是单独模型速度，而是完整 LLM→TTS 流水线。
+
+第一段语音时间：
+
+\[
+TTFA = T_{transition}
++T_{LLM}^{first\ chunk}
++T_{TTS}^{first\ chunk}.
+\]
+
+进入稳态后，流水线节拍近似为：
+
+\[
+T_{pipe}\approx
+\max(T_{LLM}^{chunk},T_{TTS}^{chunk}).
+\]
+
+如果把 LLM 放到 CPU 后导致第一句产生过慢，即使 TTS 在 GPU 上很快，也不一定改善 TTFA。因此不能预先认定 S0-B 或 S0-C 一定优于 S0-A。
+
+### 4.2 S1：一个图像任务运行
+
+需要评估的候选配置：
+
+| 配置 | Diffusion | LLM | TTS |
+|---|---|---|---|
+| S1-A | GPU | CPU | CPU |
+| S1-B(k) | GPU | 混合驻留 \(H_k\) | CPU |
+| S1-C | GPU | CPU | GPU |
+| S1-D(k) | GPU | 混合驻留 \(H_k\) | GPU |
+
+S1-C 与 S1-D 只有在显存安全且 Diffusion slowdown 可接受时才进入调度候选。显存放得下不等于 GPU 计算共存一定有收益，必须测量实际干扰。
+
+### 4.3 S2：图像队列非空
+
+- 保持当前可行的降级或混合驻留状态。
+- 不在相邻图像任务之间恢复到 S0。
+- 不同 prompt 串行执行。
+- 同一请求的多候选图可以根据画像选择 b=1、2、4。
+- 队列清空后重新选择 S0 的目标配置，而不是无条件恢复 LLM 全 GPU。
+
+- --
+
+## 5. 配置相关任务画像
+
+旧模型用一个静态显存值和一个 CPU/GPU 比率描述任务，无法支撑联合放置。新版首先定义静态能力描述：
+
+\[
+\Phi_i=\langle
+d_i,\rho_i,g_i,role_i,preempt_i,queue_i,deps_i
+\rangle,
+\]
+
+其中 \(d_i\) 是设备亲和性，\(\rho_i\) 是驻留能力，\(g_i\) 是拆分粒度，其余字段描述阶段角色、可抢占性、可排队性和工作流依赖。
+
+随后为每个允许的驻留配置建立动态性能画像：
+
+\[
+\mathcal P_i(r_i,z)=\langle
+\hat M_i(r_i,z),\hat T_i(r_i,z),\hat C_i(r_i,z),\hat E_i(r_i,z)
+\rangle,
+\]
+
+其中 \(r_i\in\mathcal R_i\)，\(z\) 包括核心预算、输入规模和运行环境。静态能力决定哪些配置可以被考虑，动态画像决定这些配置在当前设备上是否值得选择。
+
+### 5.1 LLM 画像
+
+输入特征：
+
+- `n_gpu_layers` / 驻留档位；
+- CPU 物理核心预算与线程数；
+- 上下文长度和 KV Cache 大小；
+- prefill token 数；
+- 输出 token 数。
+
+记录：
+
+- TTFT；
+- prefill tokens/s；
+- decode tokens/s；
+- token gap；
+- 显存、内存峰值；
+- KV 保存、恢复和实例切换时间；
+- 不同驻留档位之间的转换时间。
+
+### 5.2 TTS 画像
+
+输入特征：
+
+- CPU、GPU 或经过验证的组件级驻留配置；
+- 组件放置映射以及哪些中间表示已缓存；
+- CPU 核心预算；
+- 文本字符数和分句长度；
+- 目标语言和固定声音配置。
+
+记录：
+
+- 队列等待时间；
+- 首音频 chunk 延迟；
+- 单 chunk 合成时间；
+- 音频时长；
+- 实时率 \(RTF=T_{synthesis}/T_{audio}\)；
+- 峰值显存和内存；
+- 设备加载或切换时间；
+- talker、code tensor transfer、codec decode 与 prompt 构建的分段时间。
+
+当前 Qwen3-TTS 路径使用 `non_streaming_mode=True`。因此现有指标 `first_chunk_ready` 表示完整句子 WAV 在主进程可用，不是模型内部第一音频采样延迟；论文在真正增量音频后端完成前不得把它简称为模型 TTFA。
+
+### 5.3 Diffusion 画像
+
+输入特征：
+
+- 模型；
+- 分辨率；
+- steps、sampler、CFG；
+- batch size；
+- 是否有 LLM/TTS GPU 工作共存。
+
+记录：
+
+- 模型冷加载和稳态生成时间；
+- 第一张图片完成时间；
+- 峰值显存及时间线；
+- 共存时的 slowdown；
+- 失败和 OOM 原因。
+
+画像首先来自离线 profiling，随后可按配置使用 EMA 修正。不同配置不得共用同一个全局平均时长。
+
+- --
+
+## 6. 可行性约束与优化目标
+
+### 6.1 显存约束
+
+\[
+\sum_{i\in\mathcal A_t}\hat M_i(r_i,z_i)+G_{safe}
+\le V_{GPU}.
+\]
+
+在当前三模型实例中可展开为：
+
+\[
+M_L(r_L,K)+M_T(r_T)+M_D(b)+G_{safe}
+\le V_{GPU}.
+\]
+
+安全余量 \(G_{safe}\) 必须根据 idle GPU 高水位、`reserved-allocated` allocator slack、单模型峰值相加与真实共置峰值之间的正残差，以及重复运行峰值漂移共同校准，不能只写死为一个未经验证的比例。容量公式只用于筛选，最终可行性必须由目标组合真实同时加载并运行证明。
+
+### 6.2 CPU 约束
+
+\[
+\sum_{i\in\mathcal A_t}c_i+R\le C_{physical},
+\]
+
+其中 \(R\) 是设备驱动、音频播放、调度器、WSL2 和操作系统的保留预算。在当前主要 CPU 竞争者只有 LLM 和 TTS 时，该式退化为 \(c_L+c_T+R\le C_{physical}\)。
+
+当前校准使用以下明确起点：
+
+\[
+R_{sys}=2\text{ 个物理核},\qquad C_{work}=16-2=14.
+\]
+
+被保留物理核的 SMT sibling 同时排除在 LLM/TTS affinity 外。该数值是待验证的起始配置，不是预先写死的论文结论；正式校准比较：
+
+\[
+R_{sys}\in\{0,1,2,4\}.
+\]
+
+选择同时满足以下条件的最小 \(R_{sys}\)：
+
+- 音频播放无 underrun；
+- 系统和调度线程无资源饥饿导致的明显延迟尖峰；
+- 辅助阶段满足执行前冻结的绝对 SLA，并同时报告相对独立运行的 slowdown；
+- LLM→TTS 主流水线相对“相同放置、无辅助任务”的隔离基线性能损失不超过 5%。
+
+ASR、RAG 和 BERT 不永久占用这两个系统核心。它们作为短时阶段按需获得并在结束后归还核心。初始画像候选为：
+
+| 辅助阶段 | CPU 核心候选 |
+|---|---|
+| JSON RAG 查询、过滤和排序 | 1、2 个物理核 |
+| BERT embedding / reranking | 1、2、4 个物理核 |
+| 轻量 ASR | 1、2、4 个物理核 |
+
+每种辅助阶段选择满足自身延迟约束的最小核心数。多个辅助任务同时到达时优先排队或按工作流依赖执行，不要求它们同时占满独立核心预算。
+
+当前建议在正式实现前冻结以下默认 SLA：JSON RAG top-32 p95 不超过 50 ms；BGE 对 1 个 query 与 32 个候选做 dense rerank 的 p95 不超过 150 ms；Faster-Whisper Small 对固定 5–10 秒中文音频的 p95 RTF 不超过 0.8。修改 SLA 必须使用新 run id，不能覆盖旧结果。
+
+SMT 逻辑线程不能直接当作额外物理核心。正式实验必须记录物理核心、逻辑 CPU、亲和掩码和 CCD 拓扑。
+
+### 6.3 分层目标
+
+不使用难以解释的单一主观加权和。采用分层约束与 Pareto 比较。
+
+第一层：正确性与安全
+
+- 不发生 OOM；
+- KV 和对话状态在切换后保持一致；
+- TTS chunk 不丢失、不重复、不乱序；
+- 有界队列、拒绝和取消语义正确；
+- 真实后端失败不能静默回退成 Mock 后继续记录性能。
+
+第二层：交互约束
+
+- 普通单图请求不主动等待聚批；
+- 稳态语音无播放断流；
+- 目标 \(RTF_{TTS}^{p95}\le0.8\)，同时报告 \(RTF<1\) 的实际边界；
+- 运行中的 Diffusion 不硬中断；
+- 未知画像或显存不安全时使用保守回退配置。
+
+第三层：性能优化
+
+1. 最小化语音 TTFA；
+2. 最小化第一张图片完成时间；
+3. 最大化 LLM decode tokens/s；
+4. 降低完整语音回复完成时间；
+5. 减少无收益的模型转换和驻留抖动。
+
+Diffusion slowdown 不预先锁死为唯一阈值。正式报告应展示 5%、10%、20% slowdown 约束下的可行配置或 Pareto 前沿。
+
+### 6.4 保守回退
+
+画像缺失、预测显存不足或共享 GPU 配置未经验证时，回退到：
+
+\[
+Diffusion_{GPU}+LLM_{CPU}+TTS_{CPU}.
+\]
+
+回退路径本身也必须经过真实测试。
+
+- --
+
+## 7. 代价模型
+
+### 7.1 预测对象
+
+代价模型预测已经到达的任务和已知流水线阶段，不为了聚批去等待未来请求。
+
+需要维护：
+
+\[
+\hat T_i(r_i,c_i,z_i),
+\]
+
+以及当前工作负载的具体预测器：
+
+\[
+\hat T_D(model,resolution,steps,b,co\_runner),
+\]
+
+\[
+\hat T_L(r_L,c_L,K,input,output),
+\]
+
+\[
+\hat T_T(r_T,c_T,text\_length),
+\]
+
+\[
+\hat T_{transition}^{(i)}(r_{src},r_{dst},state_i).
+\]
+
+### 7.2 转换代价
+
+\[
+C_{transition}=
+T_{load}+T_{KVsave}+T_{KVrestore}+T_{swap}+P_{service}.
+\]
+
+代价必须与源配置、目标配置和 KV 大小关联，不再只有“全 GPU→全 CPU”的一个常数。
+
+### 7.3 驻留迟滞
+
+为避免反复加载和释放，需要加入迟滞：
+
+- 图像队列非空时不恢复到 S0；
+- 刚完成配置转换时，在最小驻留窗口内不因微小预测变化再次切换；
+- 连续语音会话可将一次转换成本摊销到多轮回复；
+- 队列清空或会话状态改变时重新评估目标配置；
+- 任何迟滞不能给普通单图请求增加主动聚批等待。
+
+### 7.4 规划结果
+
+准入控制不应只返回 CPU/GPU 和一个 `requires_offload` 布尔值，而应返回：
+
+```text
+PlacementPlan
+  phase_placements[]
+    phase_id
+    target_device
+    residency_profile
+    cpu_core_budget
+    batch_or_concurrency
+  transitions[]
+  predicted_vram
+  predicted_latency
+  predicted_audio_rtf
+  fallback_plan
+  decision_reason
 ```
 
----
+- --
 
-### 实验设计原则与有效性辩护（Validity Argument）
+## 8. CPU 核心分配方法
 
-**审稿人可能会问：“为什么稳定性测试用 Mock？”**
+核心分配不能从 7+7 或 8+6 等对称组合开始猜。
 
-你需要在论文中明确阐述：本系统验证分为**控制面（Control Plane）**与**数据面（Data Plane）**。
+CPU 分核只在两个或以上 CPU-heavy 阶段真实重叠时展开。没有图像任务时，不把 `LLM_CPU + TTS_CPU` 作为主要性能候选：若只有一个重型 CPU 阶段，则直接令
 
-1.  **控制面验证（稳定性/调度逻辑） -> Mock 是金标准**
-    *   **逻辑同构**：调度器的核心职责是管理状态机（Pending → Running → Failed）、维护队列顺序、触发背压。这些逻辑对于计算 `1+1` 的 Mock 任务和计算矩阵乘法的 AI 任务是**完全一致**的。
-    *   **压力边界**：Mock 允许我们在 8GB 显存设备上模拟 2000+ 并发请求，纯粹压测调度器的 `asyncio` 循环处理能力和 `mmap` 读写稳定性。如果用真实模型，显存早就溢出了，测不出调度器本身的极限。
-    *   **故障注入**：Mock 任务可以精确控制执行时间（如 sleep 0.1s），让我们能精准地在“第 10 个任务执行中”注入崩溃，验证恢复逻辑。
+\[
+c_i=C_{physical}-R_{sys}.
+\]
 
-2.  **数据面验证（真实性能） -> 必须用 Real Model**
-    *   这就是为什么**实验 1（动态资源迁移）**必须用真实 LLM。因为显存换入换出（Swap In/Out）、模型推理延迟（TTFT）、PCIe 带宽占用，这些物理特性是 Mock 无法模拟的。
-    *   **结论**：我们用 Real Model 验证了“物理可行性”，用 Mock 验证了“逻辑健壮性”，两者互补。
+因此，大规模 LLM/TTS 分核矩阵主要用于 Diffusion 占据 GPU 后的 S1 状态。S0 中只有当最终候选同时包含活跃的 LLM CPU 分区和 TTS CPU 分区时，才进行小范围局部细化。
 
----
+### 8.1 单模型扩展曲线
 
-### 实验1：动态资源迁移（核心实验）
+先分别测试 LLM 与 TTS：
 
-**文件**：`experiments/migration/resource_migration_experiment.py`
+\[
+c\in\{2,4,6,8,10,12,14,16\}.
+\]
 
-**目的**：证明在 8GB 显存限制下，当 GPU 被其它重任务占用时，关键交互任务（默认 LLM）仍能持续可用；并验证在 CPU/GPU 重资源占满时的背压互斥行为。
+得到：
 
-**系统约束**：
-- GPU_HEAVY：单卡互斥（同一时刻只允许一个 GPU 重任务）
-- CPU_HEAVY：为了可预测尾延迟，在边缘设备上按互斥/排队处理（并发会导致卡顿窗口不可控）
-- LLM (4.7GB) + 图像模型 (6.7GB) > 8GB 显存，无法同时加载
+- LLM 的 \(Throughput_L(c,r_L)\)；
+- TTS 的 \(RTF_T(c,r_T,length)\)；
+- 每增加两个物理核心的边际收益；
+- 出现带宽、缓存或功耗饱和的位置。
 
-**迁移逻辑**：
+### 8.2 推导 TTS 最低核心预算
 
-| 方向 | 流程 | 原子替换？ |
-|-----|-----|----------|
-| **GPU→CPU** | 释放GPU LLM → DDR加载CPU LLM → GPU加载图像模型 | ❌ |
-| **CPU→GPU** | GPU卸载图像 → GPU加载LLM → 原子替换 → 延迟释放CPU LLM | ✅ |
+\[
+c_T^{min}=\min\{c:
+RTF_T^{p95}(c)\le0.8
+\land Gap_{audio}=0\}.
+\]
 
-**三个子实验**：
+并发实验只需要从以下邻域开始：
 
-#### 1.1 GPU→CPU 迁移效果
+\[
+c_T\in\{c_T^{min}-2,c_T^{min},c_T^{min}+2\},
+\]
 
-**场景**：用户正在聊天，突然要生成图像
+\[
+c_L=C_{physical}-R-c_T.
+\]
 
-**步骤**：
-1. LLM 在 GPU 上运行，测量 TTFT（基线）
-2. 提交图像任务
-3. 系统执行迁移：
-   - 释放 GPU 上的 LLM（释放 4.7GB 显存）
-   - 在 DDR 上加载 CPU LLM（n_gpu_layers=0）
-   - 在 GPU 上加载图像模型
-4. 测量 LLM 在 CPU 上的 TTFT
+超出合法范围的候选自动删除。7+7 只作为对称基线，而不是默认策略。
 
-**关键指标**：
-| 指标 | 说明 | 目标 |
-|-----|-----|-----|
-| `llm_gpu_ttft_ms` | GPU 上的 TTFT（基线） | 越低越好 |
-| `llm_cpu_ttft_ms` | CPU 上的 TTFT（迁移后） | 可接受变慢 |
-| `migration_time_ms` | 迁移耗时（释放+重加载） | 可解释即可 |
-| `max_gap_ms` 或 `max_ttft_ms` | 迁移窗口内的最大用户感知卡顿 | 关键指标 |
-| `llm_still_working` | LLM 是否仍能响应 | ✅ |
+### 8.3 拓扑消融
 
-**判断标准**：
-- LLM 迁移后仍能响应（不崩溃）
-- GPU 显存被图像模型占用
-- CPU 被 LLM 占用
+只对最优的两个分配方案比较：
 
-#### 1.2 CPU→GPU 回迁效果（原子替换）
+- 线程数限制但不绑核；
+- 分离绑核；
+- CCD 感知隔离；
+- 开启 SMT 后的逻辑线程配置；
+- 不保留系统核心；
+- 操作系统默认调度。
 
-**场景**：图像生成完成，LLM 回迁 GPU
+这样才能区分收益来自减少线程、核心隔离、缓存局部性还是 SMT。
 
-**步骤**：
-1. LLM 在 CPU 上运行，图像模型在 GPU 上
-2. 图像任务完成
-3. 系统执行回迁：
-   - GPU 卸载图像模型
-   - GPU 加载 LLM
-   - 原子替换（self.llm = gpu_llm）
-   - 延迟释放 CPU LLM（等当前任务完成）
-4. 在持续请求/持续流式输出背景下测量“最大卡顿窗口/TTFT突刺”
-5. 记录回迁后第一次 GPU 请求的 TTFT（反映热切换后的首次抖动）
+- --
 
-**关键指标**：
-| 指标 | 说明 | 目标 |
-|-----|-----|-----|
-| `restore_time_ms` | 回迁耗时 | 以实测为准 |
+## 9. 当前实现差距
 
-#### 1.3 背压互斥验证（Diffusion 队列）
+截至 2026-08-28，当前代码与目标机制之间至少存在以下差距：
 
-**场景**：同一时刻只允许一个图像生成任务占用 GPU（Diffusion 严格互斥）；第二个图像任务必须排队等待。
+1. `services/phase_aware/phase_model.py`
+   - LLM 仍是 GPU_NORMAL / CPU_DEGRADED / RESTORING 三态。
+   - TTS 预设默认 CPU，不会动态比较完整流水线。
+2. `services/phase_aware/gpu_lease.py`
+   - Resident 和 Burst 仍按重任务独占处理。
+   - SHARED lease 尚未进入真实执行路径。
+3. `services/phase_aware/cost_model.py`
+   - burst 时长预测主要用于记录。
+   - GPU_REQUIRED 最终仍直接触发完整迁移。
+   - benefit 和 queue pressure 阈值没有形成闭环决策。
+4. `services/phase_aware/phase_scheduler.py`
+   - LLM 剩余工作时间被固定为 0。
+   -每个 burst 后立即恢复，不能处理 burst train。
+5. `services/cpp_engine_migration.py`
+   - Python llama.cpp 路径支持完整 CPU/GPU 实例替换和 KV 保存恢复。
+   -尚未提供任意 `n_gpu_layers` 目标档位的统一重新配置接口。
+6. C++ 原生 worker
+   -真实动态迁移尚未完成，不能将 C++ 绑定可导入等同于迁移可用。
+7. TTS
+   - 当前源码已包含真实 Qwen3-TTS worker、GPU 句长 profiling、CPU/GPU smoke、确定性断句、有界队列与取消/顺序测试；这些结果仍属于 `experiment_results/` 探索数据。
+   - 2026-08-28 的 GPU 句长画像中 45/45 条 RTF 均大于 1；当前后端尚不能支持持续实时播放，不能声称稳态无 underrun。
+   - GPU句长 profiling 使用未限制 CPU affinity 的主机基线；还需要补充保留系统核心后的对照。
+   - TTS 尚未接入 Phase-Aware，T0–T3 组件放置也尚未实现。
+8. N 阶段实验
+   - `experiments/phase_aware/exp2_*` 和 `exp3_*` 主要使用 `asyncio.sleep`，只能验证调度语义。
+9. 辅助任务与播放环境
+   - BGE ONNX 已完成接口 smoke；Faster-Whisper 权重、固定 Python 依赖和 CPU int8 单核真实接口 smoke 均已就绪。3.42 s 参考音频的单轮 RTF 约为 1.44，只能证明链路可用，不能替代 1/2/4 核正式测量。
+   - WSL2 已通过 ALSA→WSLg Pulse 桥接打开真实 PortAudio 输出，并实现 Windows WASAPI 回退与显式采样率协商。两条路径的 1 s 静音 smoke 均为 0 underflow；这只解除环境门槛，真实 TTS chunk 与并发负载下的 underrun 仍须正式测量，缓冲时间线不能替代真实播放 callback。
 
-**步骤**：
-1. 提交图像任务 A（占用 GPU，作为“长任务”）
-2. 立即提交图像任务 B（应排队等待，不会并发跑）
-3. 等待任务 A 完成
-4. 验证任务 B 之后开始执行并最终完成
+实现和论文必须诚实反映这些边界。
 
-**关键指标**：
-| 指标 | 说明 | 目标 |
-|-----|-----|-----|
-| `queued` | 是否被排队 | ✅ |
-| `queue_wait_time_ms` | 等待时间（直到开始执行） | 记录实际值（若启用 Forge 则可引用为真实生图队列等待） |
-| `eventually_executed` | 资源释放后是否最终执行 | ✅ |
-| `system_not_crashed` | 系统是否崩溃 | ❌ 未崩溃 |
+- --
 
-**判断标准**：
-- 第三个重任务进入排队（背压生效）
-- 系统不会因为资源竞争而崩溃
-- 对应资源空闲后任务能够继续执行（自动推进）
+## 10. 分阶段实施路线
 
-**运行命令**：
-```powershell
-python legacy/mvp_core/experiments/migration/resource_migration_experiment.py --test all
+### P0：独立真实 TTS 路径（探索实现已核对）
+
+目标：在 EdgeSched 中接入真实 Qwen3-TTS-12Hz-0.6B-Base，替代真实实验中的 TTS Mock。
+
+最低要求：
+
+- TTS 模型在一个运行阶段内保持常驻；
+- 接收确定性句子 chunk；
+- 支持 CPU 和 GPU 两种固定启动配置；
+- 支持配置 CPU 线程/核心预算；
+- 记录每个 chunk 的队列时间、合成时间、音频时长、RTF、设备和资源峰值；
+- 为后续真实 `PhaseTask("tts")` 接入保留稳定 adapter 契约；
+- 保留 Mock 供单元测试使用；
+- 真实后端失败必须明确失败，不能静默记录成 Mock 性能。
+
+P0 暂不要求：
+
+- LLM、TTS、Diffusion 的联合最优调度；
+- 动态设备迁移；
+- C++ TTS 实现；
+- 完整论文图表。
+
+P0 的独立 worker、adapter、smoke、原始 GPU 句长迭代和 manifest 已在当前工作副本核对。它尚未连接 LLM、播放器、ResourceManager 或 Phase-Aware，因此只能进入探索性 TTS profiling，不直接进入正式论文主实验。
+
+### P1：单模型 profiling
+
+分别建立：
+
+1. LLM：`n_gpu_layers × CPU cores × KV length`；
+2. TTS：`residency profile × CPU cores × chunk length`，至少包含完整 CPU、完整 GPU，并在后端可行时加入组件级拆分；
+3. Diffusion：`resolution × steps × batch size`。
+
+所有结果先写入 `experiment_results/`，保留原始迭代与 manifest。
+
+#### P1-A：TTS 驻留与主机核心对照
+
+首先验证已完成 GPU 句长曲线是否受到主机 affinity 的显著影响：
+
+| 配置 | 主机 CPU 约束 |
+|---|---|
+| U | 16C/32T，不限制 affinity |
+| R2-SMT | 保留 2 个物理核，TTS 可使用 14C/28T |
+| R2-NoSMT | 保留 2 个物理核，每个可用物理核只使用一个硬件线程，即 14C/14T |
+
+三种配置各测试短、中、长文本，快速校准至少收集 15 个 chunk。若 R2 与 U 的 first-chunk-ready 或 RTF 差异不超过 5%，原句长结果保留为 `unrestricted_host baseline`；否则使用 R2 重新运行完整句长 profiling。
+
+随后测试 TTS 的显式组件级驻留：
+
+| 配置 | 主要生成组件 | Tokenizer / Codec | Speaker / Prompt 组件 |
+|---|---|---|---|
+| T0 | GPU | GPU | GPU |
+| T1 | GPU | CPU | GPU |
+| T2 | GPU | CPU | CPU |
+| T3 | GPU | CPU | GPU 构建一次 prompt，缓存后将 speaker encoder 卸载到 CPU |
+
+这里的 Tokenizer / Codec 指 speech tokenizer/codec；文本 tokenizer 没有 GPU 推理模块，始终留在 CPU。不使用不透明的自动切分作为论文配置。每种组件映射必须明确写入 manifest，并测试约 20、50、100 个中文字符的输入。记录 first-chunk-ready、合成时间、RTF、GPU allocated/reserved/进程总显存、主机 RSS、CPU 利用率和组件间传输时间。
+
+只保留在显存、TTFA 和 RTF 上属于 Pareto 前沿，并且实际能够为其他 GPU 阶段释放有用显存的配置。若组件拆分不能产生这种配置，则将 TTS 定义为 `WHOLE_MIGRATABLE`。
+
+#### P1-B：LLM `n_gpu_layers` 驻留曲线
+
+当前 GGUF 元数据已核验 `qwen35.block_count=32`，即 \(N=32\)。固定 \(R_{sys}=2\) 和 \(c_L=14\)，进行粗粒度扫描：
+
+\[
+k\in\{0,\lceil0.25N\rceil,\lceil0.5N\rceil,
+\lceil0.75N\rceil,N,FULL\}.
+\]
+
+当前模型展开为 `k={0,8,16,24,32,FULL}`。`FULL` 与 `k=32` 分开保留，因为 llama.cpp 的完整 offload 还可能包含非 block 张量。
+
+每个配置测试约 512、2048 和 4096 tokens 的上下文，固定生成 128 tokens，独立预热并至少重复 5 次。记录加载/重新配置时间、GPU显存、主机内存、TTFT、prefill tokens/s、decode tokens/s、token gap、CPU利用率和KV保存恢复时间。
+
+根据真实画像求两个临界档位：
+
+\[
+H_{TTS}=\max k:\ M_L(k)+M_T+G_{safe}\le V_{GPU},
+\]
+
+\[
+H_D=\max k:\ M_L(k)+M_D(b=1)+G_{safe}\le V_{GPU}.
+\]
+
+在每个临界点附近补测 \(k\pm2\) 和 \(k\pm4\)。第一版使用 llama.cpp 的连续层 offload，不自行设计注意力层、MLP 层或单个张量的任意拆分。
+
+已有 Forge batch=1 的约 5904 MiB 峰值只能用于预估。计算正式 \(H_D\) 前必须在同一代码、驱动、采样器和空闲基线下复测 Forge，不能把历史整卡峰值与新的进程显存口径直接相加。
+
+### P2：静态共存可行性
+
+不修改在线规划器，先人工固定并测试 S0 与 S1 的候选配置。
+
+#### P2-A：S0 无图像静态放置
+
+候选包括：
+
+1. `LLM_FULL_GPU + TTS_CPU`；
+2. `LLM_CPU + TTS_FULL_GPU`；
+3. `LLM_H_TTS + TTS_FULL_GPU`；
+4. `LLM_H_k + TTS_H_COMP`，仅在 P1-A 证明 TTS 组件拆分有效时加入；
+5. `LLM_FULL_GPU + TTS_FULL_GPU`，仅在显存安全时加入。
+
+`LLM_CPU + TTS_CPU` 只作为故障回退，不进入 S0 主性能候选。实验必须让 LLM 生成后续文本与 TTS 合成前一段音频真实重叠，并记录两个阶段同时处于 running 的交集时长；交集为零的轮次不能计为流水线重叠。场景覆盖单段回复、3个 TTS chunk 的中等回复、6个以上 chunk 的长回复和连续 5 轮语音会话。
+
+记录第一 token、第一完整句、TTFA、音频 gap/underrun、完整回复时间、LLM tokens/s、TTS RTF、显存、内存和 CPU 峰值。若最终候选中 LLM 与 TTS 均存在活跃 CPU 分区，才补测：
+
+\[
+c_T^{component}\in\{1,2,4\},\qquad
+c_L=14-c_T^{component}.
+\]
+
+这只是 S0 局部细化，不展开完整等分核矩阵。
+
+Go 条件：至少存在一个 `PARTITIONABLE` 阶段的混合驻留配置，在不 OOM 的前提下，相对完整 CPU 降级或完整设备切换形成真实 Pareto 改进。
+
+No-Go 条件：
+
+- 部分 GPU 驻留没有提高 LLM/TTS 流水线；
+- 或 Diffusion slowdown、显存风险和转换开销抵消全部收益。
+
+若触发 No-Go，停止弹性驻留开发，保留二元迁移并将其解释为实测后的设计结果。
+
+### P3：弹性驻留接口
+
+调度接口不应硬编码为只操作 LLM。将：
+
+```text
+offload_llm_to_cpu()
+restore_llm_to_gpu()
 ```
 
-**预期结果**：
-- 图像任务抢占 GPU 后，LLM 迁移到 CPU 继续工作
-- 回迁时原子替换，用户无感知
-- 第三个重任务在资源满载时排队等待，背压互斥生效
+泛化为：
 
----
-
-### 实验1b：对称迁移基线（Symmetric Migration Baseline）
-
-**文件**：`experiments/migration/symmetric_migration_experiment.py`
-
-**目的**：对比 EdgeSched 的非对称迁移策略（Urgent Down + Atomic Hot-Swap Up），验证"对称迁移"策略的性能差距。对称迁移即 GPU→CPU 和 CPU→GPU 使用同一"停服务→完整迁移→恢复"逻辑，没有后台预加载和原子热切换。
-
-**核心设计差异**：
-
-| 方向 | EdgeSched（非对称） | Symmetric Migration |
-|-----|-------------------|-------------------|
-| GPU→CPU (Downlink) | Urgent Mode: save KV→释放VRAM→后台加载CPU LLM | Naive: 停GPU服务→加载CPU LLM→恢复 |
-| CPU→GPU (Uplink) | Atomic Hot-Swap: 后台预加载GPU→原子替换→延迟释放CPU | Naive: 停CPU服务→加载GPU LLM→恢复 |
-
-**三个变体**：
-
-1. **Symmetric Migration**：两个方向都用 naive "停服务→完整迁移→恢复"
-2. **Fast-down + naive-up**：下行用 EdgeSched Urgent Mode，上行用 naive
-3. **Naive-down + optimized-up**：下行用 naive，上行用 EdgeSched Atomic Hot-Swap
-
-**指标体系**（与 tab_migration 对齐）：
-
-| 指标 | 说明 | 目标 |
-|-----|-----|-----|
-| `migration_stutter_ms` | Downlink Stutter（下行卡顿） | EdgeSched ≈1.7s vs Symmetric ≈8.4s |
-| `coexistence_cpu_ttft_ms` | 共存期间 CPU TTFT | 两者应相同（下行路径一致） |
-| `restore_time_ms` | Restore Time（恢复耗时） | EdgeSched ≈1.9s vs Symmetric ≈8.4s |
-| `restore_window_max_gap_ms` | Restore Gap / 服务中断 | EdgeSched ≈0ms vs Symmetric ≈8.4s |
-| `oom_count` | OOM 次数 | 两者均应为 0 |
-| `failed_restore_count` | 恢复失败次数 | 两者均应为 0 |
-
-**最终 baseline 结构**：
-
-| Baseline | 说明 |
-|----------|------|
-| Restart-based recovery | 杀掉并重新加载驻留工作负载 |
-| OS-managed memory | 通用内存管理，无应用级语义 |
-| Symmetric Migration | 两个方向使用同一迁移逻辑 |
-| EdgeSched | 非对称迁移（Urgent Down + Atomic Hot-Swap Up） |
-
-**运行命令**：
-```powershell
-# 运行所有变体
-python legacy/mvp_core/experiments/migration/symmetric_migration_experiment.py --variant all
-
-# 仅运行 Symmetric Migration
-python legacy/mvp_core/experiments/migration/symmetric_migration_experiment.py --variant symmetric
-
-# 仅运行 Fast-down + naive-up
-python legacy/mvp_core/experiments/migration/symmetric_migration_experiment.py --variant fast_down_naive_up
-
-# 仅运行 Naive-down + optimized-up
-python legacy/mvp_core/experiments/migration/symmetric_migration_experiment.py --variant naive_down_optimized_up
+```text
+reconfigure_residency(phase_id, target_profile, transition_mode)
 ```
 
-**预期结果**：
-- Symmetric Migration 的 Restore Gap ≈ 完整模型加载时间（≈8.4s），远大于 EdgeSched 的 ≈0ms
-- Fast-down + naive-up 的下行卡顿与 EdgeSched 相同，但上行恢复中断 ≈8.4s
-- Naive-down + optimized-up 的下行卡顿 ≈8.4s，但上行恢复中断 ≈0ms
-- 证明 EdgeSched 的非对称设计（特别是 Atomic Hot-Swap）是约束用户感知恢复成本的关键机制
+各后端通过 adapter 实现该契约。LLM 第一版通过新实例加载、KV 保存恢复和实例替换实现；TTS 可以通过显式组件放置或完整实例切换实现。任何后端均不宣称尚未实现的原地显存分页。
 
----
+### P4：联合规划器
 
-### 实验2：背压与队列控制
+- 使用真实画像生成 `PlacementPlan`；
+- 加入显存约束、CPU预算、语音实时约束和迟滞；
+- 图片队列非空时避免重复迁移；
+- 只允许经过 profiling 的共享 GPU 配置；
+- 提供保守回退计划和可解释决策日志。
 
-**文件**: `supplementary/large_scale_stress_test.json`
+### P5：C++ 契约同步
 
-**目的**: 验证在高并发请求下，系统能保持稳定（不崩溃），并通过排队机制平滑流量。
+Python 控制面先完成和验证策略。
 
-**关键数据（已完成）**:
-| 指标 | 数值 | 说明 |
-|-----|-----|-----|
-| 负载 | 2000 任务，200 并发 | Mock 0.1s duration |
-| 成功率 | 100% | 无崩溃、无丢失 |
-| 吞吐量 | 24.94 tasks/s | 稳定输出 |
-| p99 延迟 | 80s | 排队延迟（符合预期） |
-| 资源占用 | CPU 110%, 内存 27MB | 轻量级 |
+如果论文继续声称 C++ 承担核心弹性迁移，则必须同步：
 
-**结论**: 系统在 200 并发冲击下未发生 OOM 或崩溃，背压机制有效。
+- 驻留状态；
+- `PlacementPlan`；
+- 显存配额；
+- CPU 核心预算；
+- pybind11 绑定；
+- Python/C++ 契约测试。
 
----
+否则论文必须明确：C++ 负责原生执行，弹性驻留和迁移决策由 Python 控制面完成。
 
-### 实验3：故障恢复语义（对比测试）
+- --
 
-**文件**: `supplementary/crash_recovery_comparison.json` (Windows 环境)
+## 11. 实验阶段划分
 
-**目的**: 验证在进程意外退出后，状态背板能恢复未完成任务的状态并正确闭合。
+### 11.1 探索与校准
 
-**关键数据**:
-| 指标 | 有背板 (With) | 无背板 (Without) |
-|---|---:|---:|
-| **Total Recovery Time** | 11.38 ms | 7.62 ms |
-| **Tasks Recovered** | 12 / 12 (100%) | 0 / 12 (0%) |
-| **Stuck Running Closed** | 2 | 0 |
+探索阶段用于：
 
-**结论**: 仅增加 <4ms 的恢复开销，换取了 100% 的状态持久化与正确的任务生命周期闭合（消除了“僵尸任务”）。
+- 找到可行驻留档位；
+- 确定核心扩展曲线；
+- 估计迁移、加载和 KV 代价；
+- 校准安全余量、EMA、迟滞和候选配置；
+- 排除没有收益的配置。
 
----
+探索数据可以作为画像图或特性分析，但不能同时用于挑参数和证明主策略优于所有基线。
 
-### 实验4：取消语义
+### 11.2 冻结
 
-**文件**: `core/cancellation_semantics.json`
+正式评测前必须冻结：
 
-**目的**: 验证取消请求能被正确处理（流式中断、排队移除）。
+- 代码版本和提交哈希；
+- 模型文件和哈希；
+- 驻留档位；
+- 核心候选；
+- 安全余量；
+- EMA、迟滞和决策规则；
+- prompts、TTS 文本、声音配置和随机种子；
+- 实验脚本和统计口径。
 
-**关键数据（已完成）**:
-| 指标 | 数值 | 说明 |
-|-----|-----|-----|
-| 流式取消延迟 | ~50ms | 协作式中断 |
-| 排队取消响应 | ~1s | 立即移除 |
-| 输出泄漏 | 0% | 取消后无输出 |
+### 11.3 正式实验
 
-**结论**: 实现了协作式中断与排队清理，避免资源浪费。
+正式实验使用新运行数据和预先冻结的配置。流程为：
 
----
+\[
+Implementation \rightarrow Calibration \rightarrow Freeze
+\rightarrow Formal\ Evaluation \rightarrow Paper\ Update.
+\]
 
-### 实验5：基线对比
+- --
 
-**文件**: `supplementary/baseline_comparison.json`
+## 12. 正式实验矩阵
 
-**目的**: 量化 EdgeSched 相比原生 Python 调度原语的控制面开销。
+### E0：正确性与真实后端确认
 
-**定位（更新后）**：
-- 该实验**不再属于正文主 baseline**。
-- 它只能回答“调度器控制面有没有显著额外开销”。
-- 它不能回答“当第二个 GPU 重任务到来时，谁调度得更好”。
-- 因此推荐放到：
-  - supplementary
-  - appendix
-  - 或正文一句话带过
+目的：证明实验没有静默回退到 Mock。
 
-**关键数据（已完成）**:
-| 方案 | 吞吐 (tasks/s) | p99 延迟 (ms) |
-|---|---:|---:|
-| Threadpool | 78.68 | 100.45 |
-| Semaphore | 42.15 | 7092.61 |
-| EdgeSched | 38.47 | 7569.89 |
+检查：
 
-**结论**: 相比 Semaphore，EdgeSched 仅增加 9% 开销，换取优先级、背压、持久化等特性。
+- 真实 Qwen3.5 GGUF 加载；
+- 真实 Qwen3-TTS Base 输出；
+- 真实 Forge 生成；
+- KV 保存恢复；
+- 设备与资源采样；
+- 取消、队列和失败闭合。
 
-**写作建议（更新）**：
-- 如果正文已经包含：
-  - `Manual llama.cpp switch`
-  - `LRU / Unified Memory`
-  - `EdgeSched real workload`
-- 那么这组 `naive async / semaphore` 对比不应再占用正文主图位置。
+### E1：单模型画像
 
----
+#### E1-L：LLM
 
-### 实验6：状态背板微基准
+- 驻留档位；
+- CPU 核心数；
+- 不同 KV / context 长度；
+- TTFT、prefill、decode、token gap；
+- 显存、内存和转换代价。
 
-**文件**: `core/state_backplane_recovery.json`
+#### E1-T：TTS
 
-**目的**: 验证 mmap 读写延迟。
+- 完整 CPU、完整 GPU，以及后端支持时的组件级驻留配置；
+- 每个组件配置的明确 device map 与主机/GPU 内存占用；
+- 不同物理核心预算；
+- 短、中、长句子 chunk；
+- TTFA、RTF、资源峰值。
 
-**关键数据（已完成）**:
-| 指标 | 数值 |
-|-----|-----|
-| 读延迟 | ~4us |
-| 写延迟 | ~11us |
-| 一致性 | 100% (32/32) |
-
-**结论**: mmap 开销可忽略不计（微秒级 vs 毫秒级调度）。
-
----
-
-## 第四部分：论文写作技巧
-
-### 4.1 摘要写作
-
-**结构**：
-1. 问题（1-2句）
-2. 挑战（1-2句）
-3. 方案（2-3句）
-4. 结果（2-3句）
-
-**示例**：
-```
-边缘设备上部署多模态大模型面临资源受限、任务异构等挑战。
-现有方案（Ray、K8s）过于重量级，不适合边缘场景。而 8GB 显存
-无法同时容纳多个模型，传统 GPU 隔离方案不可行。
-本文提出EdgeSched，一个轻量级的调度框架，采用动态资源迁移、
-优先级队列、背压控制和崩溃恢复机制。实验表明，EdgeSched在混合
-负载下保持稳定（LLM 迁移后仍可用），崩溃恢复时间 < 12ms。
-```
-
-### 4.2 引言写作
-
-**第1段**：背景
-- 边缘AI兴起
-- 多模态需求增长
-
-**第2段**：挑战
-- 资源受限
-- 任务异构
-- 系统稳定性
-
-**第3段**：现有方案的问题
-- Ray/K8s太重
-- 简单队列功能不足
-
-**第4段**：我们的方案
-- 轻量级
-- 功能完整
-- 易用
-
-**第5段**：贡献
-1. 设计了轻量级调度框架
-2. 实现了崩溃恢复机制
-3. 进行了全面的实验评估
-
-### 4.3 系统设计写作
-
-**原则**：
-- 先整体后局部
-- 配图说明
-- 代码片段辅助
-
-**示例**：
-```
-图1展示了EdgeSched的架构。调度器是核心组件，负责任务路由、
-优先级管理、背压控制。执行层包括LLM Worker、Image Worker
-和TTS Worker，分别处理不同类型的任务。
-
-优先级队列使用Python的asyncio.PriorityQueue实现。
-任务按优先级排序，高优先级任务先执行。这保证了关键任务
-（如用户交互）的低延迟。
-```
-
-### 4.4 实验写作
-
-**结构（更新后建议）**：
-1. 实验设置（硬件、软件、参数）
-2. 机制层：Cold-Start vs Hot-Swap
-3. 系统层：Manual llama.cpp / LRU / EdgeSched
-4. 可靠性层：崩溃恢复、状态背板、取消语义
-5. 附录/补充：Naive Async / Semaphore / Mock stress
-
-**每个实验**：
-- 目的
-- 方法
-- 结果（图表）
-- 分析
-
-**图表使用指南**（已生成在 `thesis_materials/` 目录）：
-
-| 图表 | 文件名 | 用途 | 放置位置 |
-|-----|--------|------|---------|
-| **Cold-Start vs Hot-Swap** | `experiment_results/chart_cold_start_comparison.pdf` | 回应 `llama.cpp + 手动切换` 基线质疑 | Evaluation 主图 1 |
-| **LRU Thrashing Baseline** | `experiment_results/chart_lru_thrashing.pdf` | 回应 `简单 LRU / Unified Memory` 基线质疑（待重做后放正文） | Evaluation 主图 2（候选） |
-| **Real Workload Trace** | `experiment_results/chart_real_workload_trace.pdf` | 展示真实负载下 TTFT 与图片任务并发行为（待重做后放正文） | Evaluation 主图 3（候选） |
-| **System Architecture** | `figures/system_architecture.pdf` | 系统整体架构图 | Section 3 (Design) |
-| **Migration Flow** | `figures/migration_flow.pdf` | GPU↔CPU迁移流程时序图 | Section 3.2 (Migration) |
-| **Resource Migration Performance** | `figures/fig_resource_migration.pdf` | 资源迁移性能柱状图 | Section 4.1 (Exp 1) |
-| **Crash Recovery Comparison** | `figures/fig_crash_recovery.pdf` | 崩溃恢复对比图 | Section 4.2 (Exp 2) |
-| **Baseline Comparison** | `figures/fig_baseline_comparison.pdf` | 基线性能对比图 | Section 4.4 (Exp 4) |
-| **Stress Test Results** | `figures/fig_stress_test.pdf` | 大规模压力测试结果 | Section 4.5 (Exp 5) |
-| **Migration Data Table** | `tables/tab_migration.tex` | 迁移实验数据表 | Section 4.1 |
-| **Crash Recovery Table** | `tables/tab_crash_recovery.tex` | 恢复实验数据表 | Section 4.2 |
-| **Baseline Table** | `tables/tab_baseline.tex` | 基线对比数据表 | Section 4.4 |
-
-**硬件配置**（已更新为真实配置）：
-- GPU: NVIDIA GeForce RTX 5070 Laptop (8GB VRAM)
-- CPU: AMD Ryzen 9 8940HX
-- RAM: 32GB DDR5
-- OS: Windows 11
-
-**示例**：
-```
-图5展示了崩溃恢复对比结果。结论是：有状态背板可恢复崩溃前任务状态并闭合运行中任务；无状态背板必丢崩溃前任务。
-本文不把"恢复更快/更慢"作为主结论，主结论聚焦在"能否恢复任务状态与闭合语义"。
-```
-
----
-
-## 第五部分：常见问题
-
-### Q1: 为什么不支持硬中断？
-
-**回答**：
-边缘设备上硬中断会导致显存碎片化，得不偿失。协作式中断+迟到结果丢弃是更实用的折中方案。
-
-### Q2: 为什么队列满了要拒绝，而不是排队等待？
-
-**回答**：
-边缘设备内存有限，无限排队会导致 OOM。拒绝任务可以让客户端重试或降级（如用 CPU 推理）。队列深度过大时内存占用会上升并导致系统变慢，因此需要有界队列与明确的拒绝/排队策略。
-
-### Q3: 你的方案和Ray有什么本质区别？
-
-**回答**：
-1. **设计目标不同**：
-   - Ray：分布式集群，支持多机协调
-   - EdgeSched：单机边缘设备，资源受限场景
-2. **轻量级**：
-   - EdgeSched：启动更快、内存更小
-   - Ray：启动更慢、内存更大
-3. **简单易用**：
-   - EdgeSched：无需复杂配置，开箱即用
-   - Ray：需要配置集群、资源管理
-
-**论文中怎么写**：
-```
-Ray 主要面向分布式集群，而本文关注的是 8GB VRAM 的单机边缘设备。
-因此正文主 baseline 不再选择 Naive Async / Semaphore 这类 Python 原语，
-而是选择更贴近老师问题的三类对比：
-(1) Manual llama.cpp switch，
-(2) LRU / Unified Memory，
-(3) EdgeSched。
-Naive Async / Semaphore 仅保留在 supplementary，用于说明控制面开销。
-```
-
-### Q4: 单机实验够吗？不需要多机吗？
-
-**回答**：
-边缘设备本来就是单机场景。我们的目标是在8GB显存的设备上稳定运行，而不是分布式集群。8GB能跑，80GB当然也能跑。
-
----
-
-## 第六部分：投稿建议
-
-### 6.1 目标会议
-
-**唯一推荐：ICPADS 2026** (CCF C, 分布式系统)
-- 截稿：2026年12月（预计）
-- 会议：2027年7月
-- 接受率：30-40%
-- 适合：边缘计算、资源调度、系统设计
-
-**为什么选ICPADS：**
-1. 主题契合：历年大量边缘计算和调度系统论文
-2. 审稿人背景：更懂系统设计和资源管理
-3. 社区认可：CCF C中边缘计算领域最合适的会议
-
-**备选（如果ICPADS被拒）：**
-- CollaborateCom 2027 (EI, 边缘计算)
-- 或根据审稿意见修改后投期刊
-
-### 6.2 时间线（2个月）
-
-**Week 1-2**：撰写核心章节
-- Introduction + Background（最耗时）
-- System Design（有草稿基础）
-
-**Week 3-4**：完成技术部分
-- Implementation
-- Evaluation（实验已完成，主要写分析）
-
-**Week 5**：完善全文
-- Related Work
-- Conclusion
-- 内部审阅
-
-**Week 6-8**：修改投稿
-- 根据反馈修改
-- 格式调整
-- 提交前检查
-
-### 6.3 写作检查清单
-
-**内容**：
-- [ ] 摘要清晰（问题+方案+结果）
-- [ ] 引言有吸引力
-- [ ] 系统设计有图有代码
-- [ ] 实验覆盖核心 4 个（+ 可选补充实验）
-- [ ] 图表清晰
-- [ ] 相关工作充分
-
-**格式**：
-- [ ] 符合会议模板
-- [ ] 参考文献格式正确
-- [ ] 图表编号正确
-- [ ] 代码格式统一
-
-**语言**：
-- [ ] 无语法错误
-- [ ] 表达清晰
-- [ ] 逻辑连贯
-
----
-
-## 第七部分：实验重构方案（更新）
-
-**现在不是“实验已经全部补齐”，而是“实验需要分层整理并部分重做”。**
-
-实验结果位置：`legacy/mvp_core/experiment_results/`
-
-当前可直接用于论文主文的结果：
-1. ✅ `Cold-Start vs Hot-Swap`
-
-当前可作为 supplementary / microbenchmark 的结果：
-1. ✅ 资源迁移（旧实验）
-2. ✅ 背压控制（Mock 稳定性）
-3. ✅ 崩溃恢复（可靠性）
-4. ✅ 取消语义（功能完整性）
-5. ✅ 基线对比（Naive Async / Semaphore，调度开销）
-6. ✅ 状态背板（微基准）
-7. ⚠️ `Real Workload Trace`（当前仅作为探索结果保留）
-8. ⚠️ `LRU / Unified Memory Thrashing`（当前仅作为探索结果保留）
-
-**写作建议**：
-- 主文先写 **Cold-Start vs Hot-Swap** 与旧的机制层验证。
-- 正文主 baseline 应收敛到：
-  - `Manual llama.cpp switch`
-  - `LRU / Unified Memory`
-  - `EdgeSched real workload`
-- `Real Workload` 与 `LRU` 在重做完成前，不要硬写成主图。
-- 旧的 Mock 压测图保留，但降级到“微基准 / 控制面验证”。
-- 不要再把“所有结果都是同一层级的真实模型实验”写得过于绝对，审稿人很容易抓这一点。
-
-### 7.1 现在真正要做的事
-
-1. **保留旧 C++ 路径**
-   - 基准脚本：`tests/test_initial_load_only.py`、`tests/test_experiment_setup.py`
-   - 这两份已经证明：在补好 `LD_LIBRARY_PATH` 和模型路径后，旧的 C++ LLM 路径仍然能跑。
-2. **重做系统层三组主 baseline**
-   - `Manual llama.cpp switch`
-   - `LRU / Unified Memory`
-   - `EdgeSched real workload`
-   - 这三组将共同组成正文主实验
-3. **按旧路径风格重写 `real workload`**
-   - 不再优先走当前被改乱的 `GlobalTaskScheduler` 版本
-   - 先从“旧脚本可运行的 C++ LLM 路径”出发，再一点点加多轮请求/图片任务
-4. **重做 `LRU`**
-   - 保证执行栈与正文叙事一致
-   - 不再用临时性、解释成本过高的路径做最终基线
-
----
-
-## 第八部分：实验框架使用说明
-
-### 8.1 统一实验基础设施
-
-所有实验脚本使用 `experiments/framework/` 提供的统一基础设施：
-
-```python
-from framework import (
-    setup_paths,           # 设置 Python 路径
-    RESULTS_DIR,           # 结果目录
-    ExperimentConfig,      # 实验配置
-    ExperimentResult,      # 实验结果
-    StatisticsAnalyzer,    # 统计分析
-    ReproducibilityManager, # 可重复性管理
-    MockGPUTask,           # Mock GPU 任务
-    MockCPUTask,           # Mock CPU 任务
-)
+#### E1-D：Diffusion
+
+- 标准 b=1 请求；
+- 同 prompt 的 b=2、b=4；
+- 不同分辨率与 steps；
+- 冷加载和稳态执行；
+- 显存时间线。
+
+### E2：无图像的 LLM→TTS 流水线
+
+比较 S0-A、S0-B、S0-C(k)，S0-D 仅在可行时加入。
+
+场景：
+
+- 单轮短回复；
+- 单轮长回复；
+- 连续多轮语音会话。
+
+指标：
+
+- 第一段文本时间；
+- TTFA；
+- 音频 gap / underrun；
+- 完整语音回复时间；
+- LLM tokens/s；
+- 转换成本及其跨轮摊销。
+
+### E3：Diffusion 期间的语音流水线
+
+比较 S1-A、S1-B(k)、S1-C，S1-D(k) 仅在可行时加入。
+
+至少包含：
+
+1. 普通单图请求；
+2. 明确标记为压力测试的持续 GPU 占用场景。
+
+指标：
+
+- 图片资源准备和第一张图片时间；
+- Diffusion slowdown；
+- LLM TTFT、tokens/s 和 token gap；
+- TTS TTFA、RTF 和音频断流；
+- 峰值显存、内存和 CPU 利用率。
+
+### E4：CPU 核心分配
+
+候选必须由 E1 推导，不能预先穷举等分组合。
+
+步骤：
+
+1. 求 \(c_T^{min}\)；
+2. 测试其邻域；
+3. 将剩余核心分配给 LLM；
+4. 对最优两个候选做绑核、CCD、SMT 和系统保留核心消融。
+
+### E5：代价感知策略对比
+
+主基线：
+
+| 策略 | 含义 |
+|---|---|
+| Serial/Wait | 保持当前驻留，竞争任务等待 |
+| Always Full Migration | 当前完整 LLM 迁出/恢复策略 |
+| Static Best | 使用校准阶段得到的固定最优配置 |
+| Cost-Aware Elastic Residency | 新版联合规划器 |
+| Oracle | 使用真实未来执行时长进行事后最优选择 |
+
+迁移机制基线可保留：
+
+- Cold Restart；
+- Symmetric Migration；
+- Urgent Down + Atomic Hot-Swap Up。
+
+这些基线回答的是状态转换机制问题，不能替代新版在线规划策略基线。
+
+### E6：图片队列与多候选图
+
+分别测试：
+
+- 单张普通图片；
+- 同一 prompt 多候选图；
+- 不同 prompt 连续请求；
+- 图片队列非空时是否避免重复恢复；
+- 队列满时的拒绝和取消。
+
+### E7：真实 N 阶段工作流
+
+至少使用：
+
+\[
+ASR/RAG\rightarrow LLM\rightarrow TTS+Image.
+\]
+
+ASR/RAG 可以轻量，但必须是真实执行。Mock N-phase 实验保留为调度语义测试，不作为真实性能结果。
+
+### E8：消融与稳健性
+
+消融：
+
+- 无时长预测；
+- 禁用 `PARTITIONABLE`，将相关阶段退化为完整设备配置；
+- 无CPU核心隔离；
+- 无驻留迟滞；
+- 无KV保存；
+- 固定设备放置。
+
+敏感性：
+
+- KV / context 长度；
+- TTS chunk 长度；
+- Diffusion 时长；
+- 图像队列深度；
+- 预测误差；
+- 显存安全余量。
+
+### E9：控制面与可靠性补充
+
+以下内容继续保留，但不作为新版核心创新主图：
+
+- 状态背板与崩溃闭合；
+- 取消语义；
+- 有界队列与 Mock 压力测试；
+- Python 原语/信号量控制面开销。
+
+- --
+
+## 13. 统一指标
+
+### 13.1 LLM
+
+- TTFT；
+- prefill tokens/s；
+- decode tokens/s；
+- 最大和 p95 token gap；
+- 迁移窗口内最大请求延迟；
+- 上下文一致性。
+
+### 13.2 TTS
+
+- 第一段音频 TTFA；
+- queue wait；
+- chunk synthesis time；
+- 音频时长；
+- RTF mean / p95；
+- gap / underrun count；
+- 完整语音回复时间。
+
+### 13.3 Image
+
+- 准入到资源准备开始的时间；
+- 迁移/释放完成时间；
+- 第一张图片完成时间；
+- 任务执行时间；
+- 队列等待；
+- batch throughput；
+- Diffusion slowdown。
+
+### 13.4 系统
+
+- 峰值 GPU VRAM；
+- 峰值 RSS 和 WSL 可用内存；
+- CPU 利用率和亲和配置；
+- 迁移次数、方向和时间；
+- 驻留档位变化；
+- OOM、失败和回退次数；
+- 调度决策开销；
+- 预测值与真实值误差。
+
+“Restore Gap=0”只能在采样分辨率和指标定义明确时使用。不得将异步预加载时间等同于用户完全无感知。
+
+- --
+
+## 14. 统计与复现要求
+
+### 14.1 运行次数
+
+- 每个配置独立预热。
+- 每个正式配置至少 5 次完整独立运行。
+- 用于 p95 的事件或 chunk 至少 30 个，优先 50 个以上。
+- 少量样本只报告原始值、均值和范围，不滥用 p99。
+
+### 14.2 顺序控制
+
+- 使用随机顺序或正反交替顺序降低温度漂移偏差。
+- 冷启动与稳态实验分开。
+- 不同 batch shape 分别预热。
+- 在运行前后记录温度、功耗或至少保留足够冷却时间。
+
+### 14.3 固定输入
+
+正式实验固定并记录：
+
+- prompts；
+- 输出 token 上限；
+- TTS 文本和分句结果；
+- 声音配置；
+- 图像 seed、分辨率、steps、sampler、CFG；
+- context/KV 长度；
+- 核心掩码与线程变量。
+
+### 14.4 证据链
+
+每个正文数字必须能够定位到：
+
+```text
+paper figure/table
+  -> aggregated JSON
+  -> raw iterations
+  -> experiment script
+  -> manifest
+  -> code/model/environment hash
 ```
 
-### 8.2 统计分析
+manifest 至少记录：
 
-```python
-analyzer = StatisticsAnalyzer(confidence=0.95)
-stats = analyzer.analyze_latencies(latencies, include_ci=True)
+- 是否真实 LLM/TTS/Forge；
+- 模型文件和哈希；
+- CUDA、驱动和主要库版本；
+- WSL2 内存与 swap；
+- CPU 核心和亲和配置；
+- 运行参数与随机种子；
+- 代码提交哈希；
+- 是否发生 fallback。
 
-# 输出: avg_ms, p50_ms, p95_ms, p99_ms, ci_lower_ms, ci_upper_ms
-print(stats.to_dict())
-```
+- --
 
-### 8.3 可重复性保障
+## 15. 现有数据的使用边界
 
-```python
-reproducibility = ReproducibilityManager(seed=42)
-reproducibility.setup()  # 设置随机种子
+### 15.1 可以保留为历史或辅助证据
 
-# 保存实验清单
-reproducibility.save_manifest(
-    filepath="manifest.json",
-    config={"n_tasks": 100},
-    experiment_name="my_experiment"
-)
-```
+- `paper/experiment_data/01_paper_main/migration/` 中的旧迁移结果；
+- Cold-Start vs Hot-Swap；
+- 崩溃恢复和状态背板；
+- 取消语义；
+- Mock 控制面压力测试。
 
-### 8.4 创建新实验
+这些结果来自旧模型、旧策略或不同实验口径。它们不能直接证明 Qwen3.5 + Qwen3-TTS + 弹性驻留的性能。
 
-```python
-from framework import BaseExperiment, ExperimentConfig
+### 15.2 当前探索性结果
 
-class MyExperiment(BaseExperiment):
-    async def setup(self):
-        # 初始化
-        pass
-    
-    async def run_single(self, **kwargs):
-        # 单次实验
-        return {"latency": 0.1}
-    
-    async def teardown(self):
-        # 清理
-        pass
-    
-    def _aggregate_metrics(self, raw_data):
-        # 聚合结果
-        return {"avg_latency": 0.1}
-```
+- `experiment_results/batch_scaling/batch_scaling_20260828_130742.json`
+  - 真实 Forge；
+  -同一 prompt；
+  - b=1、2、4、8；
+  -只对 b=1 做了统一预热；
+  -可用于设计下一轮实验，尚未晋升为正文证据。
+- `experiment_results/streaming_pipeline/smoke_tts_gpu.wav`
+  -只能证明一次 GPU TTS 输出存在；
+  -没有对应可复现脚本和 manifest，不能引用性能。
+- `experiment_results/tts/profiling/gpu_sentence_length/gpu_sentence_length_xvector_r3_20260828/`
+  -真实 Qwen3-TTS Base GPU、x-vector 音色消融；
+  -包含 45 条原始迭代、manifest、汇总、拟合和图表；
+  -45/45 条成功且顺序正确，但 45/45 条 RTF 都大于 1；
+  -只证明当前后端的探索性句长画像，尚未证明 LLM→TTS 重叠或真实音频播放无 underrun。
+- `experiment_results/phase_aware/exp2_*`、`exp3_*`
+  -使用 Mock/sleep；
+  -只能验证流程和统计字段。
 
----
+### 15.3 必须重跑
 
-## 总结
+换用 Qwen3.5-9B-Q4_K_M 后，下列性能需在冻结环境重跑：
 
-### 核心要点
+- 完整迁出与恢复；
+- KV 长度敏感性；
+- LLM CPU/GPU TTFT 和吞吐；
+- 真实工作流；
+- 所有弹性驻留和 TTS 相关结果。
 
-1. **定位清晰**：轻量级边缘设备调度框架
-2. **价值明确**：比轻量级基线更可控，功能完整
-3. **实验充分**：核心 4 个实验闭环（+ 可选补充实验）
-4. **写作诚实**：承认局限性，不过度包装
+- --
 
-### 成功关键
+## 16. 论文结构建议
 
-1. **运行所有实验**：生成真实数据
-2. **写好引言**：吸引审稿人
-3. **图表清晰**：一图胜千言
-4. **选对会议**：CCF C更合适
+### 16.1 Introduction
 
-### 最后的话
+围绕以下问题展开：
 
-你的系统是一个**实用的工程系统**，有真实价值。不要妄自菲薄，也不要过度包装。诚实地说明你做了什么、解决了什么问题，用实验证明有效性。
+1. 本地助手已经形成 LLM、语音和图像流水线。
+2. 单个 8GB GPU 无法让所有模型以最高性能长期驻留。
+3.整体迁出虽然安全，但忽略了剩余显存、CPU核心和流水线阶段之间的互补性。
+4. EdgeSched 使用弹性驻留、代价预测和状态感知规划进行联合调度。
 
-**CCF C 是很好的保底选择；如果实验完备且叙事到位，可以冲 CCF B。**
+贡献应正面陈述，不再反复写“priority queue、offloading 本身并不新”。
 
----
+### 16.2 Background / Motivation
 
-## 参考文献 (References)
+需要用画像数据展示：
 
-### 文献阅读笔记与引用理由
+- 不同模型的显存需求；
+- CPU/GPU 性能差异；
+- TTS实时约束；
+- 整体迁移成本；
+- 为什么固定放置不能覆盖 S0、S1、S2。
 
-#### [1] Shi et al. (2016) - Edge Computing: Vision and Challenges
-- **链接**: https://ieeexplore.ieee.org/document/7488250
-- **期刊**: IEEE Internet of Things Journal (IF: 10.6)
-- **内容**: 边缘计算领域的奠基性论文，提出了边缘计算的定义、架构和核心挑战（延迟、带宽、隐私）。截至2026年1月，Google Scholar引用超过20,000次。
-- **引用理由**: 作为边缘计算背景的权威引用，说明EdgeSched解决的问题域（边缘设备资源受限）是边缘计算的核心挑战之一。
+### 16.3 System Design
 
-#### [2] Li et al. (2019) - Edge AI: On-Demand Accelerating Deep Neural Network Inference via Edge Computing
-- **链接**: https://ieeexplore.ieee.org/document/8876870
-- **期刊**: IEEE Transactions on Wireless Communications
-- **内容**: 提出Edgent框架，通过设备-边缘协同进行DNN推理，实现模型分割和提前退出机制来优化边缘推理性能。
-- **引用理由**: 说明边缘智能领域的代表性工作，EdgeSched解决的是同类边缘设备上的资源调度问题。
+建议结构：
 
-#### [3] Edge Intelligence: Paving the Last Mile of Artificial Intelligence With Edge Computing
-- **链接**: https://ieeexplore.ieee.org/document/8736011
-- **期刊**: Proceedings of the IEEE (IF: 23.2)
-- **内容**: IEEE旗舰期刊的综述文章，全面分析了边缘智能的技术栈、应用场景和研究挑战。
-- **引用理由**: 作为边缘智能领域的权威综述，说明EdgeSched填补了边缘设备上多模态AI调度的空白。
+1. workflow 和 phase model；
+2. 设备亲和性与驻留能力的正交任务抽象；
+3. 配置相关任务画像；
+4. 弹性驻留状态；
+5. 可行配置过滤；
+6. 代价感知 PlacementPlan；
+7. 非对称状态转换；
+8. 队列、迟滞与保守回退。
 
-#### [4] Moritz et al. (2018) - Ray: A Distributed Framework for Emerging AI Applications
-- **链接**: https://www.usenix.org/system/files/osdi18-moritz.pdf
-- **会议**: OSDI 2018 (CCF A)
-- **内容**: 伯克利AMP Lab开发的分布式AI框架，支持任务并行和Actor模型，用于强化学习等新兴AI应用。
-- **引用理由**: 作为分布式调度框架的代表，与EdgeSched形成对比：Ray面向数据中心，EdgeSched面向边缘设备；Ray启动时间秒级，EdgeSched毫秒级。
+### 16.4 Implementation
 
-#### [5] Verma et al. (2015) - Large-scale cluster management at Google with Borg
-- **链接**: https://dl.acm.org/doi/10.1145/2741948.2741964
-- **会议**: EuroSys 2015 (CCF B)
-- **内容**: Google内部集群管理系统Borg的论文，介绍了大规模集群调度的设计和经验。
-- **引用理由**: 说明数据中心级调度系统的设计思路，与EdgeSched的轻量级设计形成对比。
+明确区分：
 
-#### [6] Bernstein (2014) - Containers and Cloud: From LXC to Docker to Kubernetes
-- **链接**: https://ieeexplore.ieee.org/document/7036275
-- **期刊**: IEEE Cloud Computing
-- **内容**: 介绍容器技术和云计算的关系，Docker和Kubernetes的基础。
-- **引用理由**: 说明容器化调度方案（如K8s）的资源开销，解释为什么EdgeSched不采用容器方案。
+- Python 控制面；
+- llama.cpp LLM 执行；
+- Qwen3-TTS worker；
+- Forge 图像服务；
+- C++ 原生执行面目前实际承担的职责。
 
-#### [7] Kwon et al. (2023) - Efficient Memory Management for Large Language Model Serving with PagedAttention
-- **链接**: https://arxiv.org/abs/2309.06180
-- **会议**: SOSP 2023 (CCF A)
-- **内容**: 提出PagedAttention技术，通过虚拟内存分页机制解决KV Cache碎片化问题，实现高吞吐LLM服务。
-- **引用理由**: 作为LLM推理优化的代表性工作，与EdgeSched形成对比：vLLM面向服务器场景，假设有充足GPU资源；EdgeSched面向8GB显存的边缘设备。
+不能把 Python 迁移实现写成 C++ 已完成能力。
 
-#### [8] Sheng et al. (2023) - FlexGen: High-Throughput Generative Inference of Large Language Models with a Single GPU
-- **链接**: https://arxiv.org/abs/2303.06865
-- **会议**: ICML 2023 (CCF A)
-- **内容**: 实现单GPU上的高吞吐生成推理，通过CPU Offloading和量化技术处理大模型。
-- **引用理由**: 与EdgeSched的GPU-CPU迁移机制相关，但FlexGen是静态offloading，EdgeSched是动态迁移。
+### 16.5 Evaluation
 
-#### [9] Yu et al. (2022) - Orca: A Distributed Serving System for Transformer-Based Generative Models
-- **链接**: https://www.usenix.org/conference/osdi22/presentation/yu
-- **会议**: OSDI 2022 (CCF A)
-- **内容**: 提出迭代级调度（iteration-level scheduling）解决Transformer推理中的批处理问题。
-- **引用理由**: 说明LLM服务系统的调度挑战，EdgeSched借鉴了批处理思想但针对边缘场景优化。
+建议主线：
 
-#### [10] Cully et al. (2008) - Remus: High Availability via Asynchronous VM Replication
-- **链接**: https://www.usenix.org/conference/nsdi-08/remus-high-availability-asynchronous-virtual-machine-replication
-- **会议**: NSDI 2008 (CCF B)
-- **内容**: 通过异步虚拟机复制实现高可用性，支持故障快速恢复。
-- **引用理由**: 作为传统容错方案的代表，与EdgeSched的轻量级mmap方案形成对比。
+1. 单模型画像与动机；
+2.无图像时的语音流水线；
+3.图像期间的联合调度；
+4.弹性策略对比；
+5.多任务工作流与消融；
+6.控制面和可靠性补充。
 
-#### [11] Castro & Liskov (1999) - Practical Byzantine Fault Tolerance
-- **链接**: https://dl.acm.org/doi/10.5555/296806.296824
-- **会议**: OSDI 1999 (CCF A)
-- **内容**: 提出实用的拜占庭容错算法，是分布式系统容错领域的经典工作。
-- **引用理由**: 说明传统分布式容错方案的开销，EdgeSched采用更轻量级的单节点崩溃恢复方案。
+- --
 
-#### [12] Liao et al. (2021) - Crash Consistent Non-Volatile Memory Express
-- **链接**: https://dl.acm.org/doi/10.1145/3477132.3483592
-- **会议**: SOSP 2021 (CCF A)
-- **内容**: 提出ccNVMe，在存储协议层实现崩溃一致性保证，利用NVMe SSD的持久性内存区域，通过事务感知的MMIO和doorbell技术显著降低PCIe流量消耗。
-- **引用理由**: 与EdgeSched的mmap状态持久化机制高度相关，提供了崩溃一致性设计的系统级参考。
+## 17. 图表规划
 
----
+### 主图
 
-## BibTeX格式参考文献
+1. **资源流与控制流架构图**
+   -显示 LLM、TTS、Diffusion、DDR、GPU、队列和规划器；
+   -明确区分 `DeviceAffinity` 与 `ResidencyCapability`，避免把部分卸载画成特定模型特例；
+   -区分数据流、控制流和状态转换；
+   -不再只画软件工程分层框。
+2. **驻留状态与转换图**
+   - CPU、Hybrid、Full GPU；
+   - S0、S1、S2；
+   - Urgent 与 Atomic 转换。
+3. **单模型资源—性能曲线**
+   - LLM GPU layers；
+   - TTS cores/RTF；
+   - Diffusion batch/VRAM。
+4. **LLM→TTS 流水线时间线**
+   -文本 chunk；
+   - TTS chunk；
+   -播放与 gap。
+5. **Diffusion 期间联合调度时间线**
+   -迁移、图像、LLM token、TTS音频。
+6. **策略 Pareto 图**
+   - TTFA、第一张图、LLM吞吐、Diffusion slowdown。
 
-```bibtex
-% [1] 边缘计算基础 - 边缘计算领域的奠基性论文
-@article{shi2016edge,
-  title={Edge Computing: Vision and Challenges},
-  author={Shi, Weisong and Cao, Jie and Zhang, Quan and Li, Youhuizi and Xu, Lanyu},
-  journal={IEEE Internet of Things Journal},
-  volume={3},
-  number={5},
-  pages={637--646},
-  year={2016},
-  doi={10.1109/JIOT.2016.2579198},
-  url={https://ieeexplore.ieee.org/document/7488250},
-  note={IF: 10.6, Google Scholar引用超过20,000次（截至2026年1月）}
-}
+### 主表
 
-% [2] 边缘智能 - 设备-边缘协同DNN推理框架
-@article{li2019edgeai,
-  title={Edge AI: On-Demand Accelerating Deep Neural Network Inference via Edge Computing},
-  author={Li, En and Zeng, Liekang and Zhou, Zhi and Chen, Xu},
-  journal={IEEE Transactions on Wireless Communications},
-  volume={19},
-  number={1},
-  pages={447--457},
-  year={2020},
-  doi={10.1109/TWC.2019.2945804},
-  url={https://ieeexplore.ieee.org/document/8876870},
-  note={提出Edgent框架，实现模型分割和提前退出机制}
-}
+1. 工作负载的设备亲和性、驻留能力与可选驻留档位；
+2.系统状态、候选计划与回退；
+3.主策略和基线能力对比；
+4.端到端结果；
+5.消融结果。
 
-% [3] 边缘智能综述 - IEEE旗舰期刊权威综述
-@article{zhou2019edge,
-  title={Edge Intelligence: Paving the Last Mile of Artificial Intelligence with Edge Computing},
-  author={Zhou, Zhi and Chen, Xu and Li, En and Zeng, Liekang and Luo, Kaixuan and Zhang, Junshan},
-  journal={Proceedings of the IEEE},
-  volume={107},
-  number={8},
-  pages={1738--1762},
-  year={2019},
-  doi={10.1109/JPROC.2019.2921977},
-  url={https://ieeexplore.ieee.org/document/8736011},
-  note={IF: 23.2, 全面分析边缘智能技术栈、应用场景和研究挑战}
-}
+原有信息量较低的组件对比表不再作为主要贡献表。
 
-% [4] 分布式调度框架 - 面向数据中心的分布式AI框架
-@inproceedings{moritz2018ray,
-  title={Ray: A Distributed Framework for Emerging AI Applications},
-  author={Moritz, Philipp and Nishihara, Robert and Wang, Stephanie and Tumanov, Alexey and Liaw, Richard and Liang, Eric and Elibol, Melih and Yang, Zongheng and Paul, William and Jordan, Michael I. and Stoica, Ion},
-  booktitle={Proceedings of the 13th USENIX Symposium on Operating Systems Design and Implementation (OSDI)},
-  pages={561--577},
-  year={2018},
-  url={https://www.usenix.org/system/files/osdi18-moritz.pdf},
-  note={CCF A类会议, 伯克利AMP Lab开发, 启动时间秒级}
-}
+- --
 
-% [5] 大规模集群管理 - Google Borg系统
-@inproceedings{verma2015borg,
-  title={Large-scale cluster management at Google with Borg},
-  author={Verma, Abhishek and Pedrosa, Luis and Korupolu, Madhukar and Oppenheimer, David and Tune, Eric and Wilkes, John},
-  booktitle={Proceedings of the 10th European Conference on Computer Systems (EuroSys)},
-  pages={1--17},
-  year={2015},
-  doi={10.1145/2741948.2741964},
-  url={https://dl.acm.org/doi/10.1145/2741948.2741964},
-  note={CCF B类会议, 数据中心级调度系统的设计思路}
-}
+## 18. 有效性与局限性
 
-% [6] 容器技术 - Docker与Kubernetes基础
-@article{bernstein2014containers,
-  title={Containers and Cloud: From LXC to Docker to Kubernetes},
-  author={Bernstein, David},
-  journal={IEEE Cloud Computing},
-  volume={1},
-  number={3},
-  pages={81--84},
-  year={2014},
-  doi={10.1109/MCC.2014.51},
-  url={https://ieeexplore.ieee.org/document/7036275},
-  note={说明容器化调度方案（如K8s）的资源开销}
-}
+### 18.1 内部有效性
 
-% [7] LLM推理优化 - PagedAttention技术
-@inproceedings{kwon2023vllm,
-  title={Efficient Memory Management for Large Language Model Serving with PagedAttention},
-  author={Kwon, Woosuk and Li, Zhuohan and Zhuang, Siyuan and others},
-  booktitle={Proceedings of the 29th ACM Symposium on Operating Systems Principles (SOSP)},
-  pages={611--626},
-  year={2023},
-  url={https://arxiv.org/abs/2309.06180},
-  note={CCF A类会议, 通过虚拟内存分页解决KV Cache碎片化问题}
-}
+- 调参与正式评测使用不同运行数据。
+- 配置顺序随机化或交替。
+- 所有策略使用同一模型、输入和后端。
+- 显存与时间采样频率一致。
+- 明确区分冷加载、稳态和转换窗口。
 
-% [8] 单GPU LLM推理 - CPU Offloading技术
-@inproceedings{sheng2023flexgen,
-  title={FlexGen: High-Throughput Generative Inference of Large Language Models with a Single GPU},
-  author={Sheng, Ying and Zheng, Lianmin and Yuan, Binhang and others},
-  booktitle={Proceedings of the 40th International Conference on Machine Learning (ICML)},
-  pages={31094--31116},
-  year={2023},
-  url={https://arxiv.org/abs/2303.06865},
-  note={CCF A类会议, 静态offloading方案, 与EdgeSched动态迁移形成对比}
-}
+### 18.2 外部有效性
 
-% [9] Transformer服务系统 - 迭代级调度
-@inproceedings{yu2022orca,
-  title={Orca: A Distributed Serving System for Transformer-Based Generative Models},
-  author={Yu, Geon-Woo and Jeong, Jeongseok and Kim, Gunhee and Kim, Beomseok and Lee, Byung-Gon},
-  booktitle={Proceedings of the 16th USENIX Symposium on Operating Systems Design and Implementation (OSDI)},
-  pages={521--538},
-  year={2022},
-  url={https://www.usenix.org/conference/osdi22/presentation/yu},
-  note={CCF A类会议, 提出迭代级调度解决Transformer推理批处理问题}
-}
+- 主结果来自一台消费级 NVIDIA 笔记本，不能直接推广到所有 CUDA GPU。
+- 不同 GPU 架构、内存带宽、功耗限制和驱动可能改变最优配置。
+- 结果证明方法和决策流程，而不是宣称固定核心数适用于所有设备。
 
-% [10] 传统容错方案 - 异步VM复制
-@inproceedings{cully2008remus,
-  title={Remus: High Availability via Asynchronous Virtual Machine Replication},
-  author={Cully, Brendan and Lefebvre, Geoffrey and Meyer, Dutch and others},
-  booktitle={Proceedings of the 5th USENIX Symposium on Networked Systems Design and Implementation (NSDI)},
-  pages={161--174},
-  year={2008},
-  url={https://www.usenix.org/conference/nsdi-08/remus-high-availability-asynchronous-virtual-machine-replication},
-  note={CCF B类会议, 传统容错方案代表, 与EdgeSched轻量级mmap方案形成对比}
-}
+### 18.3 当前机制边界
 
-% [11] 分布式容错 - 拜占庭容错经典工作
-@inproceedings{castro1999pbft,
-  title={Practical Byzantine Fault Tolerance},
-  author={Castro, Miguel and Liskov, Barbara},
-  booktitle={Proceedings of the 3rd Symposium on Operating Systems Design and Implementation (OSDI)},
-  pages={173--186},
-  year={1999},
-  url={https://dl.acm.org/doi/10.5555/296806.296824},
-  note={CCF A类会议, 分布式系统容错领域经典工作}
-}
+- 不实现通用显存分页。
+- `PARTITIONABLE` 只表示调度抽象能够描述部分驻留，不代表任意后端或任意拆分粒度已经实现。
+- 不硬中断正在运行的 Diffusion kernel。
+- 第一版 TTS 以句子/chunk 级流式为主。
+- 部分驻留通过实例重新配置实现，不是原地层迁移。
+- 如果共享 GPU 无 Pareto 收益，系统允许退化为经过实验证明的独占策略。
 
-% [12] 崩溃一致性 - NVMe存储协议层优化
-@inproceedings{liao2021ccnvme,
-  title={Crash Consistent Non-Volatile Memory Express},
-  author={Liao, Xiaojian and Lu, Youyou and Yang, Zhe and Shu, Jiwu},
-  booktitle={Proceedings of the 28th ACM Symposium on Operating Systems Principles (SOSP)},
-  pages={464--479},
-  year={2021},
-  doi={10.1145/3477132.3483592},
-  url={https://dl.acm.org/doi/10.1145/3477132.3483592},
-  note={CCF A类会议, 与EdgeSched的mmap状态持久化机制高度相关}
-}
-```
+- --
 
----
+## 19. Go / No-Go 检查点
 
-**文档版本**：v3.4  
-**最后更新**：2026-04-16
+### Gate A：真实 TTS
+
+Go：
+
+- CPU/GPU 路径可重复运行；
+- 模型保持常驻；
+- chunk 指标完整；
+- 无静默 Mock fallback。
+
+### Gate B：混合驻留
+
+Go：
+
+- 至少一个声明为 `PARTITIONABLE` 的阶段存在可稳定运行且可复现的离散混合配置；
+- 该配置的拆分粒度、组件/层映射和转换方式均写入 manifest；
+- 相对全 CPU 降级存在流水线收益；
+- 没有不可接受的显存风险。
+
+No-Go：
+
+- 部分驻留只增加转换和干扰，没有改善端到端指标。
+
+### Gate C：共享 GPU
+
+Go：
+
+- TTS或部分 LLM 与 Diffusion 共存时形成可解释的 Pareto 点。
+
+No-Go：
+
+- 共存导致明显 OOM 风险或所有任务都更慢。
+
+### Gate D：正式实验
+
+进入正式实验前必须满足：
+
+- 策略已冻结；
+- 所有真实后端通过 E0；
+- calibration 与 evaluation 数据分离；
+- manifest 完整；
+- 正文中计划使用的每个指标均能实际采集。
+
+- --
+
+## 20. 当前任务顺序
+
+真实 TTS worker 和基础 smoke 已经完成，但其运行结果仍处于 `experiment_results/` 的探索阶段。近期可执行步骤以 `docs/ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md` 为准：
+
+- [x] 真实 Qwen3-TTS-0.6B-Base worker 与基础可复现 smoke
+- [x] A1：统一实验契约、资源采样与物理核分配基础设施；WSL2 证据为 `a1_smoke_20260828_verified_v6`
+- [ ] **当前 B1：TTS T0–T3 组件发现与单文本 smoke**
+- [ ] B2：TTS T0–T3 正式 Pareto profiling
+- [ ] LLM `k={0,8,16,24,32,FULL}` 驻留曲线、Forge b=1 同日复测与临界补测
+- [ ] JSON RAG/BGE/Faster-Whisper 核心预算；音频路由就绪后补真实播放探针
+- [ ] `R_sys={0,1,2,4}` 正式辅助任务验证
+- [ ] S0 无图像真实重叠静态放置实验
+- [ ] 根据真实结果判断弹性驻留 Go / No-Go
+- [ ] Go 后才实现 `PlacementPlan` 与新代价模型，再开展 S1 和正式策略评测
+- [ ] 同步论文、图表和必要的 C++ 契约
+
+在 B1/B2 确认真实可行驻留集合 \(\mathcal R_T\) 前，不把 TTS 组件拆分写成已实现能力，也不据此修改在线规划器或论文性能结论。
+
+- --
+
+## 21. 完成标准
+
+新版研究工作完成时，应满足：
+
+- 真实 LLM、TTS、Diffusion 能形成可复现端到端工作流；
+- 调度器能够输出完整、可解释的 PlacementPlan；
+- 所有允许的共享配置都经过真实 profiling；
+- 异常和未知状态能安全回退；
+- 不同 prompt 不会错误合批；
+- 图片队列不会触发无意义的重复迁移；
+- 核心数由测量曲线推导，而不是固定写死；
+- 至少一个场景中，新策略相对二元完整迁移形成真实 Pareto 改进；
+- 若不存在该改进，论文主动收缩主张；
+- 所有正文性能数字可追溯到脚本、原始迭代、manifest 和运行环境。
+
+这份指南的目的不是预先写出“漂亮结论”，而是确保实现、实验和论文主张始终由同一组可验证事实支撑。

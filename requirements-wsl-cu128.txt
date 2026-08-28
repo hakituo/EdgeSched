@@ -2,7 +2,8 @@
 #
 # 系统依赖（pip 无法安装）：
 #   sudo apt-get update
-#   sudo apt-get install -y sox libsox-fmt-all
+#   sudo apt-get install -y sox libsox-fmt-all libportaudio2 \
+#     libasound2-plugins pulseaudio-utils alsa-utils
 #
 # llama-cpp-python 必须使用本机 CUDA 12.8 编译器构建，推荐命令：
 #   PATH=/usr/local/cuda-12.8/bin:$PATH \
