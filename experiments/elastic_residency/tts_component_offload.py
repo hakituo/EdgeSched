@@ -121,9 +121,37 @@ def _synchronize() -> None:
         torch.cuda.synchronize()
 
 
-def _gpu_process_used_mb(pid: int) -> float:
+def _nvidia_memory_snapshot(pid: int) -> dict[str, Any]:
+    card_used_mb: float | None = None
+    card_total_mb: float | None = None
     try:
-        completed = subprocess.run(
+        card_completed = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.used,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=3.0,
+        )
+        card_parts = [
+            value.strip()
+            for value in card_completed.stdout.splitlines()[0].split(",")
+        ]
+        card_used_mb, card_total_mb = map(float, card_parts[:2])
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return {
+            "gpu_card_available": False,
+            "gpu_card_used_mb": None,
+            "gpu_card_total_mb": None,
+            "gpu_process_total_mb": None,
+            "gpu_process_total_available": False,
+            "gpu_process_total_unavailable_reason": "card_query_failed",
+        }
+    try:
+        process_completed = subprocess.run(
             [
                 "nvidia-smi",
                 "--query-compute-apps=pid,used_memory",
@@ -135,18 +163,37 @@ def _gpu_process_used_mb(pid: int) -> float:
             timeout=3.0,
         )
     except (OSError, subprocess.SubprocessError):
-        return 0.0
-    total = 0.0
-    for line in completed.stdout.splitlines():
+        process_completed = None
+    process_used_mb: float | None = None
+    matched_pid = False
+    process_output = process_completed.stdout if process_completed else ""
+    for line in process_output.splitlines():
         parts = [part.strip() for part in line.split(",")]
         if len(parts) != 2:
             continue
         try:
             if int(parts[0]) == pid:
-                total += float(parts[1])
+                matched_pid = True
+                process_used_mb = float(parts[1])
+                break
         except ValueError:
             continue
-    return total
+    if process_used_mb is not None:
+        unavailable_reason = None
+    elif matched_pid:
+        unavailable_reason = "driver_reported_non_numeric_process_memory"
+    elif process_output.strip():
+        unavailable_reason = "current_pid_not_reported"
+    else:
+        unavailable_reason = "no_compute_process_rows"
+    return {
+        "gpu_card_available": True,
+        "gpu_card_used_mb": card_used_mb,
+        "gpu_card_total_mb": card_total_mb,
+        "gpu_process_total_mb": process_used_mb,
+        "gpu_process_total_available": process_used_mb is not None,
+        "gpu_process_total_unavailable_reason": unavailable_reason,
+    }
 
 
 def _wait_for_gpu_probe(timeout_s: float) -> bool:
@@ -172,14 +219,26 @@ def _wait_for_gpu_probe(timeout_s: float) -> bool:
     return False
 
 
-def _memory_snapshot(process: psutil.Process) -> dict[str, Any]:
+def _memory_snapshot(
+    process: psutil.Process,
+    *,
+    baseline_card_used_mb: float,
+) -> dict[str, Any]:
     import torch
 
+    nvidia = _nvidia_memory_snapshot(os.getpid())
+    card_used_mb = nvidia["gpu_card_used_mb"]
     snapshot = {
         "rss_bytes": process.memory_info().rss,
         "process_cpu_percent": process.cpu_percent(interval=None),
         "system_available_bytes": psutil.virtual_memory().available,
-        "gpu_process_used_mb": _gpu_process_used_mb(os.getpid()),
+        **nvidia,
+        "gpu_process_total_estimate_mb": (
+            max(0.0, card_used_mb - baseline_card_used_mb)
+            if card_used_mb is not None
+            else None
+        ),
+        "gpu_process_total_estimate_method": "card_delta_from_preload_baseline",
         "torch_allocated_bytes": 0,
         "torch_reserved_bytes": 0,
         "torch_peak_allocated_bytes": 0,
@@ -302,6 +361,10 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         raise RuntimeError("B1 计时前未获得可用 NVIDIA GPU 样本")
     process = psutil.Process()
     process.cpu_percent(interval=None)  # 明确丢弃初始化 CPU 样本。
+    memory_baseline = _nvidia_memory_snapshot(os.getpid())
+    baseline_card_used_mb = memory_baseline["gpu_card_used_mb"]
+    if baseline_card_used_mb is None:
+        raise RuntimeError("B1 无法获取计时前整卡显存基线")
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     torch.cuda.reset_peak_memory_stats()
@@ -316,13 +379,17 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
     _synchronize()
     load_s = time.perf_counter() - load_started
     inventory_loaded = _component_inventory(wrapper)
-    memory_loaded = _memory_snapshot(process)
+    memory_loaded = _memory_snapshot(
+        process, baseline_card_used_mb=baseline_card_used_mb
+    )
 
     placement_started = time.perf_counter()
     _apply_placement(wrapper, spec)
     placement_s = time.perf_counter() - placement_started
     inventory_placed = _component_inventory(wrapper)
-    memory_placed = _memory_snapshot(process)
+    memory_placed = _memory_snapshot(
+        process, baseline_card_used_mb=baseline_card_used_mb
+    )
 
     prompt, prompt_build_s = _build_xvector_prompt(wrapper, ref_audio)
     prompt_device_before_generate = str(prompt.ref_spk_embedding.device)
@@ -332,7 +399,9 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
     inventory_ready = _component_inventory(wrapper)
-    memory_ready = _memory_snapshot(process)
+    memory_ready = _memory_snapshot(
+        process, baseline_card_used_mb=baseline_card_used_mb
+    )
     actual_devices = _actual_devices(inventory_ready)
 
     tokenize_started = time.perf_counter()
@@ -359,16 +428,22 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
     )
     _synchronize()
     talker_generate_s = time.perf_counter() - talker_started
-    memory_talker_peak = _memory_snapshot(process)
+    memory_talker_peak = _memory_snapshot(
+        process, baseline_card_used_mb=baseline_card_used_mb
+    )
 
     codec_device = torch.device(spec.speech_codec_device)
+    code_devices_before_transfer = [str(code.device) for code in codes]
     _synchronize()
     torch.cuda.reset_peak_memory_stats()
     transfer_started = time.perf_counter()
     decode_codes = [code.to(codec_device) for code in codes]
     _synchronize()
     code_transfer_s = time.perf_counter() - transfer_started
-    memory_transfer_peak = _memory_snapshot(process)
+    code_devices_after_transfer = [str(code.device) for code in decode_codes]
+    memory_transfer_peak = _memory_snapshot(
+        process, baseline_card_used_mb=baseline_card_used_mb
+    )
     torch.cuda.reset_peak_memory_stats()
     codec_started = time.perf_counter()
     wavs, sample_rate = wrapper.model.speech_tokenizer.decode(
@@ -376,19 +451,67 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
     )
     _synchronize()
     codec_decode_s = time.perf_counter() - codec_started
-    memory_codec_peak = _memory_snapshot(process)
+    memory_codec_peak = _memory_snapshot(
+        process, baseline_card_used_mb=baseline_card_used_mb
+    )
     output_wav.parent.mkdir(parents=True, exist_ok=True)
     sf.write(output_wav, wavs[0], sample_rate, subtype="PCM_16")
     synthesis_s = tokenize_s + talker_generate_s + code_transfer_s + codec_decode_s
     audio_duration_s = len(wavs[0]) / sample_rate
-    memory_final = _memory_snapshot(process)
+    memory_final = _memory_snapshot(
+        process, baseline_card_used_mb=baseline_card_used_mb
+    )
+    acceptance_checks = {
+        "gpu_probe_ready_before_timing": gpu_probe_ready,
+        "gpu_card_baseline_available": baseline_card_used_mb is not None,
+        "process_memory_evidence_available": (
+            memory_ready["gpu_process_total_mb"] is not None
+            or (
+                memory_ready["gpu_process_total_estimate_mb"] is not None
+                and memory_ready["gpu_process_total_estimate_mb"] > 0
+            )
+        ),
+        "component_placement_matches": _placement_matches(spec, actual_devices),
+        "prompt_device_matches_speaker_stage": (
+            prompt_device_before_generate == spec.speaker_device
+        ),
+        "talker_codes_start_on_talker_device": (
+            bool(code_devices_before_transfer)
+            and all(
+                device == spec.talker_device
+                for device in code_devices_before_transfer
+            )
+        ),
+        "codes_arrive_on_codec_device": (
+            bool(code_devices_after_transfer)
+            and all(
+                device == spec.speech_codec_device
+                for device in code_devices_after_transfer
+            )
+        ),
+        "all_timing_segments_positive": all(
+            value > 0
+            for value in (
+                tokenize_s,
+                talker_generate_s,
+                code_transfer_s,
+                codec_decode_s,
+            )
+        ),
+        "torch_phase_peaks_available": all(
+            snapshot["torch_peak_allocated_bytes"] > 0
+            for snapshot in (
+                memory_talker_peak,
+                memory_transfer_peak,
+                memory_codec_peak,
+            )
+        ),
+        "audio_written": output_wav.is_file() and audio_duration_s > 0,
+    }
     return {
         "config": spec.name,
-        "passed": (
-            _placement_matches(spec, actual_devices)
-            and output_wav.is_file()
-            and audio_duration_s > 0
-        ),
+        "passed": all(acceptance_checks.values()),
+        "acceptance_checks": acceptance_checks,
         "backend_kind": "real_qwen3_tts_component_split",
         "fallback_occurred": False,
         "gpu_probe_ready_before_timing": gpu_probe_ready,
@@ -414,7 +537,10 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "rtf": synthesis_s / audio_duration_s,
         "sample_rate": sample_rate,
         "codec_code_shapes": [list(code.shape) for code in codes],
+        "code_devices_before_transfer": code_devices_before_transfer,
+        "code_devices_after_transfer": code_devices_after_transfer,
         "output_wav": str(output_wav),
+        "memory_baseline": memory_baseline,
         "memory_loaded": memory_loaded,
         "memory_placed": memory_placed,
         "memory_ready": memory_ready,
@@ -611,7 +737,9 @@ def run_parent(args: argparse.Namespace) -> Path:
         "ttfa_s",
         "audio_duration_s",
         "rtf",
-        "gpu_process_used_mb_ready",
+        "gpu_process_total_mb_ready",
+        "gpu_process_total_estimate_mb_ready",
+        "gpu_card_used_mb_ready",
     ]
     with csv_path.open("w", encoding="utf-8", newline="") as file_obj:
         csv_writer = csv.DictWriter(file_obj, fieldnames=fields)
@@ -635,9 +763,15 @@ def run_parent(args: argparse.Namespace) -> Path:
                     "ttfa_s": record.get("ttfa_s"),
                     "audio_duration_s": record.get("audio_duration_s"),
                     "rtf": record.get("rtf"),
-                    "gpu_process_used_mb_ready": record.get(
+                    "gpu_process_total_mb_ready": record.get(
                         "memory_ready", {}
-                    ).get("gpu_process_used_mb"),
+                    ).get("gpu_process_total_mb"),
+                    "gpu_process_total_estimate_mb_ready": record.get(
+                        "memory_ready", {}
+                    ).get("gpu_process_total_estimate_mb"),
+                    "gpu_card_used_mb_ready": record.get(
+                        "memory_ready", {}
+                    ).get("gpu_card_used_mb"),
                 }
             )
     return writer.layout.root
