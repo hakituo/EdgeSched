@@ -1,0 +1,279 @@
+{
+  "experiment": "exp1_migration_avoidance",
+  "description": "Always-Migrate vs Cost-Aware Avoidance",
+  "config": {
+    "repeat_count": 3,
+    "time_scale": 0.3,
+    "migration_cost_scaled": {
+      "kv_cache_save_ms": 75.0,
+      "vram_release_ms": 30.0,
+      "cpu_load_ms": 450.0,
+      "restore_ms": 600.0,
+      "service_gap_ms": 90.0,
+      "total_downlink_ms": 555.0,
+      "total_round_trip_ms": 1155.0
+    },
+    "migration_cost_real": {
+      "kv_cache_save_ms": 250,
+      "vram_release_ms": 100,
+      "cpu_load_ms": 1500,
+      "restore_ms": 2000,
+      "service_gap_ms": 300,
+      "total_downlink_ms": 1850,
+      "total_round_trip_ms": 3850
+    },
+    "task_durations_scaled": {
+      "image": 2.1,
+      "vlm": 0.75,
+      "tts": 0.6,
+      "rag": 0.24,
+      "ocr": 0.36
+    },
+    "task_durations_real": {
+      "image": 7.0,
+      "vlm": 2.5,
+      "tts": 2.0,
+      "rag": 0.8,
+      "ocr": 1.2
+    },
+    "workload": [
+      {
+        "phase": "image",
+        "duration": 2.1
+      },
+      {
+        "phase": "vlm",
+        "duration": 0.75
+      },
+      {
+        "phase": "vlm",
+        "duration": 0.75
+      },
+      {
+        "phase": "rag",
+        "duration": 0.24
+      },
+      {
+        "phase": "rag",
+        "duration": 0.24
+      }
+    ]
+  },
+  "summary": {
+    "always_migrate": {
+      "total_time_s": {
+        "mean": 7.1243310769399,
+        "stdev": 0.01715512592116902,
+        "min": 7.104554891586304,
+        "max": 7.135206699371338
+      },
+      "migration_count": {
+        "mean": 3,
+        "min": 3,
+        "max": 3
+      },
+      "llm_degraded_time_s": {
+        "mean": 5.30295205116272,
+        "min": 5.290942907333374,
+        "max": 5.31342339515686
+      },
+      "decision_stats": {
+        "total_decisions": 3,
+        "migrate_count": 3,
+        "migrate_ratio": 1.0
+      },
+      "backfill_stats": {
+        "total_submitted": 2,
+        "total_executed": 2,
+        "total_backfilled": 0,
+        "total_backfill_time_hidden_s": 0.0,
+        "max_concurrent": 2,
+        "avg_wait_s": 0.0
+      }
+    },
+    "cost_aware": {
+      "total_time_s": {
+        "mean": 3.282059669494629,
+        "stdev": 0.006178547326848366,
+        "min": 3.274933338165283,
+        "max": 3.2859160900115967
+      },
+      "migration_count": {
+        "mean": 1,
+        "min": 1,
+        "max": 1
+      },
+      "llm_degraded_time_s": {
+        "mean": 2.6761647860209146,
+        "min": 2.669360876083374,
+        "max": 2.6798336505889893
+      },
+      "decision_stats": {
+        "total_decisions": 1,
+        "migrate_count": 1,
+        "wait_count": 0,
+        "bypass_count": 0,
+        "migrate_ratio": 1.0,
+        "avg_predicted_burst_s": 7.0,
+        "avg_benefit_s": -1.155
+      },
+      "backfill_stats": {
+        "total_submitted": 4,
+        "total_executed": 4,
+        "total_backfilled": 2,
+        "total_backfill_time_hidden_s": 0.49881505966186523,
+        "max_concurrent": 2,
+        "avg_wait_s": 0.3810384273529053
+      }
+    },
+    "improvement": {
+      "time_reduction_pct": 53.93167956332028,
+      "migration_reduction_pct": 66.66666666666666,
+      "degraded_time_reduction_pct": 49.5344336474975
+    }
+  },
+  "raw_results": {
+    "always_migrate": [
+      {
+        "strategy": "always_migrate",
+        "repeat": 0,
+        "total_time_s": 7.104554891586304,
+        "migration_count": 3,
+        "llm_degraded_time_s": 5.290942907333374,
+        "decision_stats": {
+          "total_decisions": 3,
+          "migrate_count": 3,
+          "migrate_ratio": 1.0
+        },
+        "backfill_stats": {
+          "total_submitted": 2,
+          "total_executed": 2,
+          "total_backfilled": 0,
+          "total_backfill_time_hidden_s": 0.0,
+          "max_concurrent": 2,
+          "avg_wait_s": 0.0
+        },
+        "task_count": 5
+      },
+      {
+        "strategy": "always_migrate",
+        "repeat": 1,
+        "total_time_s": 7.135206699371338,
+        "migration_count": 3,
+        "llm_degraded_time_s": 5.304489850997925,
+        "decision_stats": {
+          "total_decisions": 3,
+          "migrate_count": 3,
+          "migrate_ratio": 1.0
+        },
+        "backfill_stats": {
+          "total_submitted": 2,
+          "total_executed": 2,
+          "total_backfilled": 0,
+          "total_backfill_time_hidden_s": 0.0,
+          "max_concurrent": 2,
+          "avg_wait_s": 0.0
+        },
+        "task_count": 5
+      },
+      {
+        "strategy": "always_migrate",
+        "repeat": 2,
+        "total_time_s": 7.1332316398620605,
+        "migration_count": 3,
+        "llm_degraded_time_s": 5.31342339515686,
+        "decision_stats": {
+          "total_decisions": 3,
+          "migrate_count": 3,
+          "migrate_ratio": 1.0
+        },
+        "backfill_stats": {
+          "total_submitted": 2,
+          "total_executed": 2,
+          "total_backfilled": 0,
+          "total_backfill_time_hidden_s": 0.0,
+          "max_concurrent": 2,
+          "avg_wait_s": 0.0
+        },
+        "task_count": 5
+      }
+    ],
+    "cost_aware": [
+      {
+        "strategy": "cost_aware",
+        "repeat": 0,
+        "total_time_s": 3.2859160900115967,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.6798336505889893,
+        "decision_stats": {
+          "total_decisions": 1,
+          "migrate_count": 1,
+          "wait_count": 0,
+          "bypass_count": 0,
+          "migrate_ratio": 1.0,
+          "avg_predicted_burst_s": 7.0,
+          "avg_benefit_s": -1.155
+        },
+        "backfill_stats": {
+          "total_submitted": 4,
+          "total_executed": 4,
+          "total_backfilled": 2,
+          "total_backfill_time_hidden_s": 0.498964786529541,
+          "max_concurrent": 2,
+          "avg_wait_s": 0.37473106384277344
+        },
+        "task_count": 5
+      },
+      {
+        "strategy": "cost_aware",
+        "repeat": 1,
+        "total_time_s": 3.274933338165283,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.669360876083374,
+        "decision_stats": {
+          "total_decisions": 1,
+          "migrate_count": 1,
+          "wait_count": 0,
+          "bypass_count": 0,
+          "migrate_ratio": 1.0,
+          "avg_predicted_burst_s": 7.0,
+          "avg_benefit_s": -1.155
+        },
+        "backfill_stats": {
+          "total_submitted": 4,
+          "total_executed": 4,
+          "total_backfilled": 2,
+          "total_backfill_time_hidden_s": 0.49930667877197266,
+          "max_concurrent": 2,
+          "avg_wait_s": 0.379827618598938
+        },
+        "task_count": 5
+      },
+      {
+        "strategy": "cost_aware",
+        "repeat": 2,
+        "total_time_s": 3.285329580307007,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.679299831390381,
+        "decision_stats": {
+          "total_decisions": 1,
+          "migrate_count": 1,
+          "wait_count": 0,
+          "bypass_count": 0,
+          "migrate_ratio": 1.0,
+          "avg_predicted_burst_s": 7.0,
+          "avg_benefit_s": -1.155
+        },
+        "backfill_stats": {
+          "total_submitted": 4,
+          "total_executed": 4,
+          "total_backfilled": 2,
+          "total_backfill_time_hidden_s": 0.49881505966186523,
+          "max_concurrent": 2,
+          "avg_wait_s": 0.3810384273529053
+        },
+        "task_count": 5
+      }
+    ]
+  }
+}

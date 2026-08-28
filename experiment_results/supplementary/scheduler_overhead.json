@@ -1,0 +1,10 @@
+{
+  "name": "scheduler_overhead",
+  "skipped": true,
+  "reason": "cpp_scheduler_engine.enabled=False",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "python": "3.10.11",
+  "rss_before_import_mb": 25.316,
+  "rss_after_import_mb": 25.664,
+  "import_s": 0.021001
+}

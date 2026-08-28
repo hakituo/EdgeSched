@@ -1,0 +1,61 @@
+{
+  "name": "crash_recovery_experiment",
+  "timestamp": "2026-05-05T05:01:16",
+  "seed": 42,
+  "config": {
+    "with_backplane": true,
+    "n_tasks": 10,
+    "crash_mode": "process_kill",
+    "backplane_path": "/tmp/mvp_core_crash_test_with_1777928473_4339.dat"
+  },
+  "metrics": {
+    "process_start_to_healthy_ms": 3.670930862426758,
+    "healthy_to_first_request_ms": 1.9366741180419922,
+    "first_request_to_stable_ms": 39.456844329833984,
+    "total_recovery_time_ms": 43.128013610839844
+  },
+  "validation": {
+    "child_ready": true,
+    "pre_crash_task_count": 10,
+    "recovered_task_count": 10,
+    "closed_task_count": 2,
+    "stuck_running_found_count": 2,
+    "stuck_running_remaining_count": 0,
+    "stuck_running_closed_count": 2,
+    "no_stuck_running_tasks": true,
+    "state_machine_closed": true,
+    "state_consistency": {
+      "pre_crash_count": 10,
+      "recovered_count": 10,
+      "lost_count": 0,
+      "extra_count": 0,
+      "running_count": 0,
+      "is_consistent": true
+    }
+  },
+  "phases": {
+    "setup_time_s": 2.9875600337982178,
+    "crash_time": 1777928476.7443047,
+    "restart_time": 1777928476.8095052
+  },
+  "child_output_tail": [
+    "Warning: Could not import integrated_config, using mock",
+    "Warning: Could not import integrated_config, using mock",
+    "[2026-05-05 05:01:14] [WARNING] [TraceID:system] [mvp_core.services.state_backplane] State Backplane magic mismatch or new file. Initializing...",
+    "[2026-05-05 05:01:14] [INFO] [TraceID:system] [mvp_core.services.state_backplane] State Backplane initialized at /tmp/mvp_core_crash_test_with_1777928473_4339.dat",
+    "[2026-05-05 05:01:14] [INFO] [TraceID:system] [mvp_core] PythonWorker started with 2 workers",
+    "[2026-05-05 05:01:14] [INFO] [TraceID:system] [mvp_core] Periodic task scheduled - Name: cleanup_completed_tasks, Interval: 300s",
+    "[2026-05-05 05:01:14] [INFO] [TraceID:system] [mvp_core] GlobalTaskScheduler (Router) started",
+    "Task 0 submitted with id task_13017fcf_0",
+    "Task 1 submitted with id task_29a63909_1",
+    "Task 2 submitted with id task_1aeb917c_2",
+    "Task 3 submitted with id task_bd02cd5e_3",
+    "Task 4 submitted with id task_d13e26a1_4",
+    "Task 5 submitted with id task_f58f90b9_5",
+    "Task 6 submitted with id task_3b8241da_6",
+    "Task 7 submitted with id task_ea1662cb_7",
+    "Task 8 submitted with id task_b10d2a61_8",
+    "Task 9 submitted with id task_16fe8c05_9",
+    "READY"
+  ]
+}

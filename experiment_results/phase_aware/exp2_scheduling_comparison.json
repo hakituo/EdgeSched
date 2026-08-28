@@ -1,0 +1,271 @@
+{
+  "experiment": "exp2_scheduling_comparison",
+  "description": "Sequential / V1 Dual-Role / V2 Phase-Aware Backfilling",
+  "config": {
+    "repeat_count": 3,
+    "time_scale": 0.3,
+    "migration_cost_scaled": {
+      "kv_cache_save_ms": 75.0,
+      "vram_release_ms": 30.0,
+      "cpu_load_ms": 450.0,
+      "restore_ms": 600.0,
+      "service_gap_ms": 90.0,
+      "total_downlink_ms": 555.0,
+      "total_round_trip_ms": 1155.0
+    },
+    "migration_cost_real": {
+      "kv_cache_save_ms": 250,
+      "vram_release_ms": 100,
+      "cpu_load_ms": 1500,
+      "restore_ms": 2000,
+      "service_gap_ms": 300,
+      "total_downlink_ms": 1850,
+      "total_round_trip_ms": 3850
+    },
+    "task_durations_scaled": {
+      "image": 2.1,
+      "vlm": 0.75,
+      "tts": 0.6,
+      "rag": 0.24
+    },
+    "task_durations_real": {
+      "image": 7.0,
+      "vlm": 2.5,
+      "tts": 2.0,
+      "rag": 0.8
+    },
+    "workload": [
+      {
+        "phase": "image",
+        "duration": 2.1
+      },
+      {
+        "phase": "vlm",
+        "duration": 0.75
+      },
+      {
+        "phase": "tts",
+        "duration": 0.6
+      },
+      {
+        "phase": "tts",
+        "duration": 0.6
+      },
+      {
+        "phase": "rag",
+        "duration": 0.24
+      },
+      {
+        "phase": "rag",
+        "duration": 0.24
+      }
+    ]
+  },
+  "summary": {
+    "sequential": {
+      "total_time_s": {
+        "mean": 5.752185424168904,
+        "stdev": 0.017249343497906546,
+        "min": 5.740265369415283,
+        "max": 5.77196478843689
+      },
+      "migration_count": {
+        "mean": 1,
+        "min": 1,
+        "max": 1
+      },
+      "llm_degraded_time_s": {
+        "mean": 2.6733222007751465,
+        "min": 2.6609723567962646,
+        "max": 2.6801583766937256
+      },
+      "backfill_hidden_time_s": {
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "task_count": 6,
+      "gpu_task_count": 2,
+      "cpu_task_count": 4,
+      "backfilled_task_count": 0
+    },
+    "v1_dual_role": {
+      "total_time_s": {
+        "mean": 6.92370621363322,
+        "stdev": 0.007699165573717642,
+        "min": 6.916136980056763,
+        "max": 6.9315290451049805
+      },
+      "migration_count": {
+        "mean": 2,
+        "min": 2,
+        "max": 2
+      },
+      "llm_degraded_time_s": {
+        "mean": 3.995213588078817,
+        "min": 3.9918148517608643,
+        "max": 4.001108646392822
+      },
+      "backfill_hidden_time_s": {
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "task_count": 6,
+      "gpu_task_count": 2,
+      "cpu_task_count": 4,
+      "backfilled_task_count": 0,
+      "speedup_vs_sequential": 0.8307957106617961,
+      "time_reduction_pct": -20.36653381412128
+    },
+    "v2_phase_aware": {
+      "total_time_s": {
+        "mean": 3.275244871775309,
+        "stdev": 0.011940619548559796,
+        "min": 3.2634377479553223,
+        "max": 3.2873146533966064
+      },
+      "migration_count": {
+        "mean": 1,
+        "min": 1,
+        "max": 1
+      },
+      "llm_degraded_time_s": {
+        "mean": 2.668138265609741,
+        "min": 2.6670801639556885,
+        "max": 2.670232057571411
+      },
+      "backfill_hidden_time_s": {
+        "mean": 1.1072285175323486,
+        "min": 1.1064369678497314,
+        "max": 1.1076362133026123
+      },
+      "task_count": 6,
+      "gpu_task_count": 1,
+      "cpu_task_count": 5,
+      "backfilled_task_count": 5,
+      "speedup_vs_sequential": 1.7562611802674155,
+      "time_reduction_pct": 43.06086069455023
+    },
+    "v2_vs_v1": {
+      "speedup": 2.113950707410864,
+      "time_reduction_pct": 52.69520729625785
+    }
+  },
+  "raw_results": {
+    "sequential": [
+      {
+        "strategy": "sequential",
+        "repeat": 0,
+        "total_time_s": 5.77196478843689,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.678835868835449,
+        "backfill_hidden_time_s": 0.0,
+        "task_count": 6,
+        "gpu_task_count": 2,
+        "cpu_task_count": 4,
+        "backfilled_task_count": 0
+      },
+      {
+        "strategy": "sequential",
+        "repeat": 1,
+        "total_time_s": 5.740265369415283,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.6609723567962646,
+        "backfill_hidden_time_s": 0.0,
+        "task_count": 6,
+        "gpu_task_count": 2,
+        "cpu_task_count": 4,
+        "backfilled_task_count": 0
+      },
+      {
+        "strategy": "sequential",
+        "repeat": 2,
+        "total_time_s": 5.744326114654541,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.6801583766937256,
+        "backfill_hidden_time_s": 0.0,
+        "task_count": 6,
+        "gpu_task_count": 2,
+        "cpu_task_count": 4,
+        "backfilled_task_count": 0
+      }
+    ],
+    "v1_dual_role": [
+      {
+        "strategy": "v1_dual_role",
+        "repeat": 0,
+        "total_time_s": 6.9315290451049805,
+        "migration_count": 2,
+        "llm_degraded_time_s": 3.9927172660827637,
+        "backfill_hidden_time_s": 0.0,
+        "task_count": 6,
+        "gpu_task_count": 2,
+        "cpu_task_count": 4,
+        "backfilled_task_count": 0
+      },
+      {
+        "strategy": "v1_dual_role",
+        "repeat": 1,
+        "total_time_s": 6.916136980056763,
+        "migration_count": 2,
+        "llm_degraded_time_s": 3.9918148517608643,
+        "backfill_hidden_time_s": 0.0,
+        "task_count": 6,
+        "gpu_task_count": 2,
+        "cpu_task_count": 4,
+        "backfilled_task_count": 0
+      },
+      {
+        "strategy": "v1_dual_role",
+        "repeat": 2,
+        "total_time_s": 6.923452615737915,
+        "migration_count": 2,
+        "llm_degraded_time_s": 4.001108646392822,
+        "backfill_hidden_time_s": 0.0,
+        "task_count": 6,
+        "gpu_task_count": 2,
+        "cpu_task_count": 4,
+        "backfilled_task_count": 0
+      }
+    ],
+    "v2_phase_aware": [
+      {
+        "strategy": "v2_phase_aware",
+        "repeat": 0,
+        "total_time_s": 3.2873146533966064,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.6670801639556885,
+        "backfill_hidden_time_s": 1.1064369678497314,
+        "task_count": 6,
+        "gpu_task_count": 1,
+        "cpu_task_count": 5,
+        "backfilled_task_count": 5
+      },
+      {
+        "strategy": "v2_phase_aware",
+        "repeat": 1,
+        "total_time_s": 3.274982213973999,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.667102575302124,
+        "backfill_hidden_time_s": 1.1076362133026123,
+        "task_count": 6,
+        "gpu_task_count": 1,
+        "cpu_task_count": 5,
+        "backfilled_task_count": 5
+      },
+      {
+        "strategy": "v2_phase_aware",
+        "repeat": 2,
+        "total_time_s": 3.2634377479553223,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.670232057571411,
+        "backfill_hidden_time_s": 1.1076123714447021,
+        "task_count": 6,
+        "gpu_task_count": 1,
+        "cpu_task_count": 5,
+        "backfilled_task_count": 5
+      }
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "llm_only_latency_s": 0.40893125534057617,
+  "image_only_latency_s": 4.050126552581787,
+  "concurrent_llm_latency_s": 9.875282764434814,
+  "concurrent_image_latency_s": 2.0203588008880615,
+  "status": "success"
+}

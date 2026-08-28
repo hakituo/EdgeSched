@@ -1,0 +1,59 @@
+{
+  "name": "crash_recovery_experiment",
+  "timestamp": "2026-05-05T05:01:20",
+  "seed": 42,
+  "config": {
+    "with_backplane": false,
+    "n_tasks": 10,
+    "crash_mode": "process_kill",
+    "backplane_path": "/tmp/mvp_core_crash_test_without_1777928476_4339.dat"
+  },
+  "metrics": {
+    "process_start_to_healthy_ms": 0.44608116149902344,
+    "healthy_to_first_request_ms": 0.6504058837890625,
+    "first_request_to_stable_ms": 6.462335586547852,
+    "total_recovery_time_ms": 6.908416748046875
+  },
+  "validation": {
+    "child_ready": true,
+    "pre_crash_task_count": 10,
+    "recovered_task_count": 0,
+    "closed_task_count": 0,
+    "stuck_running_found_count": 0,
+    "stuck_running_remaining_count": 0,
+    "stuck_running_closed_count": 0,
+    "no_stuck_running_tasks": true,
+    "state_machine_closed": true,
+    "state_consistency": {
+      "pre_crash_count": 10,
+      "recovered_count": 0,
+      "lost_count": 10,
+      "extra_count": 0,
+      "running_count": 0,
+      "is_consistent": false
+    }
+  },
+  "phases": {
+    "setup_time_s": 2.8370954990386963,
+    "crash_time": 1777928480.3536165,
+    "restart_time": 1777928480.4188328
+  },
+  "child_output_tail": [
+    "Warning: Could not import integrated_config, using mock",
+    "Warning: Could not import integrated_config, using mock",
+    "[2026-05-05 05:01:17] [INFO] [TraceID:system] [mvp_core] PythonWorker started with 2 workers",
+    "[2026-05-05 05:01:17] [INFO] [TraceID:system] [mvp_core] Periodic task scheduled - Name: cleanup_completed_tasks, Interval: 300s",
+    "[2026-05-05 05:01:17] [INFO] [TraceID:system] [mvp_core] GlobalTaskScheduler (Router) started",
+    "Task 0 submitted with id task_116fb12b_0",
+    "Task 1 submitted with id task_0be68953_1",
+    "Task 2 submitted with id task_c0d2c037_2",
+    "Task 3 submitted with id task_da99ac82_3",
+    "Task 4 submitted with id task_3cf2d00d_4",
+    "Task 5 submitted with id task_ae2b35c7_5",
+    "Task 6 submitted with id task_0fcb1605_6",
+    "Task 7 submitted with id task_b15c0784_7",
+    "Task 8 submitted with id task_c937db48_8",
+    "Task 9 submitted with id task_81bceb6b_9",
+    "READY"
+  ]
+}

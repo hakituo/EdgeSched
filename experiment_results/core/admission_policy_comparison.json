@@ -1,0 +1,170 @@
+{
+  "name": "admission_policy_comparison_real",
+  "timestamp": "2026-06-11T22:23:22",
+  "config": {
+    "n_bursts": 2,
+    "interval_s": 15.0,
+    "seed": 42,
+    "image": {
+      "width": 512,
+      "height": 512,
+      "steps": 20,
+      "guidance_scale": 7.5
+    },
+    "warmup_bursts": 0
+  },
+  "scenarios": {
+    "greedy": {
+      "aggregated": {
+        "runtime_metrics_ema": {
+          "avg_offload_s": null,
+          "avg_restore_s": null,
+          "avg_burst_s": null,
+          "avg_burst_vram_mb": null,
+          "sample_count": 0
+        },
+        "offload_time_s": {
+          "mean": 8.322,
+          "std": 0.994,
+          "min": 7.619,
+          "max": 9.024,
+          "count": 2
+        },
+        "restore_time_s": {
+          "mean": 13.118,
+          "std": 1.269,
+          "min": 12.22,
+          "max": 14.015,
+          "count": 2
+        },
+        "burst_time_s": {
+          "mean": 28.984,
+          "std": 11.154,
+          "min": 21.097,
+          "max": 36.871,
+          "count": 2
+        },
+        "total_completion_s": {
+          "mean": 42.102,
+          "std": 9.884,
+          "min": 35.113,
+          "max": 49.091,
+          "count": 2
+        },
+        "llm_disruption_s": {
+          "mean": 42.102,
+          "std": 9.884,
+          "min": 35.113,
+          "max": 49.091,
+          "count": 2
+        },
+        "n_offloads": 2,
+        "n_bursts": 2,
+        "reject_rate": 0.0,
+        "total_disruption_s": 84.204,
+        "llm_ttft_before_ms": 161.4,
+        "llm_ttft_after_ms": 268.8,
+        "experiment_duration_s": 102.9,
+        "throughput": 0.0194,
+        "per_burst": [
+          {
+            "id": 0,
+            "decision": "admit_now",
+            "offload": true,
+            "offload_s": 7.619,
+            "burst_s": 36.871,
+            "restore_s": 12.22,
+            "total_s": 49.091,
+            "disruption_s": 49.091
+          },
+          {
+            "id": 1,
+            "decision": "admit_now",
+            "offload": true,
+            "offload_s": 9.024,
+            "burst_s": 21.097,
+            "restore_s": 14.015,
+            "total_s": 35.113,
+            "disruption_s": 35.113
+          }
+        ]
+      }
+    },
+    "cost_aware": {
+      "aggregated": {
+        "runtime_metrics_ema": {
+          "avg_offload_s": null,
+          "avg_restore_s": null,
+          "avg_burst_s": null,
+          "avg_burst_vram_mb": null,
+          "sample_count": 0
+        },
+        "offload_time_s": {
+          "mean": 0.0,
+          "std": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "count": 0
+        },
+        "restore_time_s": {
+          "mean": 0.0,
+          "std": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "count": 0
+        },
+        "burst_time_s": {
+          "mean": 26.5,
+          "std": 26.611,
+          "min": 7.683,
+          "max": 45.317,
+          "count": 2
+        },
+        "total_completion_s": {
+          "mean": 26.5,
+          "std": 26.611,
+          "min": 7.683,
+          "max": 45.318,
+          "count": 2
+        },
+        "llm_disruption_s": {
+          "mean": 0.0,
+          "std": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "count": 0
+        },
+        "n_offloads": 0,
+        "n_bursts": 2,
+        "reject_rate": 0.0,
+        "total_disruption_s": 0,
+        "llm_ttft_before_ms": 18.7,
+        "llm_ttft_after_ms": 373.2,
+        "experiment_duration_s": 71.8,
+        "throughput": 0.0279,
+        "per_burst": [
+          {
+            "id": 0,
+            "decision": "queue",
+            "offload": false,
+            "offload_s": 0.0,
+            "burst_s": 45.317,
+            "restore_s": 0.0,
+            "total_s": 45.318,
+            "disruption_s": 0.0
+          },
+          {
+            "id": 1,
+            "decision": "queue",
+            "offload": false,
+            "offload_s": 0.0,
+            "burst_s": 7.683,
+            "restore_s": 0.0,
+            "total_s": 7.683,
+            "disruption_s": 0.0
+          }
+        ]
+      }
+    }
+  }
+}

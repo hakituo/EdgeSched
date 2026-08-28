@@ -1,0 +1,374 @@
+{
+  "timestamp": "2026-08-28T13:07:42",
+  "experiment": "forge_batch_scaling",
+  "env": {
+    "forge_base_url": "http://127.0.0.1:7860",
+    "gpu": "NVIDIA GeForce RTX 5070 Laptop GPU, 8151 MiB",
+    "available_models": [
+      "sd_xl_turbo_1.0_fp16.safetensors [e869ac7d69]"
+    ],
+    "active_model": "sd_xl_turbo_1.0_fp16.safetensors"
+  },
+  "params": {
+    "total_images": 8,
+    "batch_sizes": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "iterations": 3,
+    "warmup": 1,
+    "width": 1024,
+    "height": 1024,
+    "steps": 8,
+    "cfg_scale": 1.0,
+    "sampler": "Euler",
+    "seed_base": 42,
+    "cooldown_s": 2.0
+  },
+  "aggregated": {
+    "1": {
+      "batch_size": 1,
+      "n_samples": 24,
+      "calls_per_iteration": 8,
+      "T_mean_s": 5.435929727749996,
+      "T_stdev_s": 0.6459613310966059,
+      "T_min_s": 5.032009330000051,
+      "T_max_s": 7.432838704000005,
+      "per_image_time_s": 5.435929727749996,
+      "throughput_imgs_per_s": 0.18396117133285925,
+      "vram_peak_max_mb": 5904,
+      "vram_peak_mean_mb": 5852.958333333333,
+      "speedup_vs_b1": 1.0,
+      "group_wall_time_mean_s": 58.83789102199999
+    },
+    "2": {
+      "batch_size": 2,
+      "n_samples": 12,
+      "calls_per_iteration": 4,
+      "T_mean_s": 8.422181296916671,
+      "T_stdev_s": 0.7229661744140433,
+      "T_min_s": 7.794597156999998,
+      "T_max_s": 10.017458112000043,
+      "per_image_time_s": 4.2110906484583355,
+      "throughput_imgs_per_s": 0.2374681723762219,
+      "vram_peak_max_mb": 6320,
+      "vram_peak_mean_mb": 6195.833333333333,
+      "speedup_vs_b1": 1.290860297614365,
+      "group_wall_time_mean_s": 41.69834745799998
+    },
+    "4": {
+      "batch_size": 4,
+      "n_samples": 6,
+      "calls_per_iteration": 2,
+      "T_mean_s": 14.331816405833337,
+      "T_stdev_s": 0.837852683067663,
+      "T_min_s": 13.352540021999971,
+      "T_max_s": 15.76878608200002,
+      "per_image_time_s": 3.582954101458334,
+      "throughput_imgs_per_s": 0.2790993051217095,
+      "vram_peak_max_mb": 6809,
+      "vram_peak_mean_mb": 6770.833333333333,
+      "speedup_vs_b1": 1.5171642097054674,
+      "group_wall_time_mean_s": 32.668048251666654
+    },
+    "8": {
+      "batch_size": 8,
+      "n_samples": 3,
+      "calls_per_iteration": 1,
+      "T_mean_s": 27.22247349600004,
+      "T_stdev_s": 0.9297118482580453,
+      "T_min_s": 26.458231702000035,
+      "T_max_s": 28.257522399000038,
+      "per_image_time_s": 3.402809187000005,
+      "throughput_imgs_per_s": 0.2938748384189074,
+      "vram_peak_max_mb": 7783,
+      "vram_peak_mean_mb": 7754,
+      "speedup_vs_b1": 1.5974829703990654,
+      "group_wall_time_mean_s": 27.88994486333335
+    }
+  },
+  "failed_batches": {},
+  "raw_calls": {
+    "1": [
+      {
+        "latency_s": 7.432838704000005,
+        "n_images": 1,
+        "iteration": 1,
+        "vram_peak_mb": 5868
+      },
+      {
+        "latency_s": 6.856551695000007,
+        "n_images": 1,
+        "iteration": 1,
+        "vram_peak_mb": 5868
+      },
+      {
+        "latency_s": 5.2691017779999925,
+        "n_images": 1,
+        "iteration": 1,
+        "vram_peak_mb": 5868
+      },
+      {
+        "latency_s": 5.075052372000016,
+        "n_images": 1,
+        "iteration": 1,
+        "vram_peak_mb": 5868
+      },
+      {
+        "latency_s": 5.250345051000011,
+        "n_images": 1,
+        "iteration": 1,
+        "vram_peak_mb": 5866
+      },
+      {
+        "latency_s": 5.032009330000051,
+        "n_images": 1,
+        "iteration": 1,
+        "vram_peak_mb": 5866
+      },
+      {
+        "latency_s": 5.099225550999961,
+        "n_images": 1,
+        "iteration": 1,
+        "vram_peak_mb": 5866
+      },
+      {
+        "latency_s": 5.059662094999965,
+        "n_images": 1,
+        "iteration": 1,
+        "vram_peak_mb": 5866
+      },
+      {
+        "latency_s": 6.812581359999967,
+        "n_images": 1,
+        "iteration": 2,
+        "vram_peak_mb": 5857
+      },
+      {
+        "latency_s": 5.1914920060000895,
+        "n_images": 1,
+        "iteration": 2,
+        "vram_peak_mb": 5857
+      },
+      {
+        "latency_s": 5.214228383999966,
+        "n_images": 1,
+        "iteration": 2,
+        "vram_peak_mb": 5859
+      },
+      {
+        "latency_s": 5.4623158650000505,
+        "n_images": 1,
+        "iteration": 2,
+        "vram_peak_mb": 5904
+      },
+      {
+        "latency_s": 5.7523371179999,
+        "n_images": 1,
+        "iteration": 2,
+        "vram_peak_mb": 5878
+      },
+      {
+        "latency_s": 5.342133729000011,
+        "n_images": 1,
+        "iteration": 2,
+        "vram_peak_mb": 5858
+      },
+      {
+        "latency_s": 5.3650293360000205,
+        "n_images": 1,
+        "iteration": 2,
+        "vram_peak_mb": 5832
+      },
+      {
+        "latency_s": 5.183082388999992,
+        "n_images": 1,
+        "iteration": 2,
+        "vram_peak_mb": 5832
+      },
+      {
+        "latency_s": 5.15295223499993,
+        "n_images": 1,
+        "iteration": 3,
+        "vram_peak_mb": 5832
+      },
+      {
+        "latency_s": 5.200022797999964,
+        "n_images": 1,
+        "iteration": 3,
+        "vram_peak_mb": 5832
+      },
+      {
+        "latency_s": 5.3335657060000585,
+        "n_images": 1,
+        "iteration": 3,
+        "vram_peak_mb": 5832
+      },
+      {
+        "latency_s": 5.116916063999952,
+        "n_images": 1,
+        "iteration": 3,
+        "vram_peak_mb": 5832
+      },
+      {
+        "latency_s": 5.053286960000037,
+        "n_images": 1,
+        "iteration": 3,
+        "vram_peak_mb": 5832
+      },
+      {
+        "latency_s": 5.058791697999936,
+        "n_images": 1,
+        "iteration": 3,
+        "vram_peak_mb": 5832
+      },
+      {
+        "latency_s": 5.078017714999987,
+        "n_images": 1,
+        "iteration": 3,
+        "vram_peak_mb": 5832
+      },
+      {
+        "latency_s": 5.0707735270000285,
+        "n_images": 1,
+        "iteration": 3,
+        "vram_peak_mb": 5834
+      }
+    ],
+    "2": [
+      {
+        "latency_s": 10.017458112000043,
+        "n_images": 2,
+        "iteration": 1,
+        "vram_peak_mb": 6320
+      },
+      {
+        "latency_s": 7.982562137000002,
+        "n_images": 2,
+        "iteration": 1,
+        "vram_peak_mb": 6226
+      },
+      {
+        "latency_s": 8.021753592999971,
+        "n_images": 2,
+        "iteration": 1,
+        "vram_peak_mb": 6210
+      },
+      {
+        "latency_s": 8.018408801000021,
+        "n_images": 2,
+        "iteration": 1,
+        "vram_peak_mb": 6230
+      },
+      {
+        "latency_s": 9.453798008000035,
+        "n_images": 2,
+        "iteration": 2,
+        "vram_peak_mb": 6173
+      },
+      {
+        "latency_s": 8.153492690000007,
+        "n_images": 2,
+        "iteration": 2,
+        "vram_peak_mb": 6175
+      },
+      {
+        "latency_s": 8.259103090000053,
+        "n_images": 2,
+        "iteration": 2,
+        "vram_peak_mb": 6175
+      },
+      {
+        "latency_s": 8.168359312999996,
+        "n_images": 2,
+        "iteration": 2,
+        "vram_peak_mb": 6177
+      },
+      {
+        "latency_s": 9.236819646999948,
+        "n_images": 2,
+        "iteration": 3,
+        "vram_peak_mb": 6164
+      },
+      {
+        "latency_s": 8.056670713000017,
+        "n_images": 2,
+        "iteration": 3,
+        "vram_peak_mb": 6166
+      },
+      {
+        "latency_s": 7.794597156999998,
+        "n_images": 2,
+        "iteration": 3,
+        "vram_peak_mb": 6166
+      },
+      {
+        "latency_s": 7.903152301999967,
+        "n_images": 2,
+        "iteration": 3,
+        "vram_peak_mb": 6168
+      }
+    ],
+    "4": [
+      {
+        "latency_s": 14.528941782999993,
+        "n_images": 4,
+        "iteration": 1,
+        "vram_peak_mb": 6786
+      },
+      {
+        "latency_s": 13.993952401000001,
+        "n_images": 4,
+        "iteration": 1,
+        "vram_peak_mb": 6809
+      },
+      {
+        "latency_s": 15.76878608200002,
+        "n_images": 4,
+        "iteration": 2,
+        "vram_peak_mb": 6755
+      },
+      {
+        "latency_s": 13.797253393999995,
+        "n_images": 4,
+        "iteration": 2,
+        "vram_peak_mb": 6757
+      },
+      {
+        "latency_s": 14.54942475300004,
+        "n_images": 4,
+        "iteration": 3,
+        "vram_peak_mb": 6758
+      },
+      {
+        "latency_s": 13.352540021999971,
+        "n_images": 4,
+        "iteration": 3,
+        "vram_peak_mb": 6760
+      }
+    ],
+    "8": [
+      {
+        "latency_s": 28.257522399000038,
+        "n_images": 8,
+        "iteration": 1,
+        "vram_peak_mb": 7733
+      },
+      {
+        "latency_s": 26.458231702000035,
+        "n_images": 8,
+        "iteration": 2,
+        "vram_peak_mb": 7783
+      },
+      {
+        "latency_s": 26.951666387000046,
+        "n_images": 8,
+        "iteration": 3,
+        "vram_peak_mb": 7746
+      }
+    ]
+  },
+  "conclusion": "batch 收益明显 (最大 speedup 1.60x @ b=8): 值得进一步研究 micro-batching 等待窗口 (仍需结合请求到达间隔)"
+}

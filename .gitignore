@@ -28,13 +28,6 @@ nvidia_smi_snapshot.txt
 *~
 .trae/
 
-# 本地 mmap / 运行时状态（NVRAM 模拟与用户状态）
-data/**/*.dat
-data/**/*.dat.*
-data/**/*.bio
-data/bench_*
-data/user_states/
-
 # LaTeX 编译中间产物
 *.fdb_latexmk
 *.fls
@@ -83,8 +76,6 @@ outputs/
 output/
 results/
 results_real/
-# 运行产物（工作产物，非论文正文数据源），不提交
-experiment_results/
 
 # Debug and Test Scripts (exclude as requested)
 experiments/debug_*.py

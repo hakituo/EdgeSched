@@ -1,0 +1,844 @@
+{
+  "experiment": "exp3_n_phase_workflow",
+  "description": "N-Phase Workflow: RAG/OCR -> LLM -> TTS + Image",
+  "config": {
+    "repeat_count": 3,
+    "time_scale": 0.3,
+    "migration_cost_scaled": {
+      "kv_cache_save_ms": 75.0,
+      "vram_release_ms": 30.0,
+      "cpu_load_ms": 450.0,
+      "restore_ms": 600.0,
+      "service_gap_ms": 90.0,
+      "total_downlink_ms": 555.0,
+      "total_round_trip_ms": 1155.0
+    },
+    "migration_cost_real": {
+      "kv_cache_save_ms": 250,
+      "vram_release_ms": 100,
+      "cpu_load_ms": 1500,
+      "restore_ms": 2000,
+      "service_gap_ms": 300,
+      "total_downlink_ms": 1850,
+      "total_round_trip_ms": 3850
+    },
+    "phase_durations_scaled": {
+      "rag": 0.24,
+      "ocr": 0.36,
+      "llm": 0.8999999999999999,
+      "tts": 0.6,
+      "image": 2.1
+    },
+    "phase_durations_real": {
+      "rag": 0.8,
+      "ocr": 1.2,
+      "llm": 3.0,
+      "tts": 2.0,
+      "image": 7.0
+    },
+    "workflow_structure": [
+      {
+        "phase": "rag",
+        "depends_on": [],
+        "device_affinity": "cpu_only",
+        "role": "burst_cpu_light"
+      },
+      {
+        "phase": "ocr",
+        "depends_on": [],
+        "device_affinity": "cpu_only",
+        "role": "burst_cpu_light"
+      },
+      {
+        "phase": "llm",
+        "depends_on": [
+          "rag",
+          "ocr"
+        ],
+        "device_affinity": "gpu_preferred",
+        "role": "resident_migratable"
+      },
+      {
+        "phase": "tts",
+        "depends_on": [
+          "llm"
+        ],
+        "device_affinity": "cpu_preferred",
+        "role": "burst_gpu_preferred"
+      },
+      {
+        "phase": "image",
+        "depends_on": [
+          "llm"
+        ],
+        "device_affinity": "gpu_required",
+        "role": "burst_gpu_pinned"
+      }
+    ]
+  },
+  "summary": {
+    "sequential": {
+      "total_time_s": {
+        "mean": 5.40991997718811,
+        "stdev": 0.0064499589716433695,
+        "min": 5.405572414398193,
+        "max": 5.417330741882324
+      },
+      "migration_count": {
+        "mean": 1
+      },
+      "llm_degraded_time_s": {
+        "mean": 2.666187286376953
+      },
+      "backfill_hidden_time_s": {
+        "mean": 0.0
+      },
+      "timeline_last_run": [
+        {
+          "task_id": "phase_49b3e00fbb",
+          "phase": "rag",
+          "strategy": "sequential",
+          "start_time": 1781908399.0685,
+          "end_time": 1781908399.3191,
+          "duration_s": 0.2506,
+          "device": "cpu",
+          "backfilled": false
+        },
+        {
+          "task_id": "phase_5e895443d0",
+          "phase": "ocr",
+          "strategy": "sequential",
+          "start_time": 1781908399.3191,
+          "end_time": 1781908399.692,
+          "duration_s": 0.3728,
+          "device": "cpu",
+          "backfilled": false
+        },
+        {
+          "task_id": "phase_1c2d8ebfc0",
+          "phase": "llm",
+          "strategy": "resident_gpu",
+          "start_time": 1781908399.692,
+          "end_time": 1781908400.5924,
+          "duration_s": 0.9005,
+          "device": "gpu",
+          "backfilled": false
+        },
+        {
+          "task_id": "phase_84b0ab176c",
+          "phase": "tts",
+          "strategy": "sequential",
+          "start_time": 1781908400.5924,
+          "end_time": 1781908401.2012,
+          "duration_s": 0.6088,
+          "device": "cpu",
+          "backfilled": false
+        },
+        {
+          "task_id": "phase_ad96d8123c",
+          "phase": "image",
+          "strategy": "sequential",
+          "start_time": 1781908401.7627,
+          "end_time": 1781908403.8647,
+          "duration_s": 2.1021,
+          "device": "gpu",
+          "backfilled": false
+        }
+      ]
+    },
+    "v1_dual_role": {
+      "total_time_s": {
+        "mean": 5.4158549308776855,
+        "stdev": 0.010174996007567012,
+        "min": 5.404763460159302,
+        "max": 5.42475700378418
+      },
+      "migration_count": {
+        "mean": 1
+      },
+      "llm_degraded_time_s": {
+        "mean": 2.6612157821655273
+      },
+      "backfill_hidden_time_s": {
+        "mean": 0.0
+      },
+      "timeline_last_run": [
+        {
+          "task_id": "phase_6b91d56aef",
+          "phase": "rag",
+          "strategy": "v1_serial_cpu",
+          "start_time": 1781908415.3202,
+          "end_time": 1781908415.5676,
+          "duration_s": 0.2474,
+          "device": "cpu",
+          "backfilled": false
+        },
+        {
+          "task_id": "phase_220798c082",
+          "phase": "ocr",
+          "strategy": "v1_serial_cpu",
+          "start_time": 1781908415.5681,
+          "end_time": 1781908415.9424,
+          "duration_s": 0.3743,
+          "device": "cpu",
+          "backfilled": false
+        },
+        {
+          "task_id": "phase_9d5132d263",
+          "phase": "llm",
+          "strategy": "resident_gpu",
+          "start_time": 1781908415.9424,
+          "end_time": 1781908416.8484,
+          "duration_s": 0.906,
+          "device": "gpu",
+          "backfilled": false
+        },
+        {
+          "task_id": "phase_08b7408f79",
+          "phase": "tts",
+          "strategy": "v1_serial_cpu",
+          "start_time": 1781908416.8484,
+          "end_time": 1781908417.4603,
+          "duration_s": 0.6118,
+          "device": "cpu",
+          "backfilled": false
+        },
+        {
+          "task_id": "phase_28597cd311",
+          "phase": "image",
+          "strategy": "migrate",
+          "start_time": 1781908418.0139,
+          "end_time": 1781908420.1121,
+          "duration_s": 2.0982,
+          "device": "gpu",
+          "backfilled": false
+        }
+      ],
+      "speedup_vs_sequential": 0.9989041520193354,
+      "time_reduction_pct": -0.10970501808901024
+    },
+    "v2_phase_aware": {
+      "total_time_s": {
+        "mean": 4.527925173441569,
+        "stdev": 0.00730844014520536,
+        "min": 4.519567251205444,
+        "max": 4.5331151485443115
+      },
+      "migration_count": {
+        "mean": 1
+      },
+      "llm_degraded_time_s": {
+        "mean": 2.6530470848083496
+      },
+      "backfill_hidden_time_s": {
+        "mean": 0.6015976270039877
+      },
+      "timeline_last_run": [
+        {
+          "task_id": "phase_fdf139767c",
+          "phase": "rag",
+          "strategy": "backfill",
+          "start_time": 1781908429.7916,
+          "end_time": 1781908430.0356,
+          "duration_s": 0.244,
+          "device": "cpu",
+          "backfilled": true
+        },
+        {
+          "task_id": "phase_29b0ea2dcd",
+          "phase": "ocr",
+          "strategy": "backfill",
+          "start_time": 1781908429.7916,
+          "end_time": 1781908430.1585,
+          "duration_s": 0.3669,
+          "device": "cpu",
+          "backfilled": true
+        },
+        {
+          "task_id": "phase_5733291174",
+          "phase": "llm",
+          "strategy": "resident_gpu",
+          "start_time": 1781908430.1585,
+          "end_time": 1781908431.0481,
+          "duration_s": 0.8896,
+          "device": "gpu",
+          "backfilled": false
+        },
+        {
+          "task_id": "phase_1d05638b83",
+          "phase": "tts",
+          "strategy": "backfill",
+          "start_time": 1781908431.0481,
+          "end_time": 1781908431.6588,
+          "duration_s": 0.6107,
+          "device": "cpu",
+          "backfilled": true
+        },
+        {
+          "task_id": "phase_0b806f07b5",
+          "phase": "image",
+          "strategy": "migrate",
+          "start_time": 1781908431.613,
+          "end_time": 1781908433.7117,
+          "duration_s": 2.0987,
+          "device": "gpu",
+          "backfilled": false
+        }
+      ],
+      "speedup_vs_sequential": 1.194790057247381,
+      "time_reduction_pct": 16.303287432450553
+    },
+    "v2_vs_v1": {
+      "speedup": 1.19610080189581,
+      "time_reduction_pct": 16.395006305905977
+    }
+  },
+  "raw_results": {
+    "sequential": [
+      {
+        "strategy": "sequential",
+        "repeat": 0,
+        "total_time_s": 5.417330741882324,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.666013479232788,
+        "backfill_hidden_time_s": 0.0,
+        "phase_timeline": [
+          {
+            "task_id": "phase_3c8b203ad6",
+            "phase": "rag",
+            "strategy": "sequential",
+            "start_time": 1781908388.2456,
+            "end_time": 1781908388.4876,
+            "duration_s": 0.242,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_dfac644538",
+            "phase": "ocr",
+            "strategy": "sequential",
+            "start_time": 1781908388.4876,
+            "end_time": 1781908388.8624,
+            "duration_s": 0.3748,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_7143ed249b",
+            "phase": "llm",
+            "strategy": "resident_gpu",
+            "start_time": 1781908388.8624,
+            "end_time": 1781908389.7656,
+            "duration_s": 0.9032,
+            "device": "gpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_e30dd08b90",
+            "phase": "tts",
+            "strategy": "sequential",
+            "start_time": 1781908389.7656,
+            "end_time": 1781908390.3863,
+            "duration_s": 0.6207,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_d82e973293",
+            "phase": "image",
+            "strategy": "sequential",
+            "start_time": 1781908390.9474,
+            "end_time": 1781908393.0523,
+            "duration_s": 2.1049,
+            "device": "gpu",
+            "backfilled": false
+          }
+        ]
+      },
+      {
+        "strategy": "sequential",
+        "repeat": 1,
+        "total_time_s": 5.405572414398193,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.6690847873687744,
+        "backfill_hidden_time_s": 0.0,
+        "phase_timeline": [
+          {
+            "task_id": "phase_05c5572c09",
+            "phase": "rag",
+            "strategy": "sequential",
+            "start_time": 1781908393.6629,
+            "end_time": 1781908393.914,
+            "duration_s": 0.2511,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_4097b33352",
+            "phase": "ocr",
+            "strategy": "sequential",
+            "start_time": 1781908393.914,
+            "end_time": 1781908394.286,
+            "duration_s": 0.372,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_4d208a6eb0",
+            "phase": "llm",
+            "strategy": "resident_gpu",
+            "start_time": 1781908394.286,
+            "end_time": 1781908395.1873,
+            "duration_s": 0.9013,
+            "device": "gpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_a292e170a6",
+            "phase": "tts",
+            "strategy": "sequential",
+            "start_time": 1781908395.1873,
+            "end_time": 1781908395.7942,
+            "duration_s": 0.6069,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_44d1601c3c",
+            "phase": "image",
+            "strategy": "sequential",
+            "start_time": 1781908396.3583,
+            "end_time": 1781908398.4633,
+            "duration_s": 2.105,
+            "device": "gpu",
+            "backfilled": false
+          }
+        ]
+      },
+      {
+        "strategy": "sequential",
+        "repeat": 2,
+        "total_time_s": 5.4068567752838135,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.663463592529297,
+        "backfill_hidden_time_s": 0.0,
+        "phase_timeline": [
+          {
+            "task_id": "phase_49b3e00fbb",
+            "phase": "rag",
+            "strategy": "sequential",
+            "start_time": 1781908399.0685,
+            "end_time": 1781908399.3191,
+            "duration_s": 0.2506,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_5e895443d0",
+            "phase": "ocr",
+            "strategy": "sequential",
+            "start_time": 1781908399.3191,
+            "end_time": 1781908399.692,
+            "duration_s": 0.3728,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_1c2d8ebfc0",
+            "phase": "llm",
+            "strategy": "resident_gpu",
+            "start_time": 1781908399.692,
+            "end_time": 1781908400.5924,
+            "duration_s": 0.9005,
+            "device": "gpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_84b0ab176c",
+            "phase": "tts",
+            "strategy": "sequential",
+            "start_time": 1781908400.5924,
+            "end_time": 1781908401.2012,
+            "duration_s": 0.6088,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_ad96d8123c",
+            "phase": "image",
+            "strategy": "sequential",
+            "start_time": 1781908401.7627,
+            "end_time": 1781908403.8647,
+            "duration_s": 2.1021,
+            "device": "gpu",
+            "backfilled": false
+          }
+        ]
+      }
+    ],
+    "v1_dual_role": [
+      {
+        "strategy": "v1_dual_role",
+        "repeat": 0,
+        "total_time_s": 5.418044328689575,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.664203643798828,
+        "backfill_hidden_time_s": 0.0,
+        "phase_timeline": [
+          {
+            "task_id": "phase_d06d620450",
+            "phase": "rag",
+            "strategy": "v1_serial_cpu",
+            "start_time": 1781908404.4753,
+            "end_time": 1781908404.7243,
+            "duration_s": 0.2489,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_c651618991",
+            "phase": "ocr",
+            "strategy": "v1_serial_cpu",
+            "start_time": 1781908404.7243,
+            "end_time": 1781908405.0976,
+            "duration_s": 0.3733,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_a4921f41a3",
+            "phase": "llm",
+            "strategy": "resident_gpu",
+            "start_time": 1781908405.0976,
+            "end_time": 1781908406.0013,
+            "duration_s": 0.9036,
+            "device": "gpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_f6a2ee9279",
+            "phase": "tts",
+            "strategy": "v1_serial_cpu",
+            "start_time": 1781908406.0013,
+            "end_time": 1781908406.6234,
+            "duration_s": 0.6221,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_2e089700c4",
+            "phase": "image",
+            "strategy": "migrate",
+            "start_time": 1781908407.1856,
+            "end_time": 1781908409.2876,
+            "duration_s": 2.102,
+            "device": "gpu",
+            "backfilled": false
+          }
+        ]
+      },
+      {
+        "strategy": "v1_dual_role",
+        "repeat": 1,
+        "total_time_s": 5.42475700378418,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.6676182746887207,
+        "backfill_hidden_time_s": 0.0,
+        "phase_timeline": [
+          {
+            "task_id": "phase_b5c4340a6b",
+            "phase": "rag",
+            "strategy": "v1_serial_cpu",
+            "start_time": 1781908409.8944,
+            "end_time": 1781908410.1448,
+            "duration_s": 0.2504,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_d8ce10867b",
+            "phase": "ocr",
+            "strategy": "v1_serial_cpu",
+            "start_time": 1781908410.1448,
+            "end_time": 1781908410.5161,
+            "duration_s": 0.3713,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_f764cc9be2",
+            "phase": "llm",
+            "strategy": "resident_gpu",
+            "start_time": 1781908410.5161,
+            "end_time": 1781908411.4337,
+            "duration_s": 0.9176,
+            "device": "gpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_fb92515a9d",
+            "phase": "tts",
+            "strategy": "v1_serial_cpu",
+            "start_time": 1781908411.4337,
+            "end_time": 1781908412.0456,
+            "duration_s": 0.6118,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_7d1c451fe4",
+            "phase": "image",
+            "strategy": "migrate",
+            "start_time": 1781908412.5933,
+            "end_time": 1781908414.7132,
+            "duration_s": 2.1199,
+            "device": "gpu",
+            "backfilled": false
+          }
+        ]
+      },
+      {
+        "strategy": "v1_dual_role",
+        "repeat": 2,
+        "total_time_s": 5.404763460159302,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.651825428009033,
+        "backfill_hidden_time_s": 0.0,
+        "phase_timeline": [
+          {
+            "task_id": "phase_6b91d56aef",
+            "phase": "rag",
+            "strategy": "v1_serial_cpu",
+            "start_time": 1781908415.3202,
+            "end_time": 1781908415.5676,
+            "duration_s": 0.2474,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_220798c082",
+            "phase": "ocr",
+            "strategy": "v1_serial_cpu",
+            "start_time": 1781908415.5681,
+            "end_time": 1781908415.9424,
+            "duration_s": 0.3743,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_9d5132d263",
+            "phase": "llm",
+            "strategy": "resident_gpu",
+            "start_time": 1781908415.9424,
+            "end_time": 1781908416.8484,
+            "duration_s": 0.906,
+            "device": "gpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_08b7408f79",
+            "phase": "tts",
+            "strategy": "v1_serial_cpu",
+            "start_time": 1781908416.8484,
+            "end_time": 1781908417.4603,
+            "duration_s": 0.6118,
+            "device": "cpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_28597cd311",
+            "phase": "image",
+            "strategy": "migrate",
+            "start_time": 1781908418.0139,
+            "end_time": 1781908420.1121,
+            "duration_s": 2.0982,
+            "device": "gpu",
+            "backfilled": false
+          }
+        ]
+      }
+    ],
+    "v2_phase_aware": [
+      {
+        "strategy": "v2_phase_aware",
+        "repeat": 0,
+        "total_time_s": 4.5331151485443115,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.646406650543213,
+        "backfill_hidden_time_s": 0.594430685043335,
+        "phase_timeline": [
+          {
+            "task_id": "phase_f4ff117167",
+            "phase": "rag",
+            "strategy": "backfill",
+            "start_time": 1781908420.726,
+            "end_time": 1781908420.9705,
+            "duration_s": 0.2445,
+            "device": "cpu",
+            "backfilled": true
+          },
+          {
+            "task_id": "phase_967c6aa1c6",
+            "phase": "ocr",
+            "strategy": "backfill",
+            "start_time": 1781908420.726,
+            "end_time": 1781908421.0944,
+            "duration_s": 0.3684,
+            "device": "cpu",
+            "backfilled": true
+          },
+          {
+            "task_id": "phase_07eb4f17f3",
+            "phase": "llm",
+            "strategy": "resident_gpu",
+            "start_time": 1781908421.0944,
+            "end_time": 1781908421.9992,
+            "duration_s": 0.9048,
+            "device": "gpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_c054018fa3",
+            "phase": "tts",
+            "strategy": "backfill",
+            "start_time": 1781908421.9992,
+            "end_time": 1781908422.5936,
+            "duration_s": 0.5944,
+            "device": "cpu",
+            "backfilled": true
+          },
+          {
+            "task_id": "phase_bf77f029ab",
+            "phase": "image",
+            "strategy": "migrate",
+            "start_time": 1781908422.5485,
+            "end_time": 1781908424.6456,
+            "duration_s": 2.0971,
+            "device": "gpu",
+            "backfilled": false
+          }
+        ]
+      },
+      {
+        "strategy": "v2_phase_aware",
+        "repeat": 1,
+        "total_time_s": 4.531093120574951,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.6498682498931885,
+        "backfill_hidden_time_s": 0.599635124206543,
+        "phase_timeline": [
+          {
+            "task_id": "phase_a110afe4c4",
+            "phase": "rag",
+            "strategy": "backfill",
+            "start_time": 1781908425.2592,
+            "end_time": 1781908425.5014,
+            "duration_s": 0.2423,
+            "device": "cpu",
+            "backfilled": true
+          },
+          {
+            "task_id": "phase_502564d49c",
+            "phase": "ocr",
+            "strategy": "backfill",
+            "start_time": 1781908425.2592,
+            "end_time": 1781908425.6238,
+            "duration_s": 0.3647,
+            "device": "cpu",
+            "backfilled": true
+          },
+          {
+            "task_id": "phase_e480a52b05",
+            "phase": "llm",
+            "strategy": "resident_gpu",
+            "start_time": 1781908425.6238,
+            "end_time": 1781908426.5268,
+            "duration_s": 0.9029,
+            "device": "gpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_145d4ccf47",
+            "phase": "tts",
+            "strategy": "backfill",
+            "start_time": 1781908426.5268,
+            "end_time": 1781908427.1264,
+            "duration_s": 0.5996,
+            "device": "cpu",
+            "backfilled": true
+          },
+          {
+            "task_id": "phase_e1470e16f6",
+            "phase": "image",
+            "strategy": "migrate",
+            "start_time": 1781908427.0802,
+            "end_time": 1781908429.1766,
+            "duration_s": 2.0964,
+            "device": "gpu",
+            "backfilled": false
+          }
+        ]
+      },
+      {
+        "strategy": "v2_phase_aware",
+        "repeat": 2,
+        "total_time_s": 4.519567251205444,
+        "migration_count": 1,
+        "llm_degraded_time_s": 2.6628663539886475,
+        "backfill_hidden_time_s": 0.610727071762085,
+        "phase_timeline": [
+          {
+            "task_id": "phase_fdf139767c",
+            "phase": "rag",
+            "strategy": "backfill",
+            "start_time": 1781908429.7916,
+            "end_time": 1781908430.0356,
+            "duration_s": 0.244,
+            "device": "cpu",
+            "backfilled": true
+          },
+          {
+            "task_id": "phase_29b0ea2dcd",
+            "phase": "ocr",
+            "strategy": "backfill",
+            "start_time": 1781908429.7916,
+            "end_time": 1781908430.1585,
+            "duration_s": 0.3669,
+            "device": "cpu",
+            "backfilled": true
+          },
+          {
+            "task_id": "phase_5733291174",
+            "phase": "llm",
+            "strategy": "resident_gpu",
+            "start_time": 1781908430.1585,
+            "end_time": 1781908431.0481,
+            "duration_s": 0.8896,
+            "device": "gpu",
+            "backfilled": false
+          },
+          {
+            "task_id": "phase_1d05638b83",
+            "phase": "tts",
+            "strategy": "backfill",
+            "start_time": 1781908431.0481,
+            "end_time": 1781908431.6588,
+            "duration_s": 0.6107,
+            "device": "cpu",
+            "backfilled": true
+          },
+          {
+            "task_id": "phase_0b806f07b5",
+            "phase": "image",
+            "strategy": "migrate",
+            "start_time": 1781908431.613,
+            "end_time": 1781908433.7117,
+            "duration_s": 2.0987,
+            "device": "gpu",
+            "backfilled": false
+          }
+        ]
+      }
+    ]
+  }
+}
