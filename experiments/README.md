@@ -89,11 +89,11 @@ python experiments/tts/profile_qwen3_tts_gpu_sentence_lengths.py \
 python -m experiments.elastic_residency.smoke_a1 \
   --run-id <new_run_id> --duration 2.0 \
   --source-git-commit <windows_source_commit> \
-  --source-git-dirty <true_or_false> \
-  --source-git-status-entry-count <count>
+  --source-git-dirty false \
+  --source-git-status-entry-count 0
 ```
 
-A1 产物位于 `experiment_results/elastic_residency/a1/<run_id>/`，包含冻结配置、环境 manifest、单轮原始 JSONL、事件、统一资源时间线、JSON/CSV 汇总和失败记录。WSL2 运行副本按规则不带 `.git`，因此正式运行必须把 Windows 源仓库 commit/dirty 快照显式传入；缺少该证据时 smoke 不会标记通过。该 smoke 会真实绑定工作核与系统预留核、调用 OS 和 NVIDIA 资源探针，并在退出时核验核心全部归还；它不运行 TTS/LLM，因此不能作为后续性能目标或无 underrun 的证据。
+A1 产物位于 `experiment_results/elastic_residency/a1/<run_id>/`，包含冻结配置、环境 manifest、单轮原始 JSONL、事件、统一资源时间线、JSON/CSV 汇总和失败记录。WSL2 运行副本按规则不带 `.git`，因此正式运行必须把 Windows 源仓库 commit/dirty 快照显式传入；干净源码还必须声明状态项为 0。dirty 源码只有同时提供 `--source-git-snapshot <archive_or_patch>`（可选再传声明哈希）并把快照复制进运行目录后，provenance 才完整。首个 CPU 样本会标为无效并从聚合排除，资源时间线开始前会等待首个成功 GPU 样本；GPU 可用性/新鲜度、资源与事件循环 jitter、swap、affinity 和核心归还均属于 `passed` 硬门槛。该 smoke 不运行 TTS/LLM，因此不能作为后续性能目标或无 underrun 的证据。
 
 WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：
 

@@ -145,7 +145,9 @@ tests/elastic_residency/
 
 验收：Windows 静态/Mock 测试通过；WSL2 preflight 能确认真实模型、真实后端、affinity、采样器和时钟一致性。任何真实脚本默认禁止 fallback。
 
-**A1 完成记录（2026-08-28）**：`a1_smoke_20260828_verified_v6` 在 WSL2 真实 OS/NVIDIA 探针下通过。工作负载实际绑定逻辑 CPU `[0,2]`；资源采样与 GPU 探针实际绑定系统预留核 `[28,29,30,31]`；2 s 内资源采样 40 次，jitter p95/max 为 0.319/0.351 ms；事件循环采样 200 次，jitter p95/max 为 2.124/3.455 ms；结束后 16 个物理核全部回收、无活跃租约。manifest 明确记录 Windows 源仓库 commit、dirty 状态和 29 个状态项，并将按规则不含 `.git` 的 WSL2 运行副本标为 `unavailable`，没有伪报 clean。单轮原始 JSONL、统一时间线、JSON/CSV 汇总和空失败记录均已落盘。Windows 与 WSL2 的 `tests/elastic_residency/` 均为 8 项通过，Ruff 通过。该记录只验收实验基础设施，不代表后续正式工作流已经满足“无明显延迟尖峰”。
+**A1 历史记录（2026-08-28）**：`a1_smoke_20260828_verified_v6` 在 WSL2 真实 OS/NVIDIA 探针下采到了正常原始数据，但旧版 `passed` 没有强制 GPU 成功和 jitter 门槛，dirty 源码也只有状态项数量，因此仅保留为基础设施调试记录，不再作为当前 A1 门禁证据。
+
+**A1 当前硬门槛（2026-08-29）**：`passed` 必须同时满足首个成功 GPU 样本先于资源时间线、时间线无 GPU unavailable 点、GPU 数据最大年龄不超过 500 ms、资源采样 jitter p95/max 不超过 5/10 ms、事件循环 jitter p95/max 不超过 5/10 ms、无 swap、工作/采样/GPU 线程 affinity 与租约一致、全部物理核归还，并且源码 provenance 完整。首个 CPU 利用率样本保留在原始时间线但标记 `cpu_sample_valid=false`，所有聚合明确排除它。正式运行优先使用 `dirty=false + status_entry_count=0` 的干净 commit；若必须使用 dirty 源码，则必须用 `--source-git-snapshot` 将可还原快照复制进运行目录并校验 SHA-256。门槛更新后的 WSL2 重跑结果必须使用新的不可覆盖 run id。
 
 ### 阶段 B：TTS T0–T3 组件卸载
 
@@ -156,9 +158,19 @@ tests/elastic_residency/
 | T0 | GPU | GPU | GPU 构建并缓存 |
 | T1 | GPU | CPU | GPU 构建并缓存 |
 | T2 | GPU | CPU | CPU 构建并缓存 |
-| T3 | GPU | CPU | GPU 构建一次，缓存 prompt 后把 speaker encoder 卸载到 CPU |
+| T3 | GPU | CPU | GPU 构建一次并缓存 prompt，随后释放 speaker encoder |
 
 实现使用实验侧 wrapper/hook，不修改已安装的 `qwen_tts` 包。需要将高层调用拆成：文本 tokenize、talker generate、code tensor transfer、codec decode、序列化/写盘，并逐段计时。
+
+#### B1 开跑前的强制边界
+
+1. 每个 T0–T3 配置使用独立子进程，防止上一配置的 CUDA allocator、模型对象或缓存污染下一配置；子进程必须回报 talker、speech codec、speaker encoder、文本 tokenizer 的实际参数/缓冲区设备，不能只回报目标配置。
+2. `passed` 必须要求计时前已有成功 NVIDIA 探针；短时显存峰值以每个测量阶段前重置的 PyTorch `max_memory_allocated/max_memory_reserved` 为主，`nvidia-smi` 进程显存和整卡显存作为低频补充。
+3. CPU 利用率探针初始化值必须丢弃并在 manifest 中记录；GPU 首样本等待不计入 talker、传输或 codec 时间。
+4. 计时严格拆为 text tokenize、talker generate、code tensor transfer、codec decode；同步点放在每段边界，T1–T3 必须实际观察到 code 从 GPU 到 CPU 的设备变化。
+5. T3 的语义是 prompt 构建后不再保留 speaker encoder，而不是仅把名字标成“已卸载”；cached prompt tensor 的实际设备和 encoder 不存在状态都要写入 inventory。
+6. B1 正式 smoke 只允许干净 commit，或附带可还原源码快照及 SHA-256 的 dirty 状态。模型目录和参考音频分别记录树哈希/文件哈希。
+7. 单文本 B1 只证明 T0–T3 可加载、设备映射正确和分段指标可采集；不用于 Pareto、延迟或论文结论。只有它通过后才进入 B2 的 `4 × 3 × 5` 正式矩阵。
 
 正式矩阵：4 配置 × 20/50/100 字 × 5 轮，另加每配置独立预热。记录 TTFA（当前语义为完整句 WAV ready）、合成时间、RTF、allocated/reserved/进程总显存、主机内存、CPU 利用率和组件传输时间。
 
@@ -277,7 +289,7 @@ experiment_results/elastic_residency/<run_id>/
 
 ## 6. 建议的逐步交付节奏
 
-- [x] **A1**：实现通用契约、物理核分配、资源/调度 jitter 采样与测试。证据：`a1_smoke_20260828_verified_v6`。
+- [ ] **当前 A1**：硬化 GPU/jitter/CPU 首样本/provenance 门槛，并用干净 commit 在 WSL2 生成新证据；v6 仅作历史调试记录。
 - [ ] **B1**：实现 TTS 组件发现和 T0–T3 单文本 smoke；确认每个模块实际设备。
 - [ ] **B2**：运行完整 TTS 矩阵并生成 Pareto 候选。
 - [ ] **C1**：实现 LLM 粗测 profiler，先跑 `k=0/FULL` 的 512-token smoke。

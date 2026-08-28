@@ -1,7 +1,7 @@
 # EdgeSched 论文与实验指南（弹性驻留重构版）
 
-> **版本**：v4.5
-> **最后更新**：2026-08-28
+> **版本**：v4.6
+> **最后更新**：2026-08-29
 > **状态**：研究设计与实验路线草案。本文档描述目标、口径和验收条件，不代表所有机制已经实现或已有真实实验支持。
 
 ## 0. 使用原则
@@ -741,7 +741,7 @@ P0 的独立 worker、adapter、smoke、原始 GPU 句长迭代和 manifest 已�
 
 所有结果先写入 `experiment_results/`，保留原始迭代与 manifest。
 
-#### P1-A：TTS 驻留与主机核心对照
+#### P1-A / 执行阶段 B：TTS 驻留与主机核心对照（B1 smoke，B2 正式矩阵）
 
 首先验证已完成 GPU 句长曲线是否受到主机 affinity 的显著影响：
 
@@ -760,13 +760,13 @@ P0 的独立 worker、adapter、smoke、原始 GPU 句长迭代和 manifest 已�
 | T0 | GPU | GPU | GPU |
 | T1 | GPU | CPU | GPU |
 | T2 | GPU | CPU | CPU |
-| T3 | GPU | CPU | GPU 构建一次 prompt，缓存后将 speaker encoder 卸载到 CPU |
+| T3 | GPU | CPU | GPU 构建一次 prompt，缓存后释放 speaker encoder |
 
 这里的 Tokenizer / Codec 指 speech tokenizer/codec；文本 tokenizer 没有 GPU 推理模块，始终留在 CPU。不使用不透明的自动切分作为论文配置。每种组件映射必须明确写入 manifest，并测试约 20、50、100 个中文字符的输入。记录 first-chunk-ready、合成时间、RTF、GPU allocated/reserved/进程总显存、主机 RSS、CPU 利用率和组件间传输时间。
 
 只保留在显存、TTFA 和 RTF 上属于 Pareto 前沿，并且实际能够为其他 GPU 阶段释放有用显存的配置。若组件拆分不能产生这种配置，则将 TTS 定义为 `WHOLE_MIGRATABLE`。
 
-#### P1-B：LLM `n_gpu_layers` 驻留曲线
+#### P1-B / 执行阶段 C：LLM `n_gpu_layers` 驻留曲线（C1 smoke，C2 正式曲线）
 
 当前 GGUF 元数据已核验 `qwen35.block_count=32`，即 \(N=32\)。固定 \(R_{sys}=2\) 和 \(c_L=14\)，进行粗粒度扫描：
 
@@ -1387,8 +1387,8 @@ No-Go：
 真实 TTS worker 和基础 smoke 已经完成，但其运行结果仍处于 `experiment_results/` 的探索阶段。近期可执行步骤以 `docs/ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md` 为准：
 
 - [x] 真实 Qwen3-TTS-0.6B-Base worker 与基础可复现 smoke
-- [x] A1：统一实验契约、资源采样与物理核分配基础设施；WSL2 证据为 `a1_smoke_20260828_verified_v6`
-- [ ] **当前 B1：TTS T0–T3 组件发现与单文本 smoke**
+- [ ] **当前 A1**：在 GPU/jitter/CPU 首样本/provenance 硬门槛下用干净 commit 重跑；`a1_smoke_20260828_verified_v6` 仅保留为旧门槛调试记录
+- [ ] B1：TTS T0–T3 组件发现与单文本 smoke
 - [ ] B2：TTS T0–T3 正式 Pareto profiling
 - [ ] LLM `k={0,8,16,24,32,FULL}` 驻留曲线、Forge b=1 同日复测与临界补测
 - [ ] JSON RAG/BGE/Faster-Whisper 核心预算；音频路由就绪后补真实播放探针

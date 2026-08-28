@@ -143,13 +143,21 @@ class ResourceSampler:
         self._gpu_data: dict[str, float | bool] = {"available": False}
         self._gpu_sample_time = 0.0
         self._gpu_sample_count = 0
+        self._gpu_first_success = threading.Event()
+        self._gpu_ready_before_timeline = False
         self._sampler_thread_affinity: tuple[int, ...] = ()
         self._gpu_thread_affinity: tuple[int, ...] = ()
 
-    def start(self) -> None:
+    def start(self, *, wait_for_gpu_timeout_s: float = 0.0) -> bool:
+        """启动采样器；可在资源时间线开始前等待首个成功 GPU 样本。"""
+
+        if wait_for_gpu_timeout_s < 0:
+            raise ValueError("wait_for_gpu_timeout_s 不能为负数")
         if self._thread is not None and self._thread.is_alive():
             raise RuntimeError("ResourceSampler 已启动")
         self._stop_event.clear()
+        self._gpu_first_success.clear()
+        self._gpu_ready_before_timeline = False
         self._error = None
         self._gpu_error = None
         self._gpu_thread = threading.Thread(
@@ -163,7 +171,12 @@ class ResourceSampler:
             daemon=True,
         )
         self._gpu_thread.start()
+        if wait_for_gpu_timeout_s > 0:
+            self._gpu_ready_before_timeline = self._gpu_first_success.wait(
+                wait_for_gpu_timeout_s
+            )
         self._thread.start()
+        return self._gpu_ready_before_timeline
 
     def stop(self, timeout_s: float = 5.0) -> dict[str, Any]:
         self._stop_event.set()
@@ -180,16 +193,47 @@ class ResourceSampler:
         if self._gpu_error is not None:
             raise RuntimeError("GPU sampler 后台失败") from self._gpu_error
         jitters = [sample.scheduler_jitter_ms for sample in self.samples]
+        valid_cpu_samples = [
+            sample for sample in self.samples if sample.cpu_sample_valid
+        ]
+        available_gpu_samples = [
+            sample for sample in self.samples if sample.gpu_available
+        ]
         return {
             "sample_count": len(self.samples),
             "interval_s": self.interval_s,
             "gpu_interval_s": self.gpu_interval_s,
             "gpu_sample_count": self._gpu_sample_count,
+            "gpu_ready_before_timeline": self._gpu_ready_before_timeline,
+            "gpu_available_timeline_sample_count": len(available_gpu_samples),
+            "gpu_unavailable_timeline_sample_count": (
+                len(self.samples) - len(available_gpu_samples)
+            ),
+            "gpu_max_sample_age_ms": max(
+                (sample.gpu_sample_age_ms for sample in available_gpu_samples),
+                default=0.0,
+            ),
             "sampler_thread_affinity": list(self._sampler_thread_affinity),
             "gpu_thread_affinity": list(self._gpu_thread_affinity),
             "jitter_mean_ms": statistics.fmean(jitters) if jitters else 0.0,
             "jitter_p95_ms": _percentile(jitters, 0.95),
             "jitter_max_ms": max(jitters, default=0.0),
+            "cpu_warmup_samples_discarded": min(1, len(self.samples)),
+            "cpu_valid_sample_count": len(valid_cpu_samples),
+            "process_cpu_percent_mean": (
+                statistics.fmean(
+                    sample.process_cpu_percent for sample in valid_cpu_samples
+                )
+                if valid_cpu_samples
+                else 0.0
+            ),
+            "process_cpu_percent_max": max(
+                (
+                    sample.process_cpu_percent
+                    for sample in valid_cpu_samples
+                ),
+                default=0.0,
+            ),
         }
 
     def __enter__(self) -> "ResourceSampler":
@@ -206,6 +250,7 @@ class ResourceSampler:
             process.cpu_percent(interval=None)
             psutil.cpu_percent(interval=None, percpu=True)
             next_deadline = time.monotonic()
+            sample_index = 0
             while not self._stop_event.is_set():
                 now = time.monotonic()
                 wait_s = next_deadline - now
@@ -233,6 +278,7 @@ class ResourceSampler:
                     scheduler_jitter_ms=jitter_ms,
                     process_pid=self.process_pid,
                     process_cpu_percent=process.cpu_percent(interval=None),
+                    cpu_sample_valid=sample_index > 0,
                     process_rss_bytes=process.memory_info().rss,
                     system_available_bytes=memory.available,
                     system_swap_used_bytes=swap.used,
@@ -260,6 +306,7 @@ class ResourceSampler:
                 if self.writer is not None:
                     self.writer.append_timeline(sample)
                 next_deadline += self.interval_s
+                sample_index += 1
                 if next_deadline < actual:
                     missed = int((actual - next_deadline) / self.interval_s) + 1
                     next_deadline += missed * self.interval_s
@@ -275,6 +322,8 @@ class ResourceSampler:
                     self._gpu_data = sampled
                     self._gpu_sample_time = time.monotonic()
                     self._gpu_sample_count += 1
+                if bool(sampled.get("available", False)):
+                    self._gpu_first_success.set()
                 if self._stop_event.wait(self.gpu_interval_s):
                     break
         except BaseException as exc:

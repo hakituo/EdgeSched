@@ -24,7 +24,7 @@ def test_resource_sampler_writes_resource_and_jitter_timeline(tmp_path) -> None:
         writer=writer,
         gpu_probe=NvidiaSmiProbe(_fake_nvidia),
     )
-    sampler.start()
+    gpu_ready = sampler.start(wait_for_gpu_timeout_s=0.2)
     time.sleep(0.12)
     summary = sampler.stop()
 
@@ -33,6 +33,14 @@ def test_resource_sampler_writes_resource_and_jitter_timeline(tmp_path) -> None:
     assert any(sample.gpu_available for sample in sampler.samples)
     assert any(sample.gpu_card_total_mb == 8151 for sample in sampler.samples)
     assert summary["gpu_sample_count"] >= 1
+    assert gpu_ready is True
+    assert summary["gpu_ready_before_timeline"] is True
+    assert summary["gpu_unavailable_timeline_sample_count"] == 0
+    assert summary["gpu_max_sample_age_ms"] >= 0
+    assert summary["cpu_warmup_samples_discarded"] == 1
+    assert summary["cpu_valid_sample_count"] == summary["sample_count"] - 1
+    assert sampler.samples[0].cpu_sample_valid is False
+    assert all(sample.cpu_sample_valid for sample in sampler.samples[1:])
     assert writer.layout.timeline.read_text().count("\n") == len(sampler.samples)
 
 
@@ -67,3 +75,18 @@ def test_resource_sampler_reports_current_thread_affinity_on_linux() -> None:
 
     assert summary["sampler_thread_affinity"] == current[:1]
     assert summary["gpu_thread_affinity"] == current[:1]
+
+
+def test_resource_sampler_reports_gpu_warmup_failure() -> None:
+    sampler = ResourceSampler(
+        interval_s=0.01,
+        gpu_interval_s=0.02,
+        gpu_probe=NvidiaSmiProbe(lambda _command: ""),
+    )
+    gpu_ready = sampler.start(wait_for_gpu_timeout_s=0.03)
+    time.sleep(0.03)
+    summary = sampler.stop()
+
+    assert gpu_ready is False
+    assert summary["gpu_ready_before_timeline"] is False
+    assert summary["gpu_available_timeline_sample_count"] == 0

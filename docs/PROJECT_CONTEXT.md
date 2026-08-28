@@ -232,7 +232,7 @@ GPU burst arrives
 - `faster-whisper==1.2.1`、`ctranslate2==4.7.2`、`onnxruntime==1.23.2`、`sounddevice==0.5.5` 与 `libportaudio2` 已安装；Faster-Whisper CPU int8 真实接口 smoke 可运行。
 - WSL2 已安装 ALSA→Pulse 桥接并能通过 WSLg Pulse 打开真实 PortAudio 输出；若 WSLg 音频端点失效，`experiments/elastic_residency/audio_playback_probe.py` 可回退到 Windows WASAPI，并显式记录重采样与传输路径。两条路径的 1 s 静音 smoke 均为 0 underflow，但正式结论仍须使用真实 TTS chunk 和并发负载。
 - `blendmodes==2025`、`pillow==10.4.0` 与当前 NumPy/Gradio 形成兼容集合；WSL2 `pip check` 无破损依赖，Qwen-TTS、Gradio 与 Torch 导入通过。
-- A1 最终 smoke `a1_smoke_20260828_verified_v6` 已证明物理核互斥租约、线程实际 affinity、资源时间线、原始/聚合产物和退出归还链路可用；manifest 记录了 Windows 源仓库 commit/dirty，并诚实标记 WSL2 运行副本无 `.git`。该证据不包含 TTS/LLM 正式负载。
+- A1 旧 smoke `a1_smoke_20260828_verified_v6` 证明了物理核互斥租约、线程实际 affinity、资源时间线和退出归还链路可用，但旧 `passed` 未强制 GPU/jitter 门槛，dirty 状态也没有可还原快照，因此已降级为调试记录。当前 A1 要求首个 GPU 样本预热、GPU 新鲜度、jitter、swap、CPU 首样本排除、affinity、核心归还和可还原 Git provenance 全部通过后再生成新证据。
 
 该快照只确认当前依赖和绑定加载链路。模型加载、CUDA offload、真实推理、迁移以及 Forge 仍须用对应验证单独证明。
 

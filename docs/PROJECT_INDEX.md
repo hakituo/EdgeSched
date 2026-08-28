@@ -1,7 +1,7 @@
 # EdgeSched / MVP Core 项目索引
 
 **用途**：给 Codex 和维护者提供低成本导航。  
-**最后核对**：2026-08-28（以当前目录实际文件为准）
+**最后核对**：2026-08-29（以当前目录实际文件为准）
 
 ## 先判断你要做什么
 
@@ -12,7 +12,7 @@
 | 准入/背压 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/admission_controller.py`, `presentation/websocket/handler.py` | `experiments/admission/`, `tests/test_chat_service.py` |
 | 显存迁移 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/resource_manager.py`, `services/cpp_scheduler_engine.py`（门面）+ `cpp_engine_migration.py` / `cpp_engine_llm.py` / `cpp_engine_image.py` / `cpp_engine_utils.py` | `experiments/migration/` |
 | 独立 TTS | [TTS_SUBSYSTEM.md](TTS_SUBSYSTEM.md)、[GPU 句长画像](TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md) | `services/tts/`, `data/adapters/qwen3_tts_adapter.py` | `tests/tts/`, `experiments/tts/` |
-| 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md) | `experiments/elastic_residency/`；A1 契约/分核/采样已完成，当前进入 B1 TTS 组件发现 | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，不得自动晋升正文 |
+| 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md) | `experiments/elastic_residency/`；当前硬化并重跑 A1，B1 边界和脚手架已冻结但尚未真实运行 | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，不得自动晋升正文 |
 | Phase-Aware | `.trae/skills/xiaoyou-mvp-core/SKILL.md` | `services/phase_aware/`, `cpp_scheduler/core/phase_strategy.*` | `tests/test_phase_aware_quick.py`, `experiments/phase_aware/` |
 | 崩溃恢复 | `docs/PROJECT_CONTEXT.md` | `services/state_backplane.py`, `services/task_scheduler.py` | `experiments/recovery/`, `experiments/semantic_validation/` |
 | C++ 调度器 | [cpp_scheduler/README.md](../cpp_scheduler/README.md) | `cpp_scheduler/core/`, `workers/`, `queue/`, `bindings/` | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` |

@@ -121,6 +121,7 @@ class TimelineSample:
     scheduler_jitter_ms: float
     process_pid: int
     process_cpu_percent: float
+    cpu_sample_valid: bool
     process_rss_bytes: int
     system_available_bytes: int
     system_swap_used_bytes: int
