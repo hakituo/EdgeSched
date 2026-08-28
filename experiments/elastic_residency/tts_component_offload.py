@@ -344,6 +344,7 @@ def _placement_matches(spec: PlacementSpec, actual: dict[str, str]) -> bool:
 
 
 def run_child(args: argparse.Namespace) -> dict[str, Any]:
+    import numpy as np
     import soundfile as sf
     import torch
     from qwen_tts import Qwen3TTSModel
@@ -458,6 +459,14 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
     sf.write(output_wav, wavs[0], sample_rate, subtype="PCM_16")
     synthesis_s = tokenize_s + talker_generate_s + code_transfer_s + codec_decode_s
     audio_duration_s = len(wavs[0]) / sample_rate
+    waveform = (
+        wavs[0].detach().float().cpu().numpy()
+        if torch.is_tensor(wavs[0])
+        else wavs[0]
+    )
+    waveform_finite = bool(np.isfinite(waveform).all())
+    waveform_rms = float(np.sqrt(np.mean(np.square(waveform))))
+    waveform_peak = float(np.max(np.abs(waveform)))
     memory_final = _memory_snapshot(
         process, baseline_card_used_mb=baseline_card_used_mb
     )
@@ -507,6 +516,9 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
             )
         ),
         "audio_written": output_wav.is_file() and audio_duration_s > 0,
+        "audio_waveform_finite": waveform_finite,
+        "audio_waveform_non_silent": waveform_rms > 1e-5,
+        "audio_waveform_peak_valid": 0 < waveform_peak <= 1.05,
     }
     return {
         "config": spec.name,
@@ -534,6 +546,8 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "synthesis_s": synthesis_s,
         "ttfa_s": synthesis_s,
         "audio_duration_s": audio_duration_s,
+        "waveform_rms": waveform_rms,
+        "waveform_peak": waveform_peak,
         "rtf": synthesis_s / audio_duration_s,
         "sample_rate": sample_rate,
         "codec_code_shapes": [list(code.shape) for code in codes],
