@@ -174,6 +174,10 @@ tests/elastic_residency/
 6. B1 正式 smoke 只允许干净 commit，或附带可还原源码快照及 SHA-256 的 dirty 状态。模型目录和参考音频分别记录树哈希/文件哈希。
 7. 单文本 B1 只证明 T0–T3 可加载、设备映射正确和分段指标可采集；不用于 Pareto、延迟或论文结论。只有它通过后才进入 B2 的 `4 × 3 × 5` 正式矩阵。
 
+**B1 完成记录（2026-08-29）**：`b1_tts_components_20260829_verified_v2` 基于干净 commit `38f4d81dca1ff4020c4b245426c49fc124341d65` 在 WSL2 真实 Qwen3-TTS/CUDA 后端通过，T0–T3 为 4/4、每配置 13 项门禁均通过，失败文件为空。talker 始终为 `cuda:0`；T0 codec/speaker 为 GPU，T1 codec 为 CPU 且 speaker 为 GPU，T2 codec/speaker 均为 CPU，T3 codec 为 CPU 且 speaker encoder 在 prompt 缓存后实际移除。T1–T3 的 audio codes 均观测到 `cuda:0→cpu`，四份 WAV 均为有限非静音波形。WSL 驱动对 compute process 显存返回 `[N/A]`，产物没有伪造为 0，而是记录 unavailable 原因、整卡 ready 值、相对 314 MiB 空闲基线的独占增量估计和每阶段 PyTorch allocated/reserved 峰值。
+
+单次冷态 smoke 中，T0/T1/T2/T3 的 ready 整卡增量估计分别为 2362/1914/1902/1906 MiB，TTFA 分别为 5.939/7.075/6.496/7.043 s，RTF 分别为 1.954/2.327/2.538/2.317。该数字只用于检查量纲与发现明显错误：每个配置只有一轮、没有独立预热，T2 的 CPU speaker 还改变了输出时长，因此不能据此判断 Pareto、质量等价性或“节省显存值得卸载”。这些裁决留给 B2 的冻结文本矩阵和多轮统计。
+
 正式矩阵：4 配置 × 20/50/100 字 × 5 轮，另加每配置独立预热。记录 TTFA（当前语义为完整句 WAV ready）、合成时间、RTF、allocated/reserved/进程总显存、主机内存、CPU 利用率和组件传输时间。
 
 裁决顺序：
@@ -292,8 +296,8 @@ experiment_results/elastic_residency/<run_id>/
 ## 6. 建议的逐步交付节奏
 
 - [x] **A1**：GPU/jitter/CPU 首样本/provenance 硬门槛已通过。证据：`a1_smoke_20260829_verified_v7`；v6 仅作历史调试记录。
-- [ ] **当前 B1**：按已冻结的七项前置边界运行 TTS T0–T3 单文本 smoke；确认每个模块实际设备。
-- [ ] **B2**：运行完整 TTS 矩阵并生成 Pareto 候选。
+- [x] **B1**：T0–T3 真实单文本 smoke 通过。证据：`b1_tts_components_20260829_verified_v2`。
+- [ ] **当前 B2**：运行 `4 配置 × 3 句长 × 5 轮` 完整 TTS 矩阵并生成 Pareto 候选。
 - [ ] **C1**：实现 LLM 粗测 profiler，先跑 `k=0/FULL` 的 512-token smoke。
 - [ ] **C2**：运行完整粗测、计算 `H_TTS/H_D`、再运行临界补测。
 - [ ] **D1**：实现 JSON RAG 和 BGE 核心曲线；冻结辅助 SLA。

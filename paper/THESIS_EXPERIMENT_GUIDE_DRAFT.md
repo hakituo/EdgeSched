@@ -1388,8 +1388,8 @@ No-Go：
 
 - [x] 真实 Qwen3-TTS-0.6B-Base worker 与基础可复现 smoke
 - [x] A1：`a1_smoke_20260829_verified_v7` 已在干净 commit `ae68608` 上通过 GPU/jitter/CPU 首样本/provenance 全部 17 项硬门槛；v6 仅保留为旧门槛调试记录
-- [ ] **当前 B1**：TTS T0–T3 组件发现与单文本 smoke；遵守独立子进程、实际设备核对、GPU 预热、CPU 首样本排除和分阶段 PyTorch 显存峰值边界
-- [ ] B2：TTS T0–T3 正式 Pareto profiling
+- [x] B1：`b1_tts_components_20260829_verified_v2` 已在真实 Qwen3-TTS/CUDA 后端完成 T0–T3 组件发现与单文本 smoke，4/4 配置通过；该冷态单轮数据不用于性能结论
+- [ ] **当前 B2**：TTS T0–T3 的 `4 配置 × 3 句长 × 5 轮` 正式 Pareto profiling
 - [ ] LLM `k={0,8,16,24,32,FULL}` 驻留曲线、Forge b=1 同日复测与临界补测
 - [ ] JSON RAG/BGE/Faster-Whisper 核心预算；音频路由就绪后补真实播放探针
 - [ ] `R_sys={0,1,2,4}` 正式辅助任务验证

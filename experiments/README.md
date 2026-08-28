@@ -97,6 +97,17 @@ A1 产物位于 `experiment_results/elastic_residency/a1/<run_id>/`，包含冻�
 
 当前通过硬门槛的 A1 记录为 `a1_smoke_20260829_verified_v7`，源 commit 为 `ae68608`。它只用于验收实验基础设施。
 
+### 8. 弹性驻留 B1 TTS 组件 smoke
+
+```bash
+python -m experiments.elastic_residency.tts_component_offload \
+  --run-id <new_run_id> --configs T0 T1 T2 T3 \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false --source-git-status-entry-count 0
+```
+
+每个配置在独立子进程中加载真实 Qwen3-TTS，记录 talker、speech codec、speaker encoder 和 prompt 的实际设备，分别测量 tokenize、talker、code transfer、codec decode，并保存整卡/进程估计/PyTorch 显存、CPU/RSS 和非静音 WAV 检查。若 WSL 驱动把进程显存报告为 `[N/A]`，结果必须保留 unavailable 原因，只能把相对空闲整卡基线的增量标为 estimate。当前通过记录为 `b1_tts_components_20260829_verified_v2`，源 commit 为 `38f4d81`。它是单文本冷态可行性 smoke，不代替 B2 多轮矩阵。
+
 WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：
 
 ```bash

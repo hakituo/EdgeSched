@@ -1,9 +1,13 @@
+import os
+from types import SimpleNamespace
+
 import pytest
 import torch
 
 from experiments.elastic_residency.tts_component_offload import (
     _actual_devices,
     _module_inventory,
+    _nvidia_memory_snapshot,
     _placement_matches,
     placement_for,
 )
@@ -38,3 +42,28 @@ def test_t3_requires_speaker_to_be_unloaded_after_prompt() -> None:
     actual = _actual_devices(inventory)
     assert actual["speaker_encoder"] == "unloaded"
     assert _placement_matches(placement_for("T3"), actual)
+
+
+def test_wsl_non_numeric_process_memory_is_not_reported_as_zero(
+    monkeypatch,
+) -> None:
+    outputs = iter(
+        (
+            "2676, 8151\n",
+            f"{os.getpid()}, [N/A]\n",
+        )
+    )
+
+    def fake_run(*_args, **_kwargs):
+        return SimpleNamespace(stdout=next(outputs))
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    snapshot = _nvidia_memory_snapshot(os.getpid())
+
+    assert snapshot["gpu_card_used_mb"] == 2676.0
+    assert snapshot["gpu_process_total_mb"] is None
+    assert snapshot["gpu_process_total_available"] is False
+    assert (
+        snapshot["gpu_process_total_unavailable_reason"]
+        == "driver_reported_non_numeric_process_memory"
+    )
