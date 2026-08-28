@@ -1387,8 +1387,8 @@ No-Go：
 真实 TTS worker 和基础 smoke 已经完成，但其运行结果仍处于 `experiment_results/` 的探索阶段。近期可执行步骤以 `docs/ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md` 为准：
 
 - [x] 真实 Qwen3-TTS-0.6B-Base worker 与基础可复现 smoke
-- [ ] **当前 A1**：在 GPU/jitter/CPU 首样本/provenance 硬门槛下用干净 commit 重跑；`a1_smoke_20260828_verified_v6` 仅保留为旧门槛调试记录
-- [ ] B1：TTS T0–T3 组件发现与单文本 smoke
+- [x] A1：`a1_smoke_20260829_verified_v7` 已在干净 commit `ae68608` 上通过 GPU/jitter/CPU 首样本/provenance 全部 17 项硬门槛；v6 仅保留为旧门槛调试记录
+- [ ] **当前 B1**：TTS T0–T3 组件发现与单文本 smoke；遵守独立子进程、实际设备核对、GPU 预热、CPU 首样本排除和分阶段 PyTorch 显存峰值边界
 - [ ] B2：TTS T0–T3 正式 Pareto profiling
 - [ ] LLM `k={0,8,16,24,32,FULL}` 驻留曲线、Forge b=1 同日复测与临界补测
 - [ ] JSON RAG/BGE/Faster-Whisper 核心预算；音频路由就绪后补真实播放探针

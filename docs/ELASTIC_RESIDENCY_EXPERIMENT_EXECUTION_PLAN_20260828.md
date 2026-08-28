@@ -149,6 +149,8 @@ tests/elastic_residency/
 
 **A1 当前硬门槛（2026-08-29）**：`passed` 必须同时满足首个成功 GPU 样本先于资源时间线、时间线无 GPU unavailable 点、GPU 数据最大年龄不超过 500 ms、资源采样 jitter p95/max 不超过 5/10 ms、事件循环 jitter p95/max 不超过 5/10 ms、无 swap、工作/采样/GPU 线程 affinity 与租约一致、全部物理核归还，并且源码 provenance 完整。首个 CPU 利用率样本保留在原始时间线但标记 `cpu_sample_valid=false`，所有聚合明确排除它。正式运行优先使用 `dirty=false + status_entry_count=0` 的干净 commit；若必须使用 dirty 源码，则必须用 `--source-git-snapshot` 将可还原快照复制进运行目录并校验 SHA-256。门槛更新后的 WSL2 重跑结果必须使用新的不可覆盖 run id。
 
+**A1 最终记录（2026-08-29）**：`a1_smoke_20260829_verified_v7` 基于已推送的干净 commit `ae686083970d68c2b27c62810b144a566cdbfc22` 在 WSL2 通过全部 17 项硬门禁。工作 affinity 为 `[0,2]`，资源与 GPU 采样线程为 `[28,29,30,31]`；41 个时间线点全部含可用 GPU 数据，最大数据年龄 422.719 ms；资源 jitter p95/max 为 0.309/1.680 ms，事件循环 jitter p95/max 为 2.165/3.081 ms。首个 CPU 点标记无效，聚合使用后续 40 点，进程 CPU mean/max 为 5.502%/20.2%；swap 为 0，结束后 16 个物理核全部归还且无残留租约。Windows/WSL2 均为 19 项弹性驻留测试通过，Ruff 通过。该结果只通过实验基础设施门，不是 TTS、LLM、并发音频或论文性能证据。
+
 ### 阶段 B：TTS T0–T3 组件卸载
 
 先做模块发现 smoke，确认实际模块设备与张量传输，再跑正式矩阵。这里“Tokenizer/Codec”解释为 speech tokenizer/codec；文本 tokenizer 本身没有 GPU 推理模块，始终在 CPU。
@@ -289,8 +291,8 @@ experiment_results/elastic_residency/<run_id>/
 
 ## 6. 建议的逐步交付节奏
 
-- [ ] **当前 A1**：硬化 GPU/jitter/CPU 首样本/provenance 门槛，并用干净 commit 在 WSL2 生成新证据；v6 仅作历史调试记录。
-- [ ] **B1**：实现 TTS 组件发现和 T0–T3 单文本 smoke；确认每个模块实际设备。
+- [x] **A1**：GPU/jitter/CPU 首样本/provenance 硬门槛已通过。证据：`a1_smoke_20260829_verified_v7`；v6 仅作历史调试记录。
+- [ ] **当前 B1**：按已冻结的七项前置边界运行 TTS T0–T3 单文本 smoke；确认每个模块实际设备。
 - [ ] **B2**：运行完整 TTS 矩阵并生成 Pareto 候选。
 - [ ] **C1**：实现 LLM 粗测 profiler，先跑 `k=0/FULL` 的 512-token smoke。
 - [ ] **C2**：运行完整粗测、计算 `H_TTS/H_D`、再运行临界补测。

@@ -95,6 +95,8 @@ python -m experiments.elastic_residency.smoke_a1 \
 
 A1 产物位于 `experiment_results/elastic_residency/a1/<run_id>/`，包含冻结配置、环境 manifest、单轮原始 JSONL、事件、统一资源时间线、JSON/CSV 汇总和失败记录。WSL2 运行副本按规则不带 `.git`，因此正式运行必须把 Windows 源仓库 commit/dirty 快照显式传入；干净源码还必须声明状态项为 0。dirty 源码只有同时提供 `--source-git-snapshot <archive_or_patch>`（可选再传声明哈希）并把快照复制进运行目录后，provenance 才完整。首个 CPU 样本会标为无效并从聚合排除，资源时间线开始前会等待首个成功 GPU 样本；GPU 可用性/新鲜度、资源与事件循环 jitter、swap、affinity 和核心归还均属于 `passed` 硬门槛。该 smoke 不运行 TTS/LLM，因此不能作为后续性能目标或无 underrun 的证据。
 
+当前通过硬门槛的 A1 记录为 `a1_smoke_20260829_verified_v7`，源 commit 为 `ae68608`。它只用于验收实验基础设施。
+
 WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：
 
 ```bash

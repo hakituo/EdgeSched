@@ -232,7 +232,7 @@ GPU burst arrives
 - `faster-whisper==1.2.1`、`ctranslate2==4.7.2`、`onnxruntime==1.23.2`、`sounddevice==0.5.5` 与 `libportaudio2` 已安装；Faster-Whisper CPU int8 真实接口 smoke 可运行。
 - WSL2 已安装 ALSA→Pulse 桥接并能通过 WSLg Pulse 打开真实 PortAudio 输出；若 WSLg 音频端点失效，`experiments/elastic_residency/audio_playback_probe.py` 可回退到 Windows WASAPI，并显式记录重采样与传输路径。两条路径的 1 s 静音 smoke 均为 0 underflow，但正式结论仍须使用真实 TTS chunk 和并发负载。
 - `blendmodes==2025`、`pillow==10.4.0` 与当前 NumPy/Gradio 形成兼容集合；WSL2 `pip check` 无破损依赖，Qwen-TTS、Gradio 与 Torch 导入通过。
-- A1 旧 smoke `a1_smoke_20260828_verified_v6` 证明了物理核互斥租约、线程实际 affinity、资源时间线和退出归还链路可用，但旧 `passed` 未强制 GPU/jitter 门槛，dirty 状态也没有可还原快照，因此已降级为调试记录。当前 A1 要求首个 GPU 样本预热、GPU 新鲜度、jitter、swap、CPU 首样本排除、affinity、核心归还和可还原 Git provenance 全部通过后再生成新证据。
+- A1 最终 smoke `a1_smoke_20260829_verified_v7` 基于干净且已推送的 commit `ae68608` 通过全部 17 项硬门禁：GPU 首样本在时间线前就绪，41/41 点均可用且最大年龄 422.719 ms；资源 jitter p95/max 为 0.309/1.680 ms，事件循环为 2.165/3.081 ms；首个 CPU 样本被明确排除，swap 为 0，线程 affinity 正确且结束后 16 个物理核全部归还。旧 v6 已降级为调试记录。A1 仍不包含 TTS/LLM 正式负载或真实并发音频。
 
 该快照只确认当前依赖和绑定加载链路。模型加载、CUDA offload、真实推理、迁移以及 Forge 仍须用对应验证单独证明。
 
@@ -262,7 +262,7 @@ GPU burst arrives
 |---|---|---|
 | 文档/静态 | `tests/scripts/verify_project_context.py` | 索引存在、路径有效、入口一致 |
 | Mock 单元 | `tests/test_chat_service.py`, `tests/test_phase_aware_quick.py` | 协议和调度语义 |
-| 弹性驻留 A1/环境 | `tests/elastic_residency/` + WSL2 `smoke_a1.py` / `audio_playback_probe.py` | 实验契约、物理核租约/归还、实际线程 affinity、资源/jitter 采样与跨宿主真实音频输出 |
+| 弹性驻留 A1/环境 | `tests/elastic_residency/` + WSL2 `smoke_a1.py` / `audio_playback_probe.py` | GPU/jitter/CPU 首样本/provenance 硬门禁、物理核租约/归还、实际线程 affinity 与跨宿主真实音频输出 |
 | 恢复/持久化 | `tests/verify_state_backplane_recovery.py` | mmap 读写和恢复闭合 |
 | C++ 绑定 | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` | 扩展导入与 API 契约 |
 | 真实 LLM | `tests/test_llama_gpu.py`, migration experiments | 当前模型/驱动下的推理与迁移 |
