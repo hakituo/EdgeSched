@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-05T04:19:18",
+  "migration_stutter_ms": 6715.713706000088,
+  "coexistence_cpu_ttft_ms": 213.2221997036873,
+  "restore_time_ms": 5366.35069700003,
+  "restore_window_max_gap_ms": 224.5791499999541,
+  "llm_gpu_ttft_ms": 91.60906566671656,
+  "migration_time_ms": 6715.713706000088,
+  "failed_restore_count": 0,
+  "oom_count": 0,
+  "test_passed": true,
+  "llm_still_working": true,
+  "variant": "fast_down_naive_up",
+  "iteration": 2
+}

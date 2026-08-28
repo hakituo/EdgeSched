@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-05-05T05:44:13",
+  "total_elapsed_s": 453.1,
+  "iterations": 5,
+  "results": {
+    "lru_thrashing": {
+      "status": "completed",
+      "elapsed_s": 438.0
+    }
+  }
+}

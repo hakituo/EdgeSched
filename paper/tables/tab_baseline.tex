@@ -1,0 +1,19 @@
+\begin{table}[t]
+\centering
+\caption{Baseline Throughput Comparison (N=100 tasks)}
+\label{tab:baseline}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Scheme} & \textbf{Throughput (tasks/s)} & \textbf{P99 Latency (ms)} & \textbf{Success Rate} \\
+\midrule
+Naive Async & 54.3 & 1734.2 & 100\% \\
+Threadpool & 76.5 & 100.4 & 100\% \\
+Semaphore & 43.6 & 2269.1 & 100\% \\
+\textbf{EdgeSched (Ours)} & \textbf{36.5} & \textbf{2520.9} & \textbf{100\%} \\
+\bottomrule
+\end{tabular}%
+}
+\vspace{2pt}
+{\small\textit{Note}: EdgeSched incurs $\sim$16\% throughput reduction vs.\ semaphore, reflecting scheduling overhead for mixed-workload arbitration.}
+\end{table}

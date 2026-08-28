@@ -1,0 +1,130 @@
+% EdgeSched: Affinity-Aware Task Routing — Core Formulas
+% --------------------------------------------------------
+% 放在 paper 根目录，后续论文写作时引用和修改
+
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\begin{document}
+
+\section*{Task Profile Definition}
+
+Each task type $\tau_i$ is characterized by a static prior profile, refined at
+runtime via exponential moving average (EMA):
+
+\begin{equation}
+\mathcal{P}(\tau_i) = \bigl\langle
+    v_i,\; d_i,\; s_i,\; \iota_i,\; r_i,\; c_i
+\bigr\rangle
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $v_i$ --- estimated peak GPU VRAM usage (MB)
+    \item $d_i \in \{\text{gpu\_pinned},\; \text{gpu\_preferred},\; \text{cpu\_preferred}\}$ --- device affinity class
+    \item $s_i \in [0, 1]$ --- GPU sensitivity (fraction of performance gained from GPU)
+    \item $\iota_i \in [0, 1]$ --- interactivity (user-visible urgency)
+    \item $r_i$ --- CPU-to-GPU execution time ratio ($T_{\text{cpu}} / T_{\text{gpu}}$)
+    \item $c_i \in \{0, 1\}$ --- whether a CPU execution path exists
+\end{itemize}
+
+\section*{Hybrid Affinity Profiling}
+
+The effective CPU-to-GPU ratio is a blend of static prior and runtime EMA:
+
+\begin{equation}
+\hat{r}_i = \begin{cases}
+    r_i & \text{if no runtime samples} \\[4pt]
+    \alpha \cdot r_i^{\text{obs}} + (1 - \alpha) \cdot r_i & \text{otherwise}
+\end{cases}
+\end{equation}
+
+where $\alpha = 0.3$ is the EMA smoothing factor and $r_i^{\text{obs}}$ is the
+observed ratio from per-task-type timing measurements.
+
+\section*{Task Classification (Four Tiers)}
+
+\begin{enumerate}
+    \item \textbf{GPU-pinned heavy burst} ($d_i = \text{gpu\_pinned}$):
+          Image generation. Must use GPU; forces asymmetric migration of LLM.
+
+    \item \textbf{GPU-preferred migratable burst} ($d_i = \text{gpu\_preferred}$):
+          Neural TTS (F5-TTS, Qwen-TTS). Benefits from GPU but can degrade to CPU.
+
+    \item \textbf{CPU-affine auxiliary stage} ($d_i = \text{cpu\_preferred}$):
+          OCR, RAG embedding (BGE-small), document parsing. Lightweight;
+          GPU overhead exceeds benefit.
+
+    \item \textbf{Resident migratable service}:
+          LLM (Qwen-2.5-7B). Resides on GPU; offloaded to CPU under contention.
+\end{enumerate}
+
+\section*{Cost-Benefit Routing Decision}
+
+\noindent\textbf{Core principle:} EdgeSched does not route a task to GPU merely
+because GPU is available; it routes a task to GPU \emph{only when the expected
+acceleration outweighs the disruption to resident GPU state}.
+
+\subsection*{GPU Benefit}
+
+\begin{equation}
+B_{\text{gpu}}(\tau_i) = \bigl(T_{\text{cpu}}(\tau_i) - T_{\text{gpu}}(\tau_i)\bigr) \cdot s_i
+\end{equation}
+
+\begin{equation}
+T_{\text{cpu}}(\tau_i) = T_{\text{gpu}}(\tau_i) \cdot \hat{r}_i
+\end{equation}
+
+where $T_{\text{gpu}}(\tau_i)$ is the EMA-corrected GPU execution time and
+$s_i$ is the GPU sensitivity of task $\tau_i$.
+
+\subsection*{Disruption Cost}
+
+\begin{equation}
+C_{\text{disrupt}} = \begin{cases}
+    T_{\text{offload}} + T_{\text{restore}} + P_{\text{degrade}}
+        & \text{if LLM resides on GPU} \\[4pt]
+    0   & \text{otherwise}
+\end{cases}
+\end{equation}
+
+where $T_{\text{offload}}$ and $T_{\text{restore}}$ are the measured
+(non-symmetric) migration durations and $P_{\text{degrade}}$ is the UX
+degradation penalty while the LLM runs on CPU.
+
+\subsection*{Routing Rule}
+
+\begin{equation}
+\text{route}(\tau_i) = \begin{cases}
+    \text{CPU} & \text{if } d_i = \text{cpu\_preferred} \\[4pt]
+    \text{GPU} & \text{if } d_i = \text{gpu\_pinned} \\[4pt]
+    \text{CPU} & \text{if } c_i = 1 \;\wedge\; B_{\text{gpu}}(\tau_i) < C_{\text{disrupt}} \\[4pt]
+    \text{GPU} & \text{otherwise}
+\end{cases}
+\end{equation}
+
+\section*{Admission Decision (given GPU routing)}
+
+Once routed to GPU, the admission controller decides whether to execute
+immediately (with migration), queue, or reject:
+
+\begin{equation}
+C_{\text{migrate}} = T_{\text{offload}} + T_{\text{burst}} + T_{\text{restore}} + P_{\text{degrade}}
+\end{equation}
+
+\begin{equation}
+C_{\text{queue}} = q \cdot T_{\text{burst}} + T_{\text{burst}}
+\end{equation}
+
+\begin{equation}
+\text{decision} = \begin{cases}
+    \text{ADMIT\_NOW}  & \text{if } C_{\text{migrate}} < C_{\text{queue}} \\[4pt]
+    \text{QUEUE}       & \text{if } q \cdot T_{\text{burst}} < W_{\max} \\[4pt]
+    \text{REJECT}      & \text{otherwise}
+\end{cases}
+\end{equation}
+
+where $q$ is the current queue depth and $W_{\max}$ is the maximum acceptable
+queueing delay.
+
+\end{document}

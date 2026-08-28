@@ -1,0 +1,30 @@
+\section{Conclusion}
+
+This paper presents \textbf{EdgeSched}, a lightweight resource scheduling framework for local AI runtimes on memory-constrained consumer devices. By addressing dedicated-VRAM constraints, EdgeSched enables a resident service and a bursty GPU-intensive job to coexist on the same device without requiring expensive hardware upgrades. The central argument is not that all local AI workloads share one universal policy, but that this two-role contention model creates different control objectives for the downlink and uplink migration paths.
+
+Our main contributions include:
+\begin{enumerate}
+\item \textbf{Asymmetric Resource Migration}: Combining "Urgent Mode" for rapid preemption (GPU→CPU) and "Atomic Hot-Swap" for low-interruption recovery (CPU→GPU), as a constraint-driven way to balance VRAM safety and service continuity in the studied setting.
+
+\item \textbf{Lightweight Persistence}: Software-defined state backplane based on mmap, providing crash consistency with small per-operation overhead (below 0.01 ms for register/update in our measurements) and helping avoid zombie-task accumulation after system failures.
+
+\item \textbf{Predictable QoS}: Combining priority queues, backpressure mechanisms, and cancellation semantics to keep the system responsive and stable under the tested saturation scenarios.
+\end{enumerate}
+
+Experimental results on consumer-grade hardware (RTX 5070 Laptop) support the approach in the evaluated mixed-workload setting. Where simpler baselines encounter OOM risk or repeated reload overhead, EdgeSched keeps the resident service reachable during burst-task execution and recovers task state to a semantically usable state in about 44 ms after crashes. While raw throughput is slightly lower than a simple semaphore approach (~16\% in our mock microbenchmark), that result reflects the cost of lifecycle-aware control rather than the primary optimization target. The gains in reliability and continuity therefore make EdgeSched a viable design point for robust local AI applications under tight resource constraints.
+
+\subsection{Future Work}
+
+Future work will focus on the following directions:
+
+\begin{enumerate}
+\item \textbf{Heterogeneous Multi-GPU Support}: Extending EdgeSched to support multi-GPU configurations, enabling finer-grained resource allocation and load balancing.
+
+\item \textbf{Kernel-Level Scheduling}: Integrating fine-grained kernel-level scheduling for lower-latency preemption, further reducing service interruption time.
+
+\item \textbf{Adaptive Strategies}: Dynamically adjusting migration strategies and queue capacities based on historical load patterns and user behavior for smarter resource management.
+
+\item \textbf{More Modality Support}: Extending the system to support text-to-speech (TTS), vision-language models (VL), and other modality tasks, building a complete multi-modal AI assistant ecosystem.
+\end{enumerate}
+
+EdgeSched provides a practical scheduling solution for multi-modal AI applications on local consumer devices, and we hope it can motivate further research on runtime management under tight resource constraints.

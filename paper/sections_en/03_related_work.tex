@@ -1,0 +1,59 @@
+\section{Related Work}
+
+\subsection{Local Inference Engines and Single-Model Optimization}
+
+The most relevant adjacent line of work focuses on improving local execution efficiency for a \emph{single} model on constrained hardware.
+
+\textbf{vLLM}\cite{kwon2023vllm} introduces \textit{PagedAttention} to manage KV cache efficiently and improve throughput in high-concurrency serving. However, its primary objective is high-throughput serving for one model, rather than service-level arbitration among heterogeneous tasks sharing a single constrained GPU.
+
+\textbf{FlexGen}\cite{sheng2023flexgen} uses aggressive tensor offloading to CPU and disk to run large models on limited hardware. While effective for capacity-oriented or offline settings, its I/O-heavy design is not aimed at preserving interactive continuity during rapid task switching.
+
+\textbf{Llama.cpp}\cite{llamacpp} enables practical LLM execution on consumer CPUs/GPUs through quantization and mmap-based loading. It is highly relevant as the local inference substrate in our setting, but it is not itself a scheduler for multiple heterogeneous services. Accordingly, our evaluation uses \texttt{llama.cpp + manual switching} as a practical baseline, rather than treating \texttt{llama.cpp} alone as a scheduling system.
+
+Other optimization efforts, including \textbf{PowerInfer}\cite{song2023powerinfer}, \textbf{Deja Vu}\cite{liu2023dejavu}, and \textbf{MLC LLM}\cite{wu2023mlc}, improve single-model execution via sparsity or compilation. These systems are complementary to our work: they optimize the internal execution path of one model, whereas EdgeSched arbitrates the lifecycle and resource ownership of multiple workload classes at the system level.
+
+More recent serving systems move closer to the scheduling boundary that motivates our work. \textbf{Splitwise}\cite{patel2024splitwise} and \textbf{P/D-Serve}\cite{jin2024pdserve} separate prefill and decode phases to improve utilization in high-throughput LLM serving. \textbf{Inference without Interference}\cite{hu2024interference} studies mixed downstream workloads and argues for disaggregating inference paths to reduce cross-workload interference. These systems are conceptually closer to EdgeSched than pure single-model optimizers because they recognize that different phases or request classes may require different control strategies. However, their design center remains server-style LLM serving with phase-aware resource allocation, rather than single-device arbitration between a resident service and an unrelated GPU-exclusive application.
+
+This distinction matters for evaluation: if one wanted stronger external comparators than manual switching or OS-managed memory, systems in the Splitwise/P-D-Serve/Inference-without-Interference family would be the most credible conceptual references. At the same time, they are not drop-in baselines for our deployment because they assume LLM-serving stacks, batching-oriented request flows, or distributed/server-class execution environments that do not match our LLM-plus-image-generation setting.
+
+\subsection{Application-Level Memory Arbitration}
+
+Traditional OS scheduling provides mature mechanisms for CPU processes, but it offers limited control over GPU memory ownership at the application level. Under dedicated-VRAM constraints, relying purely on OS-level paging, swap-like behavior, or unified-memory style fallback can lead to severe thrashing or timeout when multiple VRAM-intensive workloads compete. Our evaluation confirms this effect through the LRU/unified-memory baseline.
+
+EdgeSched addresses a different question from single-model inference engines: how to arbitrate between a \emph{resident, migratable, latency-sensitive} workload and a \emph{bursty, GPU-pinned, queueable} workload on a single consumer device. The key contribution is therefore not a new low-level primitive, but a control consequence of service-role asymmetry: under the constraints studied here, the scheduler should release VRAM quickly on the downlink path while deferring visible interruption on the uplink path.
+
+This is also where EdgeSched differs from a mere engineering bundle. Priority queues, offloading, and crash recovery each exist elsewhere; the paper's claim is that the studied local-runtime setting imposes different control objectives on the two migration directions, which in turn motivates separating urgent downlink from continuity-oriented restoration.
+
+\subsection{General-Purpose Orchestration Systems}
+
+Frameworks such as \textbf{Ray}\cite{moritz2018ray} and \textbf{Kubernetes}\cite{verma2015borg} are designed for distributed orchestration across clusters or containers. They provide general-purpose scheduling abstractions, fault handling, and elastic resource management, but their design center is multi-node coordination rather than sub-second resource arbitration on a single consumer device. Even edge extensions such as \textbf{KubeEdge}\cite{xiong2019kubeedge} inherit much of the architectural overhead of cloud-native orchestration.
+
+We mention these systems only to clarify scope: EdgeSched does not target distributed placement or cluster-level orchestration. Instead, it targets single-node local AI runtimes with limited dedicated VRAM. Therefore, Ray/Kubernetes-style systems are relevant primarily as \emph{positioning references}, not as direct experimental baselines in our deployment setting.
+
+\subsection{Comparison Summary}
+
+Table~\ref{tab:comparison} summarizes the role of representative prior systems relative to EdgeSched.
+
+\begin{table}[htbp]
+\caption{Comparison of Representative Systems}
+\label{tab:comparison}
+\centering
+\scriptsize
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+System & Primary & Deploy. & Sched. & Multi-Workload & Overhead \\
+ & Focus & Scope & Level & Arbitration & Profile \\
+\midrule
+Ray & Dist. orchestration & Cluster & Coarse & Yes & High \\
+Kubernetes & Container orchestration & Cluster & Coarse & Yes & High \\
+vLLM & Single-model throughput & Server & Intra-model & No & Medium \\
+FlexGen & Capacity via offloading & Single model & Intra-model & No & Medium \\
+Splitwise / P-D-Serve & Phase-disagg. serving & Server & Inter-phase & Partial & Medium \\
+Inference w/o Interference & Mixed LLM workloads & Server & Inter-service & Partial & Medium \\
+Llama.cpp & Local inference & Consumer & None & No & Low \\
+\textbf{EdgeSched} & Local AI scheduling & Consumer & Inter-service & Yes & \textbf{Low} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}

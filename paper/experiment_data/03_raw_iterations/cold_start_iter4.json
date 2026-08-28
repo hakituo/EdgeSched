@@ -1,0 +1,50 @@
+{
+  "cold_start": {
+    "512": {
+      "load_time_s": 2.558661937713623,
+      "prefill_time_s": 0.5157606601715088,
+      "total_recovery_time_s": 3.074422597885132
+    },
+    "1024": {
+      "load_time_s": 2.057955026626587,
+      "prefill_time_s": 0.46796393394470215,
+      "total_recovery_time_s": 2.525918960571289
+    },
+    "2048": {
+      "load_time_s": 2.039602756500244,
+      "prefill_time_s": 1.0197713375091553,
+      "total_recovery_time_s": 3.0593740940093994
+    },
+    "3072": {
+      "load_time_s": 2.1356475353240967,
+      "prefill_time_s": 1.707115888595581,
+      "total_recovery_time_s": 3.8427634239196777
+    }
+  },
+  "hot_swap": {
+    "512": {
+      "save_time_s": 0.8719849586486816,
+      "restore_time_s": 1.1549873352050781,
+      "state_size_mb": 0.0,
+      "user_interruption_time_s": 1.1549873352050781
+    },
+    "1024": {
+      "save_time_s": 0.8598475456237793,
+      "restore_time_s": 0.943958044052124,
+      "state_size_mb": 0.0,
+      "user_interruption_time_s": 0.943958044052124
+    },
+    "2048": {
+      "save_time_s": 1.2454588413238525,
+      "restore_time_s": 0.8765430450439453,
+      "state_size_mb": 0.0,
+      "user_interruption_time_s": 0.8765430450439453
+    },
+    "3072": {
+      "save_time_s": 1.372814655303955,
+      "restore_time_s": 0.9637176990509033,
+      "state_size_mb": 0.0,
+      "user_interruption_time_s": 0.9637176990509033
+    }
+  }
+}

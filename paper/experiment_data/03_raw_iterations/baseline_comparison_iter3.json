@@ -1,0 +1,63 @@
+{
+  "name": "baseline_comparison_experiment",
+  "timestamp": "2026-05-04T21:43:17",
+  "seed": 42,
+  "config": {
+    "n_tasks": 100,
+    "task_duration": 0.1
+  },
+  "comparison": {
+    "naive_async": {
+      "throughput_tasks_per_s": 62.216155655497,
+      "avg_latency_ms": 795.1095294952393,
+      "p50_latency_ms": 746.7914819717407,
+      "p95_latency_ms": 1381.1875700950623,
+      "p99_latency_ms": 1492.3982405662537,
+      "memory_peak_mb": 0.8572311401367188,
+      "success_rate": 1.0
+    },
+    "threadpool": {
+      "throughput_tasks_per_s": 76.4678428078036,
+      "avg_latency_ms": 100.20581483840942,
+      "p50_latency_ms": 100.19111633300781,
+      "p95_latency_ms": 100.32527446746826,
+      "p99_latency_ms": 100.5094575881958,
+      "memory_peak_mb": 0.34127330780029297,
+      "success_rate": 1.0
+    },
+    "semaphore": {
+      "throughput_tasks_per_s": 42.435027464925604,
+      "avg_latency_ms": 1295.8973169326782,
+      "p50_latency_ms": 1348.9742279052734,
+      "p95_latency_ms": 2260.6271147727966,
+      "p99_latency_ms": 2352.626197338104,
+      "memory_peak_mb": 0.26696205139160156,
+      "success_rate": 1.0
+    },
+    "edgesched": {
+      "throughput_tasks_per_s": 37.17600872943579,
+      "avg_latency_ms": 2491.025266647339,
+      "p50_latency_ms": 2515.8088207244873,
+      "p95_latency_ms": 2519.4782137870784,
+      "p99_latency_ms": 2519.694023132324,
+      "memory_peak_mb": 4.97383975982666,
+      "success_rate": 1.0
+    }
+  },
+  "improvement": {
+    "vs_semaphore": {
+      "throughput_improvement_percent": -12.393107886725462,
+      "p99_latency_improvement_percent": -7.101333224260213,
+      "memory_overhead_percent": -1763.1261386775263
+    },
+    "vs_naive_async": {
+      "throughput_improvement_percent": -40.24701729356823,
+      "p99_latency_improvement_percent": -68.83523141760664
+    }
+  },
+  "summary": {
+    "best_throughput": 76.4678428078036,
+    "best_p99_latency": 100.5094575881958,
+    "lowest_memory": 0.26696205139160156
+  }
+}

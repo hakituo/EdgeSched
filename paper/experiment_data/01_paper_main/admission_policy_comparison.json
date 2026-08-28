@@ -1,0 +1,89 @@
+{
+  "name": "admission_policy_comparison",
+  "timestamp": "2026-06-11T20:24:13",
+  "iterations": 5,
+  "seed": 42,
+  "scenarios": {
+    "light": {
+      "greedy": {
+        "burst_completion_mean_s": 37.135,
+        "burst_completion_p95_s": 38.346,
+        "queue_wait_mean_s": 0.135,
+        "llm_disruption_total_s": 370.0,
+        "llm_n_disruptions": 10.0,
+        "reject_rate": 0.0,
+        "throughput": 0.015
+      },
+      "cost_aware": {
+        "burst_completion_mean_s": 16.5,
+        "burst_completion_p95_s": 16.5,
+        "queue_wait_mean_s": 0.0,
+        "llm_disruption_total_s": 0.0,
+        "llm_n_disruptions": 0.0,
+        "reject_rate": 0.0,
+        "throughput": 0.016
+      },
+      "improvement": {
+        "burst_completion_improvement_pct": 55.6,
+        "queue_wait_improvement_pct": 100.0,
+        "llm_disruption_improvement_pct": 100.0,
+        "reject_rate_improvement_pct": 0.0,
+        "throughput_improvement_pct": 6.7
+      }
+    },
+    "medium": {
+      "greedy": {
+        "burst_completion_mean_s": 147.934,
+        "burst_completion_p95_s": 254.429,
+        "queue_wait_mean_s": 110.934,
+        "llm_disruption_total_s": 740.0,
+        "llm_n_disruptions": 20.0,
+        "reject_rate": 0.0,
+        "throughput": 0.026
+      },
+      "cost_aware": {
+        "burst_completion_mean_s": 16.637,
+        "burst_completion_p95_s": 17.773,
+        "queue_wait_mean_s": 0.137,
+        "llm_disruption_total_s": 0.0,
+        "llm_n_disruptions": 0.0,
+        "reject_rate": 0.0,
+        "throughput": 0.038
+      },
+      "improvement": {
+        "burst_completion_improvement_pct": 88.8,
+        "queue_wait_improvement_pct": 99.9,
+        "llm_disruption_improvement_pct": 100.0,
+        "reject_rate_improvement_pct": 0.0,
+        "throughput_improvement_pct": 46.2
+      }
+    },
+    "heavy": {
+      "greedy": {
+        "burst_completion_mean_s": 455.537,
+        "burst_completion_p95_s": 844.913,
+        "queue_wait_mean_s": 418.537,
+        "llm_disruption_total_s": 1110.0,
+        "llm_n_disruptions": 30.0,
+        "reject_rate": 0.0,
+        "throughput": 0.027
+      },
+      "cost_aware": {
+        "burst_completion_mean_s": 405.517,
+        "burst_completion_p95_s": 983.83,
+        "queue_wait_mean_s": 371.524,
+        "llm_disruption_total_s": 947.2,
+        "llm_n_disruptions": 25.6,
+        "reject_rate": 0.0,
+        "throughput": 0.029
+      },
+      "improvement": {
+        "burst_completion_improvement_pct": 11.0,
+        "queue_wait_improvement_pct": 11.2,
+        "llm_disruption_improvement_pct": 14.7,
+        "reject_rate_improvement_pct": 0.0,
+        "throughput_improvement_pct": 7.4
+      }
+    }
+  }
+}

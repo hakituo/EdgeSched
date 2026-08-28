@@ -1,0 +1,63 @@
+{
+  "name": "baseline_comparison_experiment",
+  "timestamp": "2026-05-04T21:43:43",
+  "seed": 42,
+  "config": {
+    "n_tasks": 100,
+    "task_duration": 0.1
+  },
+  "comparison": {
+    "naive_async": {
+      "throughput_tasks_per_s": 56.764892768278926,
+      "avg_latency_ms": 637.2436261177063,
+      "p50_latency_ms": 533.2192182540894,
+      "p95_latency_ms": 1087.4833583831787,
+      "p99_latency_ms": 1227.5078558921814,
+      "memory_peak_mb": 0.8505573272705078,
+      "success_rate": 1.0
+    },
+    "threadpool": {
+      "throughput_tasks_per_s": 76.55353723254746,
+      "avg_latency_ms": 100.19010305404663,
+      "p50_latency_ms": 100.1657247543335,
+      "p95_latency_ms": 100.39768218994139,
+      "p99_latency_ms": 100.4809808731079,
+      "memory_peak_mb": 0.34127330780029297,
+      "success_rate": 1.0
+    },
+    "semaphore": {
+      "throughput_tasks_per_s": 38.26342614567347,
+      "avg_latency_ms": 1362.9800033569336,
+      "p50_latency_ms": 1361.6901636123657,
+      "p95_latency_ms": 2541.8380260467525,
+      "p99_latency_ms": 2600.6499695777893,
+      "memory_peak_mb": 0.2638416290283203,
+      "success_rate": 1.0
+    },
+    "edgesched": {
+      "throughput_tasks_per_s": 37.02788128030202,
+      "avg_latency_ms": 2454.6525716781616,
+      "p50_latency_ms": 2515.145182609558,
+      "p95_latency_ms": 2518.700337409973,
+      "p99_latency_ms": 2518.851363658905,
+      "memory_peak_mb": 4.978208541870117,
+      "success_rate": 1.0
+    }
+  },
+  "improvement": {
+    "vs_semaphore": {
+      "throughput_improvement_percent": -3.229049224885361,
+      "p99_latency_improvement_percent": 3.1453139359682503,
+      "memory_overhead_percent": -1786.8169364341534
+    },
+    "vs_naive_async": {
+      "throughput_improvement_percent": -34.76975032533885,
+      "p99_latency_improvement_percent": -105.20042715556757
+    }
+  },
+  "summary": {
+    "best_throughput": 76.55353723254746,
+    "best_p99_latency": 100.4809808731079,
+    "lowest_memory": 0.2638416290283203
+  }
+}

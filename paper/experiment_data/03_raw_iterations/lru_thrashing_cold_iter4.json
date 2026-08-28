@@ -1,0 +1,10 @@
+{
+  "timestamp": "2026-05-05T05:40:07",
+  "llm_only_latency_s": 0.4041891098022461,
+  "image_only_latency_s": 4.02122950553894,
+  "concurrent_llm_latency_s": 9.970776557922363,
+  "concurrent_image_latency_s": 2.0207033157348633,
+  "cache_mode": "cold",
+  "status": "success",
+  "iteration_index": 4
+}

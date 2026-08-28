@@ -20,12 +20,26 @@ models/
 *.db
 nvidia_smi_snapshot.txt
 
-# IDE
+# IDE / 本地工具配置
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
+.trae/
+
+# 本地 mmap / 运行时状态（NVRAM 模拟与用户状态）
+data/**/*.dat
+data/**/*.dat.*
+data/**/*.bio
+data/bench_*
+data/user_states/
+
+# LaTeX 编译中间产物
+*.fdb_latexmk
+*.fls
+*.bbl
+*.blg
 
 # OS
 .DS_Store
