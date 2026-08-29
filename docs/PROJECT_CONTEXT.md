@@ -272,7 +272,7 @@ GPU burst arrives
 | 弹性驻留 B1 | WSL2 `tts_component_offload.py` + `b1_tts_components_20260829_verified_v2` | T0–T3 组件发现、实际设备、code 传输、分段时间、显存证据和非静音单文本 WAV；不证明 Pareto |
 | 弹性驻留 B2 | WSL2 `tts_component_offload_matrix.py` + `b2_tts_matrix_20260829_verified_v1` | 60 条 TTS 组件放置矩阵、分组统计与条件式 Pareto；不证明端到端无 underrun |
 | 弹性驻留 C1 | WSL2 `llm_residency_curve.py` + `c1_llm_residency_512_20260829_verified_v1` | K0/FULL 真实端点、精确 token/gap、阶段资源与 KV 保存恢复；不代替 C2 多轮曲线 |
-| KV 语义/容量 | `tests/elastic_residency/test_kv_measurement.py` + WSL2 `llm_kv_cache_calibration.py` | 字段语义、position/token 计算、日志解析、缺字段失败与 48 条确定性 KV buffer 容量；不证明性能 |
+| KV 语义/容量 | `tests/elastic_residency/test_kv_measurement.py` + WSL2 `llm_kv_cache_calibration.py` | 字段语义、原生 position/`llm.n_tokens`、日志解析、缺字段失败与 48 条确定性 KV buffer 容量；`kv_calibration_smoke_20260830_verified_v1` 已通过 1/1 条，仍不证明正式矩阵或性能 |
 | LLM+TTS 共置 | `tests/elastic_residency/test_llm_kv_colocated.py` + WSL2 `llm_tts_colocated.py` | `B_LLM`/`P_colocated`/残差公式与容量裁决（不重复叠加 KV）；最小 K0+T3 direct NVML 临时 smoke 已通过，正式 artifact 矩阵仍待运行 |
 | 恢复/持久化 | `tests/verify_state_backplane_recovery.py` | mmap 读写和恢复闭合 |
 | C++ 绑定 | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` | 扩展导入与 API 契约 |
