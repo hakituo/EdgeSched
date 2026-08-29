@@ -284,6 +284,11 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
                 metrics["memory_codec_peak"],
             )
             checks = {
+                "gpu_telemetry_is_direct_nvml": all(
+                    snapshot["gpu_telemetry_backend"] == "direct_nvml"
+                    and not snapshot["gpu_cli_subprocess_used"]
+                    for snapshot in memory_phases
+                ),
                 "component_placement_matches": _placement_matches(
                     spec, actual_devices
                 ),
@@ -309,7 +314,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
                 ),
                 "gpu_memory_evidence_available": all(
                     snapshot["gpu_card_available"]
-                    and snapshot["gpu_process_total_estimate_mb"] is not None
+                    and snapshot["gpu_card_delta_from_baseline_mb"] is not None
                     for snapshot in memory_phases
                 ),
                 "torch_phase_peaks_available": all(
@@ -424,7 +429,7 @@ def _summarize_group(records: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "max_card_delta_mb": max(
             max(
-                record[phase]["gpu_process_total_estimate_mb"] or 0.0
+                record[phase]["gpu_card_delta_from_baseline_mb"] or 0.0
                 for phase in (
                     "memory_talker_peak",
                     "memory_transfer_peak",
@@ -499,6 +504,8 @@ def run_parent(args: argparse.Namespace) -> Path:
             "x_vector_only_mode": True,
             "true_audio_streaming": False,
             "ttfa_semantics": "complete_sentence_audio_ready_in_memory",
+            "gpu_telemetry_backend": "direct_nvml",
+            "gpu_cli_subprocess_allowed": False,
         },
     )
     writer.initialize(

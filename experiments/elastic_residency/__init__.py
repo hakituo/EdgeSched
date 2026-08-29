@@ -13,16 +13,19 @@ from .cpu_topology import (
     PhysicalCoreAllocator,
     process_affinity_scope,
 )
+from .gpu_telemetry import DirectNvmlProbe, NvmlUnavailableError
 from .resource_sampler import EventLoopJitterProbe, ResourceSampler
 
 __all__ = [
     "BackendEvidence",
     "CPUTopology",
+    "DirectNvmlProbe",
     "EventLoopJitterProbe",
     "ExperimentArtifactWriter",
     "ExperimentEvent",
     "ExperimentRunConfig",
     "FailureRecord",
+    "NvmlUnavailableError",
     "PhysicalCoreAllocator",
     "ResourceSampler",
     "TimelineSample",

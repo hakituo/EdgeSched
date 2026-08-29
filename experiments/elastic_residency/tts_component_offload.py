@@ -31,6 +31,11 @@ from experiments.elastic_residency.contracts import (  # noqa: E402
     ExperimentRunConfig,
     FailureRecord,
 )
+from experiments.elastic_residency.gpu_telemetry import (  # noqa: E402
+    DirectNvmlProbe,
+    NvmlUnavailableError,
+    get_direct_nvml_probe,
+)
 from experiments.tts.profiling_utils import (  # noqa: E402
     model_tree_hash,
     sha256_file,
@@ -121,78 +126,48 @@ def _synchronize() -> None:
         torch.cuda.synchronize()
 
 
-def _nvidia_memory_snapshot(pid: int) -> dict[str, Any]:
-    card_used_mb: float | None = None
-    card_total_mb: float | None = None
+def _nvidia_memory_snapshot(
+    pid: int,
+    *,
+    probe: DirectNvmlProbe | None = None,
+) -> dict[str, Any]:
+    """兼容旧调用名；正式显存快照直接来自 NVML，不调用 CLI。"""
+
     try:
-        card_completed = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-gpu=memory.used,memory.total",
-                "--format=csv,noheader,nounits",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=3.0,
-        )
-        card_parts = [
-            value.strip()
-            for value in card_completed.stdout.splitlines()[0].split(",")
-        ]
-        card_used_mb, card_total_mb = map(float, card_parts[:2])
-    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        active_probe = probe or get_direct_nvml_probe(include_process_memory=True)
+        sampled = active_probe.sample(pid)
+    except NvmlUnavailableError as exc:
+        sampled = {
+            "available": False,
+            "backend": "direct_nvml",
+            "unavailable_reason": f"direct_nvml_init_failed: {exc}",
+        }
+    if not sampled.get("available", False):
         return {
             "gpu_card_available": False,
             "gpu_card_used_mb": None,
             "gpu_card_total_mb": None,
             "gpu_process_total_mb": None,
             "gpu_process_total_available": False,
-            "gpu_process_total_unavailable_reason": "card_query_failed",
+            "gpu_process_total_unavailable_reason": sampled.get(
+                "unavailable_reason",
+                "direct_nvml_query_failed",
+            ),
+            "gpu_telemetry_backend": "direct_nvml",
+            "gpu_cli_subprocess_used": False,
         }
-    try:
-        process_completed = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-compute-apps=pid,used_memory",
-                "--format=csv,noheader,nounits",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=3.0,
-        )
-    except (OSError, subprocess.SubprocessError):
-        process_completed = None
-    process_used_mb: float | None = None
-    matched_pid = False
-    process_output = process_completed.stdout if process_completed else ""
-    for line in process_output.splitlines():
-        parts = [part.strip() for part in line.split(",")]
-        if len(parts) != 2:
-            continue
-        try:
-            if int(parts[0]) == pid:
-                matched_pid = True
-                process_used_mb = float(parts[1])
-                break
-        except ValueError:
-            continue
-    if process_used_mb is not None:
-        unavailable_reason = None
-    elif matched_pid:
-        unavailable_reason = "driver_reported_non_numeric_process_memory"
-    elif process_output.strip():
-        unavailable_reason = "current_pid_not_reported"
-    else:
-        unavailable_reason = "no_compute_process_rows"
+    process_used_mb = sampled.get("process_used_mb")
     return {
         "gpu_card_available": True,
-        "gpu_card_used_mb": card_used_mb,
-        "gpu_card_total_mb": card_total_mb,
+        "gpu_card_used_mb": sampled["card_used_mb"],
+        "gpu_card_total_mb": sampled["card_total_mb"],
         "gpu_process_total_mb": process_used_mb,
         "gpu_process_total_available": process_used_mb is not None,
-        "gpu_process_total_unavailable_reason": unavailable_reason,
+        "gpu_process_total_unavailable_reason": sampled.get(
+            "process_memory_unavailable_reason"
+        ),
+        "gpu_telemetry_backend": sampled.get("backend", "direct_nvml"),
+        "gpu_cli_subprocess_used": False,
     }
 
 
@@ -200,20 +175,10 @@ def _wait_for_gpu_probe(timeout_s: float) -> bool:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         try:
-            completed = subprocess.run(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=memory.total",
-                    "--format=csv,noheader,nounits",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=3.0,
-            )
-            if completed.stdout.strip():
+            sampled = get_direct_nvml_probe().sample(os.getpid())
+            if sampled.get("available", False):
                 return True
-        except (OSError, subprocess.SubprocessError):
+        except NvmlUnavailableError:
             pass
         time.sleep(0.1)
     return False
@@ -228,16 +193,19 @@ def _memory_snapshot(
 
     nvidia = _nvidia_memory_snapshot(os.getpid())
     card_used_mb = nvidia["gpu_card_used_mb"]
+    card_delta_mb = (
+        max(0.0, card_used_mb - baseline_card_used_mb)
+        if card_used_mb is not None
+        else None
+    )
     snapshot = {
         "rss_bytes": process.memory_info().rss,
         "process_cpu_percent": process.cpu_percent(interval=None),
         "system_available_bytes": psutil.virtual_memory().available,
         **nvidia,
-        "gpu_process_total_estimate_mb": (
-            max(0.0, card_used_mb - baseline_card_used_mb)
-            if card_used_mb is not None
-            else None
-        ),
+        "gpu_card_delta_from_baseline_mb": card_delta_mb,
+        # 兼容旧汇总字段；语义始终是整卡差值，不是精确进程显存。
+        "gpu_process_total_estimate_mb": card_delta_mb,
         "gpu_process_total_estimate_method": "card_delta_from_preload_baseline",
         "torch_allocated_bytes": 0,
         "torch_reserved_bytes": 0,
@@ -473,11 +441,22 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
     acceptance_checks = {
         "gpu_probe_ready_before_timing": gpu_probe_ready,
         "gpu_card_baseline_available": baseline_card_used_mb is not None,
+        "gpu_telemetry_is_direct_nvml": all(
+            snapshot["gpu_telemetry_backend"] == "direct_nvml"
+            and not snapshot["gpu_cli_subprocess_used"]
+            for snapshot in (
+                memory_ready,
+                memory_talker_peak,
+                memory_transfer_peak,
+                memory_codec_peak,
+                memory_final,
+            )
+        ),
         "process_memory_evidence_available": (
             memory_ready["gpu_process_total_mb"] is not None
             or (
-                memory_ready["gpu_process_total_estimate_mb"] is not None
-                and memory_ready["gpu_process_total_estimate_mb"] > 0
+                memory_ready["gpu_card_delta_from_baseline_mb"] is not None
+                and memory_ready["gpu_card_delta_from_baseline_mb"] > 0
             )
         ),
         "component_placement_matches": _placement_matches(spec, actual_devices),
@@ -642,6 +621,8 @@ def run_parent(args: argparse.Namespace) -> Path:
             "gpu_probe_timeout_s": args.gpu_probe_timeout,
             "cpu_initial_sample_discarded": True,
             "cuda_peak_reset_per_measured_phase": True,
+            "gpu_telemetry_backend": "direct_nvml",
+            "gpu_cli_subprocess_allowed": False,
         },
     )
     writer.initialize(
@@ -753,6 +734,7 @@ def run_parent(args: argparse.Namespace) -> Path:
         "rtf",
         "gpu_process_total_mb_ready",
         "gpu_process_total_estimate_mb_ready",
+        "gpu_card_delta_from_baseline_mb_ready",
         "gpu_card_used_mb_ready",
     ]
     with csv_path.open("w", encoding="utf-8", newline="") as file_obj:
@@ -783,6 +765,9 @@ def run_parent(args: argparse.Namespace) -> Path:
                     "gpu_process_total_estimate_mb_ready": record.get(
                         "memory_ready", {}
                     ).get("gpu_process_total_estimate_mb"),
+                    "gpu_card_delta_from_baseline_mb_ready": record.get(
+                        "memory_ready", {}
+                    ).get("gpu_card_delta_from_baseline_mb"),
                     "gpu_card_used_mb_ready": record.get(
                         "memory_ready", {}
                     ).get("gpu_card_used_mb"),

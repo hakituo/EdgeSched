@@ -40,10 +40,10 @@ from experiments.elastic_residency.cpu_topology import (  # noqa: E402
     PhysicalCoreAllocator,
     process_affinity_scope,
 )
-from experiments.elastic_residency.resource_sampler import (  # noqa: E402
-    NvidiaSmiProbe,
-    ResourceSampler,
+from experiments.elastic_residency.gpu_telemetry import (  # noqa: E402
+    DirectNvmlProbe,
 )
+from experiments.elastic_residency.resource_sampler import ResourceSampler  # noqa: E402
 from experiments.elastic_residency.tts_component_offload import (  # noqa: E402
     _git_source,
     _nvidia_memory_snapshot,
@@ -98,16 +98,19 @@ def _native_memory_snapshot(
 ) -> dict[str, Any]:
     nvidia = _nvidia_memory_snapshot(os.getpid())
     card_used_mb = nvidia["gpu_card_used_mb"]
+    card_delta_mb = (
+        max(0.0, card_used_mb - baseline_card_used_mb)
+        if card_used_mb is not None
+        else None
+    )
     return {
         "rss_bytes": process.memory_info().rss,
         "system_available_bytes": psutil.virtual_memory().available,
         "system_swap_used_bytes": psutil.swap_memory().used,
         **nvidia,
-        "gpu_process_total_estimate_mb": (
-            max(0.0, card_used_mb - baseline_card_used_mb)
-            if card_used_mb is not None
-            else None
-        ),
+        "gpu_card_delta_from_baseline_mb": card_delta_mb,
+        # 兼容旧汇总字段；语义始终是整卡差值，不是精确进程显存。
+        "gpu_process_total_estimate_mb": card_delta_mb,
         "gpu_process_total_estimate_method": "card_delta_from_preload_baseline",
     }
 
@@ -269,10 +272,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
             sampler = ResourceSampler(
                 interval_s=args.sample_interval,
                 gpu_interval_s=args.gpu_sample_interval,
-                # WSL 驱动不提供数值化的 compute-process 显存；正式曲线的
-                # 显存证据来自阶段快照的整卡基线差值。周期内重复查询该接口
-                # 只会拉长探针间隔，可能把有效样本误判为过期。
-                gpu_probe=NvidiaSmiProbe(include_process_memory=False),
+                gpu_probe=DirectNvmlProbe(include_process_memory=False),
                 thread_affinity=system_lease.affinity,
             )
             gpu_ready = sampler.start(wait_for_gpu_timeout_s=args.gpu_warmup_timeout)
@@ -437,7 +437,13 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "gpu_memory_evidence_available": (
             memory_after_inference["gpu_process_total_mb"] is not None
-            or memory_after_inference["gpu_process_total_estimate_mb"] is not None
+            or memory_after_inference["gpu_card_delta_from_baseline_mb"] is not None
+        ),
+        "gpu_telemetry_is_direct_nvml": (
+            resource_summary["gpu_telemetry_backend"] == "direct_nvml"
+            and not resource_summary["gpu_cli_subprocess_used"]
+            and memory_after_inference["gpu_telemetry_backend"] == "direct_nvml"
+            and not memory_after_inference["gpu_cli_subprocess_used"]
         ),
     }
     acceptance_checks.update(
@@ -529,7 +535,8 @@ def _summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         "kv_save_s": [record["kv_save_s"] for record in records],
         "kv_restore_s": [record["kv_restore_s"] for record in records],
         "gpu_delta_mb": [
-            record["memory_after_inference"]["gpu_process_total_estimate_mb"] or 0.0
+            record["memory_after_inference"]["gpu_card_delta_from_baseline_mb"]
+            or 0.0
             for record in records
         ],
         "rss_mb": [
@@ -723,6 +730,8 @@ def run_parent(args: argparse.Namespace) -> Path:
             "matrix_order": "context_then_round_with_rotating_configs",
             "inter_run_cooldown_s": args.inter_run_cooldown,
             "jitter_gate_mode": args.jitter_gate_mode,
+            "gpu_telemetry_backend": "direct_nvml",
+            "gpu_cli_subprocess_allowed": False,
             "periodic_gpu_process_memory_query": False,
             "fixed_generation_ignores_eos": True,
             "acceptance_thresholds": {
@@ -1026,7 +1035,7 @@ def run_parent(args: argparse.Namespace) -> Path:
                     "n_gpu_layers": record["n_gpu_layers"],
                     "load_s": record["load_s"],
                     "gpu_delta_mb": record["memory_after_inference"][
-                        "gpu_process_total_estimate_mb"
+                        "gpu_card_delta_from_baseline_mb"
                     ],
                     "rss_mb": record["memory_after_inference"]["rss_bytes"] / 1048576.0,
                     "ttft_s": record["inference"]["ttft_s"],

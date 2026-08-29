@@ -15,6 +15,7 @@ from typing import Any
 import psutil
 
 from .contracts import ExperimentArtifactWriter, TimelineSample
+from .gpu_telemetry import DirectNvmlProbe, GPUProbe
 
 
 def _wall_time_iso() -> str:
@@ -49,7 +50,9 @@ def _advance_periodic_deadline(
 
 
 class NvidiaSmiProbe:
-    """低频读取整卡与目标进程显存，失败时显式返回 unavailable。"""
+    """仅供显式诊断/兼容测试的 CLI 探针；正式实验不默认使用。"""
+
+    backend_name = "nvidia_smi_cli"
 
     def __init__(
         self,
@@ -74,7 +77,7 @@ class NvidiaSmiProbe:
             return ""
         return completed.stdout.strip()
 
-    def sample(self, pid: int) -> dict[str, float | bool]:
+    def sample(self, pid: int) -> dict[str, float | bool | str | None]:
         card_output = self._run(
             [
                 "nvidia-smi",
@@ -83,16 +86,16 @@ class NvidiaSmiProbe:
             ]
         )
         if not card_output:
-            return {"available": False}
+            return {"available": False, "backend": self.backend_name}
         try:
             card_parts = [
                 float(value.strip())
                 for value in card_output.splitlines()[0].split(",")
             ]
             if len(card_parts) != 5:
-                return {"available": False}
+                return {"available": False, "backend": self.backend_name}
         except ValueError:
-            return {"available": False}
+            return {"available": False, "backend": self.backend_name}
         process_used_mb = 0.0
         if self.include_process_memory:
             process_output = self._run(
@@ -113,6 +116,7 @@ class NvidiaSmiProbe:
                     continue
         return {
             "available": True,
+            "backend": self.backend_name,
             "card_used_mb": card_parts[0],
             "card_total_mb": card_parts[1],
             "utilization_percent": card_parts[2],
@@ -133,7 +137,7 @@ class ResourceSampler:
         interval_s: float = 0.05,
         gpu_interval_s: float = 0.25,
         writer: ExperimentArtifactWriter | None = None,
-        gpu_probe: NvidiaSmiProbe | None = None,
+        gpu_probe: GPUProbe | None = None,
         framework_gpu_probe: Callable[[], Mapping[str, float]] | None = None,
         thread_affinity: Sequence[int] | None = None,
     ) -> None:
@@ -143,7 +147,6 @@ class ResourceSampler:
         self.interval_s = interval_s
         self.gpu_interval_s = gpu_interval_s
         self.writer = writer
-        self.gpu_probe = gpu_probe or NvidiaSmiProbe()
         self.framework_gpu_probe = framework_gpu_probe
         self.thread_affinity = (
             tuple(sorted(set(int(cpu_id) for cpu_id in thread_affinity)))
@@ -152,6 +155,7 @@ class ResourceSampler:
         )
         if thread_affinity is not None and not self.thread_affinity:
             raise ValueError("thread_affinity 至少需要一个逻辑 CPU")
+        self.gpu_probe = gpu_probe or DirectNvmlProbe(include_process_memory=False)
         self.samples: list[TimelineSample] = []
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -159,7 +163,7 @@ class ResourceSampler:
         self._error: BaseException | None = None
         self._gpu_error: BaseException | None = None
         self._gpu_lock = threading.Lock()
-        self._gpu_data: dict[str, float | bool] = {"available": False}
+        self._gpu_data: dict[str, float | bool | str | None] = {"available": False}
         self._gpu_sample_time = 0.0
         self._gpu_sample_count = 0
         self._gpu_sample_times: list[float] = []
@@ -233,6 +237,10 @@ class ResourceSampler:
             "interval_s": self.interval_s,
             "gpu_interval_s": self.gpu_interval_s,
             "gpu_sample_count": self._gpu_sample_count,
+            "gpu_telemetry_backend": self.gpu_probe.backend_name,
+            "gpu_cli_subprocess_used": (
+                self.gpu_probe.backend_name == "nvidia_smi_cli"
+            ),
             "gpu_actual_gap_p95_ms": _percentile(gpu_sample_gaps_ms, 0.95),
             "gpu_actual_gap_max_ms": max(gpu_sample_gaps_ms, default=0.0),
             "gpu_probe_duration_p95_ms": _percentile(
@@ -335,7 +343,7 @@ class ResourceSampler:
                     gpu_power_w=float(gpu_data.get("power_w", 0.0)),
                     gpu_temperature_c=float(gpu_data.get("temperature_c", 0.0)),
                     gpu_process_used_mb=float(
-                        gpu_data.get("process_used_mb", 0.0)
+                        gpu_data.get("process_used_mb") or 0.0
                     ),
                     framework_gpu=framework_gpu,
                 )

@@ -148,8 +148,8 @@ python -m experiments.elastic_residency.llm_residency_curve \
 
 配置在每个轮次内确定性轮转，降低固定顺序热漂移。意外中断时，只能用完全相同的参数、源码 commit、Python/平台和模型 manifest 加 `--resume`；已有 `(context, config, run)` 会跳过，矩阵外或重复记录会拒绝。子轮超时、进程失败或测量有效性验收失败默认立即停止，总汇总失败时命令返回非零。C2 的 jitter 阈值是待测性能目标而非证据有效性门，因此正式矩阵必须显式使用 `observe`：超标轮次写入 `performance_target_checks` 并保留在完整曲线中，不会被隐藏或改写为通过。若 `failures.jsonl` 非空，该 run 即使后来补齐也不能成为通过记录，修复后必须换新 run id。
 
-GPU sampler 使用固定 deadline 周期；若 `nvidia-smi` 本轮超过采样周期，只跳过已错过的 tick，不能在探针完成后再叠加一个完整周期。GPU 数据最大年龄 750 ms 仍是测量有效性硬门。
-LLM 曲线的周期 GPU sampler 只查询整卡指标；WSL 驱动不返回数值化的 compute-process 显存，逐周期重复查询该接口会制造无效延迟。阶段性显存快照仍保留进程查询结果及 unavailable 原因，并以相对空闲整卡基线的增量作为估计，因此这一优化不改变曲线的显存统计口径，也不放宽 750 ms 新鲜度门槛。
+正式 GPU sampler 通过 ctypes 直接调用 NVML，不启动 `nvidia-smi` 子进程，也不做静默 CLI fallback；manifest、summary 和每轮验收必须记录 `gpu_telemetry_backend=direct_nvml` 与 `gpu_cli_subprocess_used=false`。GPU 数据最大年龄 750 ms 仍是测量有效性硬门。WSL 若无法返回数值化的 compute-process 显存，必须保留 unavailable 原因；`gpu_card_delta_from_baseline_mb` 只表示隔离运行下的整卡差值，不得称为精确进程显存。TTS 另以 PyTorch allocated/reserved 峰值作为框架内主证据。
+旧 C2/B2/Forge 结果使用 CLI 采样，保留为工程基线和链路证据；direct NVML 改造后，粗测、细化和参与 `H_TTS/H_D` 的整卡数据必须使用同一新后端重跑，不能跨后端拼接为论文曲线。
 冻结的 10 档临界矩阵（K2/K4/K6/K10/K12/K14/K18/K20/K28/K30、3 上下文、5 轮、128 生成 token、observe）标记为 `c3_critical_refinement`；建议显式使用 `--output-root experiment_results/elastic_residency/c3`，避免与 C1 smoke 产物混放。有效性门失败时控制台会直接打印失败检查名。
 
 WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：

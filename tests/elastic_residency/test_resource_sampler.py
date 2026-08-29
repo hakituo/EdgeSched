@@ -17,6 +17,22 @@ def _fake_nvidia(command: list[str]) -> str:
     return "999999, 100\n"
 
 
+class _FakeDirectNvmlProbe:
+    backend_name = "direct_nvml"
+
+    def sample(self, _pid: int):
+        return {
+            "available": True,
+            "backend": self.backend_name,
+            "card_used_mb": 512.0,
+            "card_total_mb": 8151.0,
+            "utilization_percent": 7.0,
+            "power_w": 42.5,
+            "temperature_c": 55.0,
+            "process_used_mb": None,
+        }
+
+
 def test_gpu_deadline_skips_missed_ticks_without_adding_full_interval() -> None:
     assert _advance_periodic_deadline(0.0, 0.25, 0.20) == 0.25
     assert _advance_periodic_deadline(0.0, 0.25, 0.624) == 0.75
@@ -50,6 +66,22 @@ def test_resource_sampler_writes_resource_and_jitter_timeline(tmp_path) -> None:
     assert sampler.samples[0].cpu_sample_valid is False
     assert all(sample.cpu_sample_valid for sample in sampler.samples[1:])
     assert writer.layout.timeline.read_text().count("\n") == len(sampler.samples)
+
+
+def test_resource_sampler_records_direct_nvml_without_cli(tmp_path) -> None:
+    sampler = ResourceSampler(
+        interval_s=0.01,
+        gpu_interval_s=0.02,
+        writer=ExperimentArtifactWriter(tmp_path, "direct_nvml"),
+        gpu_probe=_FakeDirectNvmlProbe(),
+    )
+    sampler.start(wait_for_gpu_timeout_s=0.1)
+    time.sleep(0.05)
+    summary = sampler.stop()
+
+    assert summary["gpu_telemetry_backend"] == "direct_nvml"
+    assert summary["gpu_cli_subprocess_used"] is False
+    assert all(sample.gpu_process_used_mb == 0.0 for sample in sampler.samples)
 
 
 def test_nvidia_probe_can_skip_unavailable_process_memory_query() -> None:

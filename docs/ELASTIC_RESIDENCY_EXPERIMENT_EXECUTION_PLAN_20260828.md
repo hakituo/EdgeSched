@@ -87,8 +87,8 @@ BGE 是 bi-encoder，不是 cross-encoder reranker。计划中的“rerank”定
 
 统一采样器以 50 ms 周期记录：
 
-- GPU card used/total/utilization/power/temperature；
-- 目标进程 GPU memory（`nvidia-smi`）；
+- direct NVML GPU card used/total/utilization/power/temperature；
+- direct NVML 目标进程 GPU memory（WSL/WDDM 不可用时记录 `NVML_VALUE_NOT_AVAILABLE`，不得伪造）；
 - PyTorch allocated/reserved/max allocated（适用时）；
 - 进程 RSS、系统 available memory、swap；
 - 进程 CPU、每个逻辑 CPU 利用率、实际 affinity；
@@ -167,7 +167,7 @@ tests/elastic_residency/
 #### B1 开跑前的强制边界
 
 1. 每个 T0–T3 配置使用独立子进程，防止上一配置的 CUDA allocator、模型对象或缓存污染下一配置；子进程必须回报 talker、speech codec、speaker encoder、文本 tokenizer 的实际参数/缓冲区设备，不能只回报目标配置。
-2. `passed` 必须要求计时前已有成功 NVIDIA 探针；短时显存峰值以每个测量阶段前重置的 PyTorch `max_memory_allocated/max_memory_reserved` 为主，`nvidia-smi` 进程显存和整卡显存作为低频补充。
+2. `passed` 必须要求计时前已有成功 direct NVML 探针；短时显存峰值以每个测量阶段前重置的 PyTorch `max_memory_allocated/max_memory_reserved` 为主，direct NVML 整卡显存作为交叉验证。
 3. CPU 利用率探针初始化值必须丢弃并在 manifest 中记录；GPU 首样本等待不计入 talker、传输或 codec 时间。
 4. 计时严格拆为 text tokenize、talker generate、code tensor transfer、codec decode；同步点放在每段边界，T1–T3 必须实际观察到 code 从 GPU 到 CPU 的设备变化。
 5. T3 的语义是 prompt 构建后不再保留 speaker encoder，而不是仅把名字标成“已卸载”；cached prompt tensor 的实际设备和 encoder 不存在状态都要写入 inventory。
@@ -369,7 +369,7 @@ experiment_results/elastic_residency/<run_id>/
 - [x] **B1**：T0–T3 真实单文本 smoke 通过。证据：`b1_tts_components_20260829_verified_v2`。
 - [x] **B2**：完成 `4 配置 × 3 句长 × 5 轮`；Pareto 候选为 T0/T3，证据为 `b2_tts_matrix_20260829_verified_v1`。
 - [x] **C1**：K0/FULL 的 512-token 真实端点 smoke 已通过。证据：`c1_llm_residency_512_20260829_verified_v1`。
-- [x] **C2**：完整驻留曲线已通过。证据：`c2_llm_residency_curve_20260829_verified_v3`（90/90 条、0 failure、0 fallback）；v1/v2 为停止/调试记录。
+- [ ] **C2 direct NVML 重跑**：旧 `c2_llm_residency_curve_20260829_verified_v3` 完成 90/90 条但使用 CLI 采样，只保留为工程基线；论文曲线需用 direct NVML 统一重跑。
 - [x] **C3 工具**：Forge b=1 复测脚本、`G_safe`/`H_TTS`/`H_D` 筛选分析与临界补测建议已实现并通过静态测试；legacy 口径初步筛选见 `experiment_results/elastic_residency/c3_analysis/c3_h_screen_20260829_legacy_forge.json`。
 - [x] **C3 Forge 复测**：`forge_b1_reprofile_20260829_verified_v2` 通过全部门禁，`M_D = 5252 MiB`；复测后正式筛选见 `experiment_results/elastic_residency/c3_analysis/c3_h_reprofiled_20260829.json`（`H_TTS(T0)=16`、`H_TTS(T3)=32+FULL`、`H_D` 为 512:8 / 2048:0 / 4096:0）。
 - [ ] **当前 C3 收尾**：
@@ -378,6 +378,8 @@ experiment_results/elastic_residency/<run_id>/
   3. 冻结 `H_TTS`/`H_D`（按 context 分组），进入 D 阶段。
 
 **C3 临界补测 v2 停止记录（2026-08-29）**：`c3_llm_critical_refinement_20260829_verified_v2` 完成 94/150 条后，在 C2048/K20/r5 因推理期 GPU 样本最大年龄 772.875 ms 超过 750 ms 有效性硬门而停止；其余有效性检查及该轮 jitter 性能目标均通过。94 条中所有记录的最大样本年龄均超过 500 ms，10 条超过 700 ms，第 91 条已达 749.570 ms。根因是周期 sampler 每次先查询整卡指标、再查询 WSL 驱动无法数值化返回的 compute-process 显存，后者不贡献正式曲线证据却显著拉长探针周期。修复仅在 LLM 周期 sampler 中关闭无效的进程显存查询；阶段性显存快照与整卡基线差值估算保持不变，750 ms 门槛不放宽。v2 保留为停止记录，不续跑、不用于完整曲线。
+
+**direct NVML 口径修订（2026-08-29）**：对 v2 的第一次修复只减少了 CLI 查询次数，仍未消除子进程采样对论文实验的扰动，因此 `e446e33` 下的 card-only smoke 也只保留为调试记录。正式 GPU 遥测改为 ctypes direct NVML，CLI 不允许静默 fallback；本机空闲校准中 direct NVML 完整设备指标查询约为毫秒级，且 manifest/summary/acceptance 显式锁定后端。由于测量后端变化，C2 粗测、C3 细化及用于安全余量的 B2/Forge 整卡指标均须在新后端下重跑或校准，旧结果不得与新结果拼接冻结阈值。
 - [ ] **D1**：实现 JSON RAG 和 BGE 核心曲线；冻结辅助 SLA。
 - [ ] **D2**：接入已验证的 Faster-Whisper，并在音频路由就绪后接入真实 underrun 探针。
 - [ ] **D3**：运行 `R_sys={0,1,2,4}` 正式验证。

@@ -141,6 +141,10 @@ def _acceptance_checks(
 ) -> dict[str, bool]:
     linux_affinity = hasattr(os, "sched_setaffinity")
     return {
+        "gpu_telemetry_is_direct_nvml": (
+            resource_summary["gpu_telemetry_backend"] == "direct_nvml"
+            and not resource_summary["gpu_cli_subprocess_used"]
+        ),
         "resource_samples_sufficient": resource_summary["sample_count"] >= 2,
         "cpu_samples_after_warmup_sufficient": (
             resource_summary["cpu_valid_sample_count"] >= 1
@@ -222,6 +226,8 @@ async def run(args: argparse.Namespace) -> Path:
             "duration_s": args.duration,
             "system_cores": args.system_cores,
             "worker_cores": args.worker_cores,
+            "gpu_telemetry_backend": "direct_nvml",
+            "gpu_cli_subprocess_allowed": False,
             "acceptance_thresholds": {
                 "max_resource_jitter_p95_ms": args.max_resource_jitter_p95_ms,
                 "max_resource_jitter_max_ms": args.max_resource_jitter_max_ms,

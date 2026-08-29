@@ -244,6 +244,8 @@ def main() -> None:
             "idle_observe_s": args.idle_observe_s,
             "cooldown_s": args.cooldown_s,
             "system_physical_cores": args.system_cores,
+            "gpu_telemetry_backend": "direct_nvml",
+            "gpu_cli_subprocess_allowed": False,
         },
     )
 
@@ -414,6 +416,10 @@ def main() -> None:
     checks = {
         "forge_api_available": True,
         "git_provenance_complete": git_complete,
+        "gpu_telemetry_is_direct_nvml": (
+            sampler_stats["gpu_telemetry_backend"] == "direct_nvml"
+            and not sampler_stats["gpu_cli_subprocess_used"]
+        ),
         "idle_baseline_samples_sufficient": (
             idle_summary["sample_count"] >= args.min_baseline_gpu_samples
         ),

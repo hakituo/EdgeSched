@@ -19,6 +19,8 @@ def _acceptance_args() -> SimpleNamespace:
 
 def _resource_summary() -> dict[str, object]:
     return {
+        "gpu_telemetry_backend": "direct_nvml",
+        "gpu_cli_subprocess_used": False,
         "sample_count": 40,
         "cpu_valid_sample_count": 39,
         "gpu_ready_before_timeline": True,
@@ -50,6 +52,7 @@ def test_a1_acceptance_requires_gpu_and_jitter_gates() -> None:
     )
     assert all(checks.values())
 
+    resource["gpu_cli_subprocess_used"] = True
     resource["gpu_ready_before_timeline"] = False
     resource["jitter_p95_ms"] = 6.0
     failed = _acceptance_checks(
@@ -66,6 +69,7 @@ def test_a1_acceptance_requires_gpu_and_jitter_gates() -> None:
         system_expected_affinity=(28, 29, 30, 31),
         git_provenance_complete=True,
     )
+    assert failed["gpu_telemetry_is_direct_nvml"] is False
     assert failed["gpu_probe_ready_before_timeline"] is False
     assert failed["resource_jitter_p95_within_limit"] is False
     assert not all(failed.values())

@@ -1,5 +1,4 @@
 import os
-from types import SimpleNamespace
 
 import pytest
 import torch
@@ -44,21 +43,21 @@ def test_t3_requires_speaker_to_be_unloaded_after_prompt() -> None:
     assert _placement_matches(placement_for("T3"), actual)
 
 
-def test_wsl_non_numeric_process_memory_is_not_reported_as_zero(
-    monkeypatch,
-) -> None:
-    outputs = iter(
-        (
-            "2676, 8151\n",
-            f"{os.getpid()}, [N/A]\n",
-        )
-    )
+def test_wsl_non_numeric_process_memory_is_not_reported_as_zero() -> None:
+    class _FakeProbe:
+        def sample(self, _pid: int):
+            return {
+                "available": True,
+                "backend": "direct_nvml",
+                "card_used_mb": 2676.0,
+                "card_total_mb": 8151.0,
+                "process_used_mb": None,
+                "process_memory_unavailable_reason": (
+                    "driver_reported_non_numeric_process_memory"
+                ),
+            }
 
-    def fake_run(*_args, **_kwargs):
-        return SimpleNamespace(stdout=next(outputs))
-
-    monkeypatch.setattr("subprocess.run", fake_run)
-    snapshot = _nvidia_memory_snapshot(os.getpid())
+    snapshot = _nvidia_memory_snapshot(os.getpid(), probe=_FakeProbe())
 
     assert snapshot["gpu_card_used_mb"] == 2676.0
     assert snapshot["gpu_process_total_mb"] is None
@@ -67,3 +66,5 @@ def test_wsl_non_numeric_process_memory_is_not_reported_as_zero(
         snapshot["gpu_process_total_unavailable_reason"]
         == "driver_reported_non_numeric_process_memory"
     )
+    assert snapshot["gpu_telemetry_backend"] == "direct_nvml"
+    assert snapshot["gpu_cli_subprocess_used"] is False
