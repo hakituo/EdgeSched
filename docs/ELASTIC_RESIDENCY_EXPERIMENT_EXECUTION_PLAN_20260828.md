@@ -277,6 +277,18 @@ C 阶段收尾前仍必须完成：Forge b=1 同日复测、按 3.3 节校准 `G
 
 **Forge 复测 v1 停止记录（2026-08-29）**：`forge_b1_reprofile_20260829_verified_v1` 采集数据全部正常（idle 高水位 185 MiB、Forge 常驻基线 409 MiB、5 轮峰值 max/mean 5669/5668.6 MiB、`M_D` 增量估计 5484 MiB），但 `swap_unused` 门禁失败：时间线中 WSL2/Forge 带来 780 KB 级系统性 swap 噪声，而 v1 沿用了 A1/C2 的 `swap==0` 口径。A1/C2 当时无 Forge 服务常驻，该口径对 Forge 复测不可达。修复将 Forge 复测的 swap 门禁改为"增长容忍"（`swap_growth_within_tolerance`，默认 4 MiB，实测噪声远低于此值；真实换页压力为数百 MB 量级仍会被拒绝），并在 summary 中保留 start/max/growth 全量数值。v1 保留为口径调试记录；口径修复后使用新 run id 重跑，其数据不得直接作为 `M_D` 证据。
 
+**Forge 复测 v2 完成记录（2026-08-29）**：`forge_b1_reprofile_20260829_verified_v2` 基于干净 commit `50d2362adf00fa86fb2c28a9c1b1261af15fc563` 通过全部 10 项门禁（0 failure、swap 增长 0 字节、16 物理核归还、采样/GPU 线程 affinity `[28,29,30,31]`）。空闲整卡高水位 415 MiB（v1 已触发 Forge 模型加载后的稳态），Forge 常驻基线 419 MiB；5 轮 b=1 txt2img 延迟 mean/p95 为 4.844/4.932 s（低于 2026-08-28 旧口径的 5.44 s），逐轮峰值稳定在 5667 MiB（每轮 96–100 个 GPU 样本）。**`M_D(b=1) = 5252 MiB`**（peak − idle 高水位口径），比旧估算 5590 MiB 低约 338 MiB。该值与 C2/B2 的 `max_card_delta_mb` 同为相对空闲整卡的增量口径。
+
+**C3 复测后正式筛选（2026-08-29）**：`experiment_results/elastic_residency/c3_analysis/c3_h_reprofiled_20260829.json`（`analyze_results.py`，C2 v3 + B2 v1 + Forge v2）：
+
+- `G_safe = 501.3 MiB`（仍由 B2 T0 的 allocator slack 主导；idle 高水位 415、重复运行漂移 0；colocated 残差 pending）。
+- `H_TTS(T0) = 16`（三上下文一致；K24 距预算差约 17–119 MiB）。
+- `H_TTS(T3) = 32` 且 FULL 可行（三上下文一致）。
+- **`H_D` 按上下文分化**：512 下为 8（K8@512=2365 ≤ 预算 2397.7），2048/4096 下为 0（K8=2417/2431 超预算）。按 3.3 节规则保留按 context 分组的档位，不合并成常数。
+- 补测建议（脚本输出）：`k = {2, 4, 6, 10, 12, 14, 18, 20, 28, 30}`。
+
+这些仍是容量筛选值：colocated 残差分量未进入 `G_safe`，最终可行性必须由目标组合（H_TTS 档位 + TTS 配置、H_D 档位 + Forge）真实同时加载并运行证明。
+
 ### 阶段 D：辅助任务动态核心预算
 
 初始固定 `R_sys=2` 个物理核。辅助任务在独立进程中运行，结束后进程退出并释放 affinity，主流水线不得永久少核。
@@ -359,11 +371,11 @@ experiment_results/elastic_residency/<run_id>/
 - [x] **C1**：K0/FULL 的 512-token 真实端点 smoke 已通过。证据：`c1_llm_residency_512_20260829_verified_v1`。
 - [x] **C2**：完整驻留曲线已通过。证据：`c2_llm_residency_curve_20260829_verified_v3`（90/90 条、0 failure、0 fallback）；v1/v2 为停止/调试记录。
 - [x] **C3 工具**：Forge b=1 复测脚本、`G_safe`/`H_TTS`/`H_D` 筛选分析与临界补测建议已实现并通过静态测试；legacy 口径初步筛选见 `experiment_results/elastic_residency/c3_analysis/c3_h_screen_20260829_legacy_forge.json`。
-- [ ] **当前 C3 运行**：
-  1. WSL2 启动 Forge 后运行 `experiments/elastic_residency/forge_b1_reprofile.py`（新 run id + 干净 commit）；
-  2. 用 `analyze_results.py --forge-summary <复测产物>` 重算并冻结 `H_TTS/H_D`；
-  3. 按补测建议（初步为 `k={2,4,12,14,18,20,22,26,28}`，复测后以脚本输出为准）用 `llm_residency_curve.py` 跑临界补测（新 run id，3 上下文 × 5 轮）；
-  4. 与 B2 Pareto TTS 配置（T0/T3）做真实共置验证。
+- [x] **C3 Forge 复测**：`forge_b1_reprofile_20260829_verified_v2` 通过全部门禁，`M_D = 5252 MiB`；复测后正式筛选见 `experiment_results/elastic_residency/c3_analysis/c3_h_reprofiled_20260829.json`（`H_TTS(T0)=16`、`H_TTS(T3)=32+FULL`、`H_D` 为 512:8 / 2048:0 / 4096:0）。
+- [ ] **当前 C3 收尾**：
+  1. 按 `k={2,4,6,10,12,14,18,20,28,30}` 用 `llm_residency_curve.py` 跑临界补测（新 run id、3 上下文 × 5 轮、`--jitter-gate-mode observe`）；
+  2. 与 B2 Pareto TTS 配置（T0/T3）做真实共置验证，校准 colocated 残差分量后重算 `G_safe`；
+  3. 冻结 `H_TTS`/`H_D`（按 context 分组），进入 D 阶段。
 - [ ] **D1**：实现 JSON RAG 和 BGE 核心曲线；冻结辅助 SLA。
 - [ ] **D2**：接入已验证的 Faster-Whisper，并在音频路由就绪后接入真实 underrun 探针。
 - [ ] **D3**：运行 `R_sys={0,1,2,4}` 正式验证。

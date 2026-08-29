@@ -1204,6 +1204,14 @@ manifest 至少记录：
   - 基于 C2 v3 + B2 v1 + 旧 Forge 峰值的 `G_safe`/`H_TTS`/`H_D` 容量筛选（`analyze_results.py` 产物）；
   - `G_safe=501.3 MiB`（allocator slack 主导，colocated 残差 pending）；`H_TTS(T0)=16`、`H_TTS(T3)=32 且 FULL 可行`、`H_D=0`（三上下文一致）；
   - Forge 使用 2026-08-28 旧峰值 legacy 估算，仅用于排程，不得用于冻结或论文结论。
+- `experiment_results/elastic_residency/forge/forge_b1_reprofile_20260829_verified_v2/`
+  - Forge b=1 同日复测（10 项门禁全通过，swap 增长 0，干净 commit `50d2362`）；
+  - 空闲高水位 415 MiB、常驻基线 419 MiB、5 轮峰值稳定 5667 MiB、b=1 延迟 mean 4.844 s；
+  - **`M_D = 5252 MiB`**，比旧估算低约 338 MiB。
+- `experiment_results/elastic_residency/c3_analysis/c3_h_reprofiled_20260829.json`
+  - 复测后正式容量筛选：`H_TTS(T0)=16`、`H_TTS(T3)=32 且 FULL 可行`（三上下文一致）；
+  - **`H_D` 按上下文分化**：512 下为 8，2048/4096 下为 0——按 context 分组保留，不合并成常数；
+  - 仍是容量筛选（colocated 残差 pending），最终可行性待真实共置验证。
 - `experiment_results/phase_aware/exp2_*`、`exp3_*`
   -使用 Mock/sleep；
   -只能验证流程和统计字段。
@@ -1402,7 +1410,8 @@ No-Go：
 - [x] B2：`b2_tts_matrix_20260829_verified_v1` 已完成 60/60 条；T0/T3 为条件式 Pareto，T1/T2 被支配，且 60 条 RTF 全部大于 1
 - [x] C1：`c1_llm_residency_512_20260829_verified_v1` 已完成 K0/FULL 的 512-token 真实端点 smoke，两端均通过 19/19 项门禁；它是单轮基础设施证据，不作为正式性能曲线
 - [x] C2：`c2_llm_residency_curve_20260829_verified_v3` 已完成 90/90 条完整驻留曲线（`k={0,8,16,24,32,FULL}` × 3 上下文 × 5 轮，0 failure、0 fallback）；v1/v2 为停止/调试记录
-- [ ] **当前 C3**：Forge b=1 同日复测（`forge_b1_reprofile.py` 已就绪）、`G_safe`/`H_TTS/H_D` 冻结（`analyze_results.py` 已就绪，legacy 初筛见 `experiment_results/elastic_residency/c3_analysis/`）、临界补测 `k±2`/`k±4` 与 B2 Pareto TTS 配置的真实共置验证
+- [x] C3 Forge 复测：`forge_b1_reprofile_20260829_verified_v2` 全门禁通过，`M_D=5252 MiB`；复测后筛选 `H_TTS(T0)=16`、`H_TTS(T3)=32+FULL`、`H_D` 为 512:8 / 2048:0 / 4096:0（`c3_analysis/c3_h_reprofiled_20260829.json`）
+- [ ] **当前 C3 收尾**：按 `k={2,4,6,10,12,14,18,20,28,30}` 临界补测、与 T0/T3 的真实共置验证、colocated 残差校准后冻结 `H_TTS/H_D`
 - [ ] JSON RAG/BGE/Faster-Whisper 核心预算；音频路由就绪后补真实播放探针
 - [ ] `R_sys={0,1,2,4}` 正式辅助任务验证
 - [ ] S0 无图像真实重叠静态放置实验
