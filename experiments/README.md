@@ -141,12 +141,12 @@ python -m experiments.elastic_residency.llm_residency_curve \
   --output-root experiment_results/elastic_residency/c2 \
   --configs K0 K8 K16 K24 K32 FULL \
   --contexts 512 2048 4096 --runs 5 \
-  --generation-tokens 128 \
+  --generation-tokens 128 --jitter-gate-mode observe \
   --source-git-commit <clean_commit> \
   --source-git-dirty false --source-git-status-entry-count 0
 ```
 
-配置在每个轮次内确定性轮转，降低固定顺序热漂移。意外中断时，只能用完全相同的参数、源码 commit、Python/平台和模型 manifest 加 `--resume`；已有 `(context, config, run)` 会跳过，矩阵外或重复记录会拒绝。子轮超时、进程失败或验收失败默认立即停止，总汇总失败时命令返回非零。若 `failures.jsonl` 非空，该 run 即使后来补齐也不能成为通过记录，修复后必须换新 run id。
+配置在每个轮次内确定性轮转，降低固定顺序热漂移。意外中断时，只能用完全相同的参数、源码 commit、Python/平台和模型 manifest 加 `--resume`；已有 `(context, config, run)` 会跳过，矩阵外或重复记录会拒绝。子轮超时、进程失败或测量有效性验收失败默认立即停止，总汇总失败时命令返回非零。C2 的 jitter 阈值是待测性能目标而非证据有效性门，因此正式矩阵必须显式使用 `observe`：超标轮次写入 `performance_target_checks` 并保留在完整曲线中，不会被隐藏或改写为通过。若 `failures.jsonl` 非空，该 run 即使后来补齐也不能成为通过记录，修复后必须换新 run id。
 
 WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：
 

@@ -227,9 +227,11 @@ H_D   = max k: M_L(k) + M_D + G_safe <= V_GPU
 
 1. 一个 run id 冻结 `6 配置 × 3 上下文 × 5 轮=90` 条记录；每个上下文内按轮次轮转配置顺序，避免始终由同一配置承担冷热顺序偏差。
 2. 每个子轮完成后立即追加 iteration、timeline 和 event。意外中断只允许在运行配置、源码 commit、Python/平台和模型 manifest 完全相同时用 `--resume` 跳过已完成键；矩阵外或重复键直接拒绝。
-3. 子进程超时、返回失败或验收门失败默认 fail-fast；最终 `summary.passed=false` 时入口返回非零。`failures.jsonl` 非空的 run 永远不能成为通过记录，修复后必须换新 run id，不能靠续跑洗掉失败历史。
-4. C2 仍沿用 C1 的推理区间 GPU 新鲜度和 jitter 硬门槛；KV save/restore 尖峰按阶段单列，不混入推理门槛，但必须进入切换成本和系统尖峰讨论。
+3. 子进程超时、返回失败或测量有效性门失败默认 fail-fast；最终 `summary.passed=false` 时入口返回非零。`failures.jsonl` 非空的 run 永远不能成为通过记录，修复后必须换新 run id，不能靠续跑洗掉失败历史。
+4. C1 的 jitter 是基础设施硬门；C2 中同一阈值是被测性能目标，正式矩阵使用 `--jitter-gate-mode observe`。超标轮次必须保留为 `performance_target_passed=false`，进入系统尖峰/Go-No-Go 结论，但不能阻止其余驻留档位的数据收集。GPU 探针可用性、新鲜度、affinity、token/KV 完整性、swap 和核心归还仍是硬门。KV save/restore 尖峰按阶段单列，不混入推理目标，但必须进入切换成本讨论。
 5. `by_context_config` 才是正式统计分组；跨上下文的 `by_config` 只用于总览，不用于比较 TTFT/prefill。
+
+**C2 v1 停止记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v1` 在第 22/90 条（512-token、K0、第 4 轮）按旧语义 fail-fast。该轮 18 项其他检查通过，jitter p95 为 0.866 ms，但出现一次 39.490 ms 最大迟到，超过 30 ms 目标。v1 证明性能目标确有尾部失败，也暴露了“性能不达标会阻止收集 No-Go 证据”的口径错误；它只作为停止/调试记录，不续跑、不作为完整 C2 曲线。后续新 run id 保留 30 ms 目标但使用 `observe`，同时报告有效性 `passed` 与性能目标 `performance_target_passed`。
 
 ### 阶段 D：辅助任务动态核心预算
 

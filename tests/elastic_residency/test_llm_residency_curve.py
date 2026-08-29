@@ -5,6 +5,7 @@ import pytest
 from experiments.elastic_residency.llm_residency_curve import (
     _build_exact_prompt_tokens,
     _evidence_scope,
+    _jitter_acceptance_checks,
     _phase_resource_metrics,
     _record_key,
     _token_ids_sha256,
@@ -118,7 +119,32 @@ def test_resume_contract_rejects_config_or_manifest_drift() -> None:
 
 def test_only_frozen_full_matrix_gets_c2_scope() -> None:
     configs = ("K0", "K8", "K16", "K24", "K32", "FULL")
-    assert _evidence_scope((512, 2048, 4096), configs, 5, 128) == "c2_curve"
-    assert _evidence_scope((512,), configs, 5, 128) == "c1_smoke"
-    assert _evidence_scope((512, 2048, 4096), configs, 1, 128) == "c1_smoke"
-    assert _evidence_scope((512, 2048, 4096), configs, 5, 64) == "c1_smoke"
+    assert (
+        _evidence_scope((512, 2048, 4096), configs, 5, 128, "observe")
+        == "c2_curve"
+    )
+    assert _evidence_scope((512,), configs, 5, 128, "observe") == "c1_smoke"
+    assert (
+        _evidence_scope((512, 2048, 4096), configs, 1, 128, "observe")
+        == "c1_smoke"
+    )
+    assert (
+        _evidence_scope((512, 2048, 4096), configs, 5, 64, "observe")
+        == "c1_smoke"
+    )
+    assert (
+        _evidence_scope((512, 2048, 4096), configs, 5, 128, "hard")
+        == "c1_smoke"
+    )
+
+
+def test_c2_observes_jitter_target_without_invalidating_measurement() -> None:
+    targets = {
+        "inference_resource_jitter_p95_within_target": True,
+        "inference_resource_jitter_max_within_target": False,
+    }
+    assert _jitter_acceptance_checks(targets, "observe") == {}
+    assert _jitter_acceptance_checks(targets, "hard") == {
+        "inference_resource_jitter_p95_within_limit": True,
+        "inference_resource_jitter_max_within_limit": False,
+    }

@@ -218,6 +218,20 @@ def _phase_resource_metrics(
     }
 
 
+def _jitter_acceptance_checks(
+    jitter_target_checks: dict[str, bool],
+    gate_mode: str,
+) -> dict[str, bool]:
+    if gate_mode == "observe":
+        return {}
+    if gate_mode != "hard":
+        raise ValueError(f"未知 jitter gate mode: {gate_mode}")
+    return {
+        key.replace("_within_target", "_within_limit"): value
+        for key, value in jitter_target_checks.items()
+    }
+
+
 def run_child(args: argparse.Namespace) -> dict[str, Any]:
     from llama_cpp import Llama
 
@@ -365,6 +379,16 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         llm_lease.release()
         system_lease.release()
 
+    jitter_target_checks = {
+        "inference_resource_jitter_p95_within_target": (
+            resource_by_phase["inference"]["jitter_p95_ms"]
+            <= args.max_resource_jitter_p95_ms
+        ),
+        "inference_resource_jitter_max_within_target": (
+            resource_by_phase["inference"]["jitter_max_ms"]
+            <= args.max_resource_jitter_max_ms
+        ),
+    }
     acceptance_checks = {
         "model_layer_count_matches": actual_layers == args.model_layers,
         "gpu_ready_before_timeline": gpu_ready,
@@ -374,14 +398,6 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "inference_gpu_sample_age_within_limit": (
             resource_by_phase["inference"]["gpu_sample_age_max_ms"]
             <= args.max_gpu_sample_age_ms
-        ),
-        "inference_resource_jitter_p95_within_limit": (
-            resource_by_phase["inference"]["jitter_p95_ms"]
-            <= args.max_resource_jitter_p95_ms
-        ),
-        "inference_resource_jitter_max_within_limit": (
-            resource_by_phase["inference"]["jitter_max_ms"]
-            <= args.max_resource_jitter_max_ms
         ),
         "prompt_token_count_exact": len(prompt_tokens) == args.context_tokens,
         "generation_token_count_exact": (
@@ -419,11 +435,20 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
             or memory_after_inference["gpu_process_total_estimate_mb"] is not None
         ),
     }
+    acceptance_checks.update(
+        _jitter_acceptance_checks(
+            jitter_target_checks,
+            args.jitter_gate_mode,
+        )
+    )
     return {
         "config": args.child_config,
         "run_index": args.run_index,
         "passed": all(acceptance_checks.values()),
         "acceptance_checks": acceptance_checks,
+        "jitter_gate_mode": args.jitter_gate_mode,
+        "performance_target_checks": jitter_target_checks,
+        "performance_target_passed": all(jitter_target_checks.values()),
         "backend_kind": "real_llama_cpp_gguf",
         "fallback_occurred": False,
         "n_gpu_layers": n_gpu_layers,
@@ -459,6 +484,16 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "quality_warnings": {
             "non_inference_jitter_exceeds_inference_limit": (
                 resource_summary["jitter_max_ms"] > args.max_resource_jitter_max_ms
+            ),
+            "inference_jitter_p95_exceeds_target": (
+                not jitter_target_checks[
+                    "inference_resource_jitter_p95_within_target"
+                ]
+            ),
+            "inference_jitter_max_exceeds_target": (
+                not jitter_target_checks[
+                    "inference_resource_jitter_max_within_target"
+                ]
             ),
             "gpu_process_memory_is_estimated": (
                 memory_after_inference["gpu_process_total_mb"] is None
@@ -501,6 +536,12 @@ def _summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         "samples": len(records),
         "passed_count": sum(bool(record["passed"]) for record in records),
         "all_passed": all(record["passed"] for record in records),
+        "performance_target_passed_count": sum(
+            bool(record["performance_target_passed"]) for record in records
+        ),
+        "all_performance_targets_passed": all(
+            record["performance_target_passed"] for record in records
+        ),
         **{
             name: {
                 "mean": statistics.fmean(values),
@@ -580,6 +621,7 @@ def _evidence_scope(
     configs: tuple[str, ...],
     runs: int,
     generation_tokens: int,
+    jitter_gate_mode: str,
 ) -> str:
     formal_configs = {"K0", "K8", "K16", "K24", "K32", "FULL"}
     if (
@@ -588,6 +630,7 @@ def _evidence_scope(
         and len(configs) == len(formal_configs)
         and runs >= 5
         and generation_tokens == 128
+        and jitter_gate_mode == "observe"
     ):
         return "c2_curve"
     return "c1_smoke"
@@ -648,6 +691,7 @@ def run_parent(args: argparse.Namespace) -> Path:
             "expected_records": expected_records,
             "matrix_order": "context_then_round_with_rotating_configs",
             "inter_run_cooldown_s": args.inter_run_cooldown,
+            "jitter_gate_mode": args.jitter_gate_mode,
             "fixed_generation_ignores_eos": True,
             "acceptance_thresholds": {
                 "max_inference_gpu_sample_age_ms": args.max_gpu_sample_age_ms,
@@ -766,6 +810,8 @@ def run_parent(args: argparse.Namespace) -> Path:
             str(args.max_resource_jitter_p95_ms),
             "--max-resource-jitter-max-ms",
             str(args.max_resource_jitter_max_ms),
+            "--jitter-gate-mode",
+            args.jitter_gate_mode,
             "--seed",
             str(args.seed + run_index - 1),
         ]
@@ -874,6 +920,9 @@ def run_parent(args: argparse.Namespace) -> Path:
         for context_tokens in contexts
     }
     failure_count = len(_read_jsonl(writer.layout.failures))
+    performance_target_failure_count = sum(
+        not record["performance_target_passed"] for record in records
+    )
     passed = (
         git_complete
         and len(records) == expected_records
@@ -885,6 +934,8 @@ def run_parent(args: argparse.Namespace) -> Path:
         "expected_records": expected_records,
         "actual_records": len(records),
         "failure_count": failure_count,
+        "performance_target_passed": performance_target_failure_count == 0,
+        "performance_target_failure_count": performance_target_failure_count,
         "git_provenance_complete": git_complete,
         "model_metadata": metadata,
         "by_config": by_config,
@@ -895,6 +946,7 @@ def run_parent(args: argparse.Namespace) -> Path:
             config_names,
             args.runs,
             args.generation_tokens,
+            args.jitter_gate_mode,
         ),
     }
     writer.write_summary(summary)
@@ -904,6 +956,7 @@ def run_parent(args: argparse.Namespace) -> Path:
         "run_index",
         "matrix_execution_ordinal",
         "passed",
+        "performance_target_passed",
         "n_gpu_layers",
         "load_s",
         "gpu_delta_mb",
@@ -930,6 +983,9 @@ def run_parent(args: argparse.Namespace) -> Path:
                     "run_index": record["run_index"],
                     "matrix_execution_ordinal": record["matrix_execution_ordinal"],
                     "passed": record["passed"],
+                    "performance_target_passed": record[
+                        "performance_target_passed"
+                    ],
                     "n_gpu_layers": record["n_gpu_layers"],
                     "load_s": record["load_s"],
                     "gpu_delta_mb": record["memory_after_inference"][
@@ -974,6 +1030,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-gpu-sample-age-ms", type=float, default=750.0)
     parser.add_argument("--max-resource-jitter-p95-ms", type=float, default=5.0)
     parser.add_argument("--max-resource-jitter-max-ms", type=float, default=30.0)
+    parser.add_argument(
+        "--jitter-gate-mode",
+        choices=("hard", "observe"),
+        default="hard",
+        help="C1 用 hard；C2 用 observe，把 jitter 超标保留为性能结论",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--child-timeout", type=float, default=1800.0)
     parser.add_argument("--inter-run-cooldown", type=float, default=1.0)
