@@ -4,8 +4,12 @@ import pytest
 
 from experiments.elastic_residency.llm_residency_curve import (
     _build_exact_prompt_tokens,
+    _evidence_scope,
     _phase_resource_metrics,
+    _record_key,
     _token_ids_sha256,
+    _validate_resume_contract,
+    build_matrix_plan,
     resolve_config,
 )
 
@@ -53,3 +57,68 @@ def test_phase_resource_metrics_excludes_other_phases() -> None:
     assert metrics["sample_count"] == 2
     assert metrics["jitter_max_ms"] == 3.0
     assert metrics["gpu_sample_age_max_ms"] == 40.0
+
+
+def test_matrix_plan_rotates_configs_within_each_context() -> None:
+    plan = build_matrix_plan(
+        (512, 2048),
+        ("K0", "K8", "FULL"),
+        runs=2,
+    )
+    assert len(plan) == 12
+    assert plan[:6] == [
+        (512, "K0", 1, 1),
+        (512, "K8", 1, 2),
+        (512, "FULL", 1, 3),
+        (512, "K8", 2, 4),
+        (512, "FULL", 2, 5),
+        (512, "K0", 2, 6),
+    ]
+    assert plan[6] == (2048, "K0", 1, 7)
+    assert len({(context, config, run) for context, config, run, _ in plan}) == 12
+
+
+def test_matrix_plan_rejects_duplicate_dimensions() -> None:
+    with pytest.raises(ValueError):
+        build_matrix_plan((512, 512), ("K0", "FULL"), runs=1)
+    with pytest.raises(ValueError):
+        build_matrix_plan((512,), ("K0", "K0"), runs=1)
+
+
+def test_record_key_is_context_config_and_run() -> None:
+    assert _record_key({"context_tokens": 4096, "config": "K24", "run_index": 5}) == (
+        4096,
+        "K24",
+        5,
+    )
+
+
+def test_resume_contract_rejects_config_or_manifest_drift() -> None:
+    _validate_resume_contract(
+        existing_config={"runs": 5},
+        expected_config={"runs": 5},
+        existing_manifest={"commit": "abc"},
+        expected_manifest={"commit": "abc"},
+    )
+    with pytest.raises(ValueError, match="冻结运行配置"):
+        _validate_resume_contract(
+            existing_config={"runs": 1},
+            expected_config={"runs": 5},
+            existing_manifest={"commit": "abc"},
+            expected_manifest={"commit": "abc"},
+        )
+    with pytest.raises(ValueError, match="manifest"):
+        _validate_resume_contract(
+            existing_config={"runs": 5},
+            expected_config={"runs": 5},
+            existing_manifest={"commit": "old"},
+            expected_manifest={"commit": "new"},
+        )
+
+
+def test_only_frozen_full_matrix_gets_c2_scope() -> None:
+    configs = ("K0", "K8", "K16", "K24", "K32", "FULL")
+    assert _evidence_scope((512, 2048, 4096), configs, 5, 128) == "c2_curve"
+    assert _evidence_scope((512,), configs, 5, 128) == "c1_smoke"
+    assert _evidence_scope((512, 2048, 4096), configs, 1, 128) == "c1_smoke"
+    assert _evidence_scope((512, 2048, 4096), configs, 5, 64) == "c1_smoke"

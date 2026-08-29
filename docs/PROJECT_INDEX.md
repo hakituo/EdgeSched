@@ -34,7 +34,7 @@
 | `experiments/elastic_residency/smoke_a1.py` | A1 实验基础设施硬门禁 | GPU 预热/新鲜度、jitter、CPU 首样本、swap、affinity、核心归还与 Git provenance |
 | `experiments/elastic_residency/tts_component_offload.py` | B1 TTS T0–T3 单文本 smoke | 独立子进程、实际组件设备、code 传输、非静音 WAV 与分阶段 CUDA 峰值；v2 已通过 |
 | `experiments/elastic_residency/tts_component_offload_matrix.py` | B2 TTS 正式矩阵 | 20/50/100 字 × 5 轮、逐配置预热、原始 WAV/哈希、分组统计与 Pareto；v1 已通过 |
-| `experiments/elastic_residency/llm_residency_curve.py` | C1/C2 LLM 驻留 profiler | 读取真实 GGUF 层数，独立子进程执行精确 prompt/decode、阶段资源采样和 KV 保存恢复；C1 K0/FULL 已通过 |
+| `experiments/elastic_residency/llm_residency_curve.py` | C1/C2 LLM 驻留 profiler | 真实层数、精确 prompt/decode、阶段资源和 KV；C2 支持多上下文轮转、严格续跑、checkpoint 与 fail-fast |
 | `paper/compile_en.bat` | Windows 英文论文编译 | LaTeX 产物属于生成文件 |
 | `cpp_scheduler/build_wsl2.sh` | WSL2 原生扩展构建 | 使用 `mvp_core-cu128` 环境 |
 

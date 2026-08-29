@@ -133,6 +133,21 @@ python -m experiments.elastic_residency.llm_residency_curve \
 
 C1 权威记录 `c1_llm_residency_512_20260829_verified_v1` 基于干净 commit `234d2df`，K0/FULL 均为 19/19 项通过。它只有 512-token、每端点 1 轮，是 profiler 与端点 smoke，不是 C2 正式曲线或论文性能证据；详细结果见 [C1 LLM 驻留端点 smoke](../docs/LLM_RESIDENCY_C1_20260829.md)。
 
+C2 使用一个不可覆盖目录承载完整矩阵，并在每个子轮后立即追加 checkpoint：
+
+```bash
+python -m experiments.elastic_residency.llm_residency_curve \
+  --run-id <new_c2_run_id> \
+  --output-root experiment_results/elastic_residency/c2 \
+  --configs K0 K8 K16 K24 K32 FULL \
+  --contexts 512 2048 4096 --runs 5 \
+  --generation-tokens 128 \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false --source-git-status-entry-count 0
+```
+
+配置在每个轮次内确定性轮转，降低固定顺序热漂移。意外中断时，只能用完全相同的参数、源码 commit、Python/平台和模型 manifest 加 `--resume`；已有 `(context, config, run)` 会跳过，矩阵外或重复记录会拒绝。子轮超时、进程失败或验收失败默认立即停止，总汇总失败时命令返回非零。若 `failures.jsonl` 非空，该 run 即使后来补齐也不能成为通过记录，修复后必须换新 run id。
+
 WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：
 
 ```bash

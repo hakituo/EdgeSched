@@ -223,6 +223,14 @@ H_D   = max k: M_L(k) + M_D + G_safe <= V_GPU
 
 **C1 完成记录（2026-08-29）**：`c1_llm_residency_512_20260829_verified_v1` 基于干净 commit `234d2df686998fbb82f51068f6b55ee886cf0205`，使用实际 32 层 Qwen3.5-9B GGUF 完成 K0/FULL、512-token、固定生成 128-token 的真实端点 smoke。两条记录均通过 19/19 项门禁，0 failure、0 fallback，KV state 均保存并恢复到 640 tokens，核心和租约完全归还。K0/FULL 的 TTFT 为 10.659/0.326 s，prefill 为 48.05/1593.58 tok/s，decode 为 2.77/51.03 tok/s，GPU 占用增量估计为 127/5543 MiB，推理后 RSS 为 6.253/1.139 GiB。WSL 进程显存精确值仍不可用，增量只作为估计。KV save/restore 存在独立短时 jitter 尖峰，已经分阶段保留，不能声称系统全程无尖峰。完整分析见 `docs/LLM_RESIDENCY_C1_20260829.md`。该单轮端点 smoke 不用于正式曲线、`H_TTS/H_D` 或论文性能结论。
 
+#### C2 正式运行边界
+
+1. 一个 run id 冻结 `6 配置 × 3 上下文 × 5 轮=90` 条记录；每个上下文内按轮次轮转配置顺序，避免始终由同一配置承担冷热顺序偏差。
+2. 每个子轮完成后立即追加 iteration、timeline 和 event。意外中断只允许在运行配置、源码 commit、Python/平台和模型 manifest 完全相同时用 `--resume` 跳过已完成键；矩阵外或重复键直接拒绝。
+3. 子进程超时、返回失败或验收门失败默认 fail-fast；最终 `summary.passed=false` 时入口返回非零。`failures.jsonl` 非空的 run 永远不能成为通过记录，修复后必须换新 run id，不能靠续跑洗掉失败历史。
+4. C2 仍沿用 C1 的推理区间 GPU 新鲜度和 jitter 硬门槛；KV save/restore 尖峰按阶段单列，不混入推理门槛，但必须进入切换成本和系统尖峰讨论。
+5. `by_context_config` 才是正式统计分组；跨上下文的 `by_config` 只用于总览，不用于比较 TTFT/prefill。
+
 ### 阶段 D：辅助任务动态核心预算
 
 初始固定 `R_sys=2` 个物理核。辅助任务在独立进程中运行，结束后进程退出并释放 affinity，主流水线不得永久少核。

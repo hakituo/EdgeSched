@@ -32,6 +32,7 @@ from experiments.elastic_residency.contracts import (  # noqa: E402
     ExperimentEvent,
     ExperimentRunConfig,
     FailureRecord,
+    SCHEMA_VERSION,
     TimelineSample,
 )
 from experiments.elastic_residency.cpu_topology import (  # noqa: E402
@@ -165,8 +166,7 @@ def _decode_fixed_tokens(
     generation_finished_ns = time.monotonic_ns()
     first_sample_s = token_times[0] - first_sample_started
     token_gaps_ms = [
-        (right - left) * 1000.0
-        for left, right in zip(token_times, token_times[1:])
+        (right - left) * 1000.0 for left, right in zip(token_times, token_times[1:])
     ]
     decode_visible_s = token_times[-1] - token_times[0]
     decode_with_final_eval_s = generation_finished - token_times[0]
@@ -180,9 +180,7 @@ def _decode_fixed_tokens(
         "decode_visible_s": decode_visible_s,
         "decode_with_final_eval_s": decode_with_final_eval_s,
         "decode_tokens_per_s": (
-            (len(generated) - 1) / decode_visible_s
-            if decode_visible_s > 0
-            else 0.0
+            (len(generated) - 1) / decode_visible_s if decode_visible_s > 0 else 0.0
         ),
         "token_gap_ms": {
             "count": len(token_gaps_ms),
@@ -206,9 +204,7 @@ def _phase_resource_metrics(
     end_ns: int,
 ) -> dict[str, float | int]:
     selected = [
-        sample
-        for sample in samples
-        if start_ns <= sample.monotonic_ns <= end_ns
+        sample for sample in samples if start_ns <= sample.monotonic_ns <= end_ns
     ]
     jitters = [sample.scheduler_jitter_ms for sample in selected]
     gpu_ages = [sample.gpu_sample_age_ms for sample in selected]
@@ -260,9 +256,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
                 gpu_interval_s=args.gpu_sample_interval,
                 thread_affinity=system_lease.affinity,
             )
-            gpu_ready = sampler.start(
-                wait_for_gpu_timeout_s=args.gpu_warmup_timeout
-            )
+            gpu_ready = sampler.start(wait_for_gpu_timeout_s=args.gpu_warmup_timeout)
             load_started_ns = time.monotonic_ns()
             load_started = time.perf_counter()
             llm = Llama(
@@ -289,9 +283,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
             metadata = dict(llm.metadata)
             architecture = str(metadata.get("general.architecture", ""))
             actual_layers = int(metadata[f"{architecture}.block_count"])
-            prompt_tokens = _build_exact_prompt_tokens(
-                llm, args.context_tokens
-            )
+            prompt_tokens = _build_exact_prompt_tokens(llm, args.context_tokens)
             inference = _decode_fixed_tokens(
                 llm=llm,
                 prompt_tokens=prompt_tokens,
@@ -315,13 +307,11 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
             kv_restore_s = time.perf_counter() - restore_started
             kv_restore_finished_ns = time.monotonic_ns()
             restored_tokens = int(llm.n_tokens)
-            output_text = llm.detokenize(
-                inference["generated_tokens"]
-            ).decode("utf-8", errors="replace")
-            generated_tokens = inference.pop("generated_tokens")
-            inference["generated_tokens_sha256"] = _token_ids_sha256(
-                generated_tokens
+            output_text = llm.detokenize(inference["generated_tokens"]).decode(
+                "utf-8", errors="replace"
             )
+            generated_tokens = inference.pop("generated_tokens")
+            inference["generated_tokens_sha256"] = _token_ids_sha256(generated_tokens)
             inference["output_text_sha256"] = hashlib.sha256(
                 output_text.encode("utf-8")
             ).hexdigest()
@@ -366,7 +356,11 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
     finally:
         if llm is not None:
             llm.close()
-        if sampler is not None and sampler._thread is not None and sampler._thread.is_alive():
+        if (
+            sampler is not None
+            and sampler._thread is not None
+            and sampler._thread.is_alive()
+        ):
             sampler.stop()
         llm_lease.release()
         system_lease.release()
@@ -410,15 +404,12 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
             == set(system_lease.affinity)
         ),
         "gpu_sampler_affinity_matches": (
-            set(resource_summary["gpu_thread_affinity"])
-            == set(system_lease.affinity)
+            set(resource_summary["gpu_thread_affinity"]) == set(system_lease.affinity)
         ),
         "swap_unused": all(
             sample["system_swap_used_bytes"] == 0 for sample in timeline
         ),
-        "all_leases_released": (
-            allocator_after_release["active_lease_count"] == 0
-        ),
+        "all_leases_released": (allocator_after_release["active_lease_count"] == 0),
         "all_physical_cores_returned": (
             allocator_after_release["free_physical_core_count"]
             == len(topology.physical_cores)
@@ -467,8 +458,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "phase_intervals_ns": phase_intervals_ns,
         "quality_warnings": {
             "non_inference_jitter_exceeds_inference_limit": (
-                resource_summary["jitter_max_ms"]
-                > args.max_resource_jitter_max_ms
+                resource_summary["jitter_max_ms"] > args.max_resource_jitter_max_ms
             ),
             "gpu_process_memory_is_estimated": (
                 memory_after_inference["gpu_process_total_mb"] is None
@@ -499,8 +489,7 @@ def _summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         "kv_save_s": [record["kv_save_s"] for record in records],
         "kv_restore_s": [record["kv_restore_s"] for record in records],
         "gpu_delta_mb": [
-            record["memory_after_inference"]["gpu_process_total_estimate_mb"]
-            or 0.0
+            record["memory_after_inference"]["gpu_process_total_estimate_mb"] or 0.0
             for record in records
         ],
         "rss_mb": [
@@ -524,6 +513,86 @@ def _summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def build_matrix_plan(
+    contexts: tuple[int, ...],
+    configs: tuple[str, ...],
+    runs: int,
+) -> list[tuple[int, str, int, int]]:
+    """构造按上下文分组、轮次内轮转配置的确定性执行顺序。"""
+
+    if not contexts or len(set(contexts)) != len(contexts):
+        raise ValueError("--contexts 必须非空且不能重复")
+    if not configs or len(set(configs)) != len(configs):
+        raise ValueError("--configs 必须非空且不能重复")
+    if runs < 1:
+        raise ValueError("--runs 必须大于 0")
+    plan: list[tuple[int, str, int, int]] = []
+    ordinal = 0
+    for context_tokens in contexts:
+        for run_index in range(1, runs + 1):
+            offset = (run_index - 1) % len(configs)
+            rotated = configs[offset:] + configs[:offset]
+            for config_name in rotated:
+                ordinal += 1
+                plan.append((context_tokens, config_name, run_index, ordinal))
+    return plan
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    records: list[dict[str, Any]] = []
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        if not line.strip():
+            continue
+        payload = json.loads(line)
+        if not isinstance(payload, dict):
+            raise ValueError(f"{path.name}:{line_number} 不是 JSON object")
+        records.append(payload)
+    return records
+
+
+def _record_key(record: dict[str, Any]) -> tuple[int, str, int]:
+    return (
+        int(record["context_tokens"]),
+        str(record["config"]),
+        int(record["run_index"]),
+    )
+
+
+def _validate_resume_contract(
+    *,
+    existing_config: dict[str, Any],
+    expected_config: dict[str, Any],
+    existing_manifest: dict[str, Any],
+    expected_manifest: dict[str, Any],
+) -> None:
+    if existing_config != expected_config:
+        raise ValueError("--resume 的冻结运行配置与已有产物不一致")
+    if existing_manifest != expected_manifest:
+        raise ValueError("--resume 的环境、源码或模型 manifest 不一致")
+
+
+def _evidence_scope(
+    contexts: tuple[int, ...],
+    configs: tuple[str, ...],
+    runs: int,
+    generation_tokens: int,
+) -> str:
+    formal_configs = {"K0", "K8", "K16", "K24", "K32", "FULL"}
+    if (
+        contexts == (512, 2048, 4096)
+        and set(configs) == formal_configs
+        and len(configs) == len(formal_configs)
+        and runs >= 5
+        and generation_tokens == 128
+    ):
+        return "c2_curve"
+    return "c1_smoke"
+
+
 def run_parent(args: argparse.Namespace) -> Path:
     model_path = Path(args.model).expanduser().resolve()
     if not model_path.is_file():
@@ -533,10 +602,25 @@ def run_parent(args: argparse.Namespace) -> Path:
     config_names = tuple(name.upper() for name in args.configs)
     for name in config_names:
         resolve_config(name, model_layers)
-    writer = ExperimentArtifactWriter(args.output_root, args.run_id)
+    contexts = tuple(args.contexts or (args.context_tokens,))
+    if any(context < 2 for context in contexts):
+        raise ValueError("所有 context token 数必须至少为 2")
+    if any(
+        context + args.generation_tokens > metadata["context_length"]
+        for context in contexts
+    ):
+        raise ValueError("context + generation 超过 GGUF 声明的上下文长度")
+    execution_plan = build_matrix_plan(contexts, config_names, args.runs)
+    expected_records = len(execution_plan)
+    output_root = Path(args.output_root).expanduser().resolve()
+    run_root_existed = (output_root / args.run_id).exists()
+    writer = ExperimentArtifactWriter(
+        output_root,
+        args.run_id,
+        allow_existing=args.resume,
+    )
     source_git, git_complete = _git_source(args, writer.layout.root)
     model_sha256 = sha256_file(model_path)
-    expected_records = len(config_names) * args.runs
     config = ExperimentRunConfig(
         experiment_name="llm_residency_curve_c1_c2",
         run_id=args.run_id,
@@ -556,11 +640,14 @@ def run_parent(args: argparse.Namespace) -> Path:
             "configs": config_names,
             "runs": args.runs,
             "model_layers": model_layers,
-            "context_tokens": args.context_tokens,
+            "contexts": contexts,
+            "context_tokens": contexts[0] if len(contexts) == 1 else None,
             "generation_tokens": args.generation_tokens,
             "llm_physical_cores": args.llm_cores,
             "system_physical_cores": args.system_cores,
             "expected_records": expected_records,
+            "matrix_order": "context_then_round_with_rotating_configs",
+            "inter_run_cooldown_s": args.inter_run_cooldown,
             "fixed_generation_ignores_eos": True,
             "acceptance_thresholds": {
                 "max_inference_gpu_sample_age_ms": args.max_gpu_sample_age_ms,
@@ -573,65 +660,116 @@ def run_parent(args: argparse.Namespace) -> Path:
             },
         },
     )
-    writer.initialize(
-        config,
-        {
-            "python": platform.python_version(),
-            "platform": platform.platform(),
-            "git": {"source_copy": source_git},
-            "git_provenance_complete": git_complete,
-            "model": {
-                "path": str(model_path),
-                "size_bytes": model_path.stat().st_size,
-                "sha256": model_sha256,
-                "metadata": metadata,
-            },
+    manifest_payload = {
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "git": {"source_copy": source_git},
+        "git_provenance_complete": git_complete,
+        "model": {
+            "path": str(model_path),
+            "size_bytes": model_path.stat().st_size,
+            "sha256": model_sha256,
+            "metadata": metadata,
         },
-    )
+    }
+    if run_root_existed:
+        if (
+            not writer.layout.run_config.is_file()
+            or not writer.layout.manifest.is_file()
+        ):
+            raise ValueError("续跑目录缺少 run_config.json 或 manifest.json")
+        existing_config = json.loads(
+            writer.layout.run_config.read_text(encoding="utf-8")
+        )
+        expected_manifest = {
+            "schema_version": SCHEMA_VERSION,
+            "run_id": args.run_id,
+            **manifest_payload,
+        }
+        existing_manifest = json.loads(
+            writer.layout.manifest.read_text(encoding="utf-8")
+        )
+        _validate_resume_contract(
+            existing_config=existing_config,
+            expected_config=config.to_dict(),
+            existing_manifest=existing_manifest,
+            expected_manifest=expected_manifest,
+        )
+    else:
+        writer.initialize(config, manifest_payload)
 
-    records: list[dict[str, Any]] = []
-    for config_name in config_names:
-        for run_index in range(1, args.runs + 1):
-            child_json = (
-                writer.layout.root / f"{config_name}_r{run_index}_child.json"
+    records = _read_jsonl(writer.layout.iterations)
+    expected_keys = {
+        (context_tokens, config_name, run_index)
+        for context_tokens, config_name, run_index, _ in execution_plan
+    }
+    completed_keys: set[tuple[int, str, int]] = set()
+    for record in records:
+        key = _record_key(record)
+        if key not in expected_keys:
+            raise ValueError(f"续跑产物包含矩阵外记录: {key}")
+        if key in completed_keys:
+            raise ValueError(f"续跑产物包含重复记录: {key}")
+        completed_keys.add(key)
+
+    for context_tokens, config_name, run_index, ordinal in execution_plan:
+        key = (context_tokens, config_name, run_index)
+        if key in completed_keys:
+            print(
+                f"[{ordinal}/{expected_records}] resume skip "
+                f"C{context_tokens} {config_name} r{run_index}",
+                flush=True,
             )
-            child_log = writer.layout.root / f"{config_name}_r{run_index}.log"
-            command = [
-                sys.executable,
-                str(Path(__file__).resolve()),
-                "--child-config",
-                config_name,
-                "--run-index",
-                str(run_index),
-                "--model-layers",
-                str(model_layers),
-                "--child-output-json",
-                str(child_json),
-                "--model",
-                str(model_path),
-                "--context-tokens",
-                str(args.context_tokens),
-                "--generation-tokens",
-                str(args.generation_tokens),
-                "--llm-cores",
-                str(args.llm_cores),
-                "--system-cores",
-                str(args.system_cores),
-                "--sample-interval",
-                str(args.sample_interval),
-                "--gpu-sample-interval",
-                str(args.gpu_sample_interval),
-                "--gpu-warmup-timeout",
-                str(args.gpu_warmup_timeout),
-                "--max-gpu-sample-age-ms",
-                str(args.max_gpu_sample_age_ms),
-                "--max-resource-jitter-p95-ms",
-                str(args.max_resource_jitter_p95_ms),
-                "--max-resource-jitter-max-ms",
-                str(args.max_resource_jitter_max_ms),
-                "--seed",
-                str(args.seed + run_index - 1),
-            ]
+            continue
+        print(
+            f"[{ordinal}/{expected_records}] run "
+            f"C{context_tokens} {config_name} r{run_index}",
+            flush=True,
+        )
+        child_json = (
+            writer.layout.root
+            / f"C{context_tokens}_{config_name}_r{run_index}_child.json"
+        )
+        child_log = (
+            writer.layout.root / f"C{context_tokens}_{config_name}_r{run_index}.log"
+        )
+        command = [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--child-config",
+            config_name,
+            "--run-index",
+            str(run_index),
+            "--model-layers",
+            str(model_layers),
+            "--child-output-json",
+            str(child_json),
+            "--model",
+            str(model_path),
+            "--context-tokens",
+            str(context_tokens),
+            "--generation-tokens",
+            str(args.generation_tokens),
+            "--llm-cores",
+            str(args.llm_cores),
+            "--system-cores",
+            str(args.system_cores),
+            "--sample-interval",
+            str(args.sample_interval),
+            "--gpu-sample-interval",
+            str(args.gpu_sample_interval),
+            "--gpu-warmup-timeout",
+            str(args.gpu_warmup_timeout),
+            "--max-gpu-sample-age-ms",
+            str(args.max_gpu_sample_age_ms),
+            "--max-resource-jitter-p95-ms",
+            str(args.max_resource_jitter_p95_ms),
+            "--max-resource-jitter-max-ms",
+            str(args.max_resource_jitter_max_ms),
+            "--seed",
+            str(args.seed + run_index - 1),
+        ]
+        try:
             completed = subprocess.run(
                 command,
                 check=False,
@@ -639,41 +777,76 @@ def run_parent(args: argparse.Namespace) -> Path:
                 text=True,
                 timeout=args.child_timeout,
             )
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or ""
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", errors="replace")
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
             child_log.write_text(
-                completed.stdout + "\n[stderr]\n" + completed.stderr,
+                stdout + "\n[stderr]\n" + stderr,
                 encoding="utf-8",
             )
-            if completed.returncode != 0 or not child_json.is_file():
-                writer.append_failure(
-                    FailureRecord(
-                        stage=f"{config_name}_r{run_index}",
-                        error_type="ChildProcessFailure",
-                        message=f"returncode={completed.returncode}",
-                        monotonic_ns=time.monotonic_ns(),
-                        attributes={"log": str(child_log)},
-                    )
-                )
-                continue
-            record = json.loads(child_json.read_text(encoding="utf-8"))
-            timeline = record.pop("timeline", [])
-            for sample in timeline:
-                writer.append_timeline(TimelineSample(**sample))
-            writer.append_event(
-                ExperimentEvent(
-                    name="llm_residency_child",
-                    monotonic_ns=record["child_started_monotonic_ns"],
-                    wall_time_iso=record["child_started_wall_iso"],
-                    phase=config_name,
-                    attributes={
-                        "run_index": run_index,
-                        "finished_monotonic_ns": record[
-                            "child_finished_monotonic_ns"
-                        ],
-                    },
+            writer.append_failure(
+                FailureRecord(
+                    stage=f"C{context_tokens}_{config_name}_r{run_index}",
+                    error_type="ChildProcessTimeout",
+                    message=f"timeout={args.child_timeout}",
+                    monotonic_ns=time.monotonic_ns(),
+                    attributes={"log": str(child_log)},
                 )
             )
-            writer.append_iteration(record)
-            records.append(record)
+            if not args.continue_on_failure:
+                break
+            continue
+        child_log.write_text(
+            completed.stdout + "\n[stderr]\n" + completed.stderr,
+            encoding="utf-8",
+        )
+        if completed.returncode != 0 or not child_json.is_file():
+            writer.append_failure(
+                FailureRecord(
+                    stage=f"C{context_tokens}_{config_name}_r{run_index}",
+                    error_type="ChildProcessFailure",
+                    message=f"returncode={completed.returncode}",
+                    monotonic_ns=time.monotonic_ns(),
+                    attributes={"log": str(child_log)},
+                )
+            )
+            if not args.continue_on_failure:
+                break
+            continue
+        record = json.loads(child_json.read_text(encoding="utf-8"))
+        record["matrix_execution_ordinal"] = ordinal
+        timeline = record.pop("timeline", [])
+        for sample in timeline:
+            writer.append_timeline(TimelineSample(**sample))
+        writer.append_event(
+            ExperimentEvent(
+                name="llm_residency_child",
+                monotonic_ns=record["child_started_monotonic_ns"],
+                wall_time_iso=record["child_started_wall_iso"],
+                phase=f"C{context_tokens}/{config_name}",
+                attributes={
+                    "context_tokens": context_tokens,
+                    "run_index": run_index,
+                    "matrix_execution_ordinal": ordinal,
+                    "finished_monotonic_ns": record["child_finished_monotonic_ns"],
+                },
+            )
+        )
+        writer.append_iteration(record)
+        records.append(record)
+        completed_keys.add(key)
+        print(
+            f"[{ordinal}/{expected_records}] complete passed={record['passed']}",
+            flush=True,
+        )
+        if not record["passed"] and not args.continue_on_failure:
+            break
+        if args.inter_run_cooldown > 0:
+            time.sleep(args.inter_run_cooldown)
 
     by_config = {
         name: _summarize_records(
@@ -682,25 +855,54 @@ def run_parent(args: argparse.Namespace) -> Path:
         for name in config_names
         if any(record["config"] == name for record in records)
     }
+    by_context_config = {
+        str(context_tokens): {
+            name: _summarize_records(
+                [
+                    record
+                    for record in records
+                    if record["context_tokens"] == context_tokens
+                    and record["config"] == name
+                ]
+            )
+            for name in config_names
+            if any(
+                record["context_tokens"] == context_tokens and record["config"] == name
+                for record in records
+            )
+        }
+        for context_tokens in contexts
+    }
+    failure_count = len(_read_jsonl(writer.layout.failures))
     passed = (
         git_complete
         and len(records) == expected_records
         and all(record["passed"] for record in records)
+        and failure_count == 0
     )
     summary = {
         "passed": passed,
         "expected_records": expected_records,
         "actual_records": len(records),
+        "failure_count": failure_count,
         "git_provenance_complete": git_complete,
         "model_metadata": metadata,
         "by_config": by_config,
+        "by_context_config": by_context_config,
         "records": records,
-        "evidence_scope": "c1_smoke" if args.runs == 1 else "c2_curve",
+        "evidence_scope": _evidence_scope(
+            contexts,
+            config_names,
+            args.runs,
+            args.generation_tokens,
+        ),
     }
     writer.write_summary(summary)
     fields = [
+        "context_tokens",
         "config",
         "run_index",
+        "matrix_execution_ordinal",
         "passed",
         "n_gpu_layers",
         "load_s",
@@ -716,32 +918,27 @@ def run_parent(args: argparse.Namespace) -> Path:
         "kv_restore_s",
         "kv_state_bytes",
     ]
-    with writer.layout.summary_csv.open(
-        "w", encoding="utf-8", newline=""
-    ) as file_obj:
+    with writer.layout.summary_csv.open("w", encoding="utf-8", newline="") as file_obj:
         csv_writer = csv.DictWriter(file_obj, fieldnames=fields)
         csv_writer.writeheader()
         for record in records:
             gap = record["inference"]["token_gap_ms"]
             csv_writer.writerow(
                 {
+                    "context_tokens": record["context_tokens"],
                     "config": record["config"],
                     "run_index": record["run_index"],
+                    "matrix_execution_ordinal": record["matrix_execution_ordinal"],
                     "passed": record["passed"],
                     "n_gpu_layers": record["n_gpu_layers"],
                     "load_s": record["load_s"],
                     "gpu_delta_mb": record["memory_after_inference"][
                         "gpu_process_total_estimate_mb"
                     ],
-                    "rss_mb": record["memory_after_inference"]["rss_bytes"]
-                    / 1048576.0,
+                    "rss_mb": record["memory_after_inference"]["rss_bytes"] / 1048576.0,
                     "ttft_s": record["inference"]["ttft_s"],
-                    "prefill_tokens_per_s": record["inference"][
-                        "prefill_tokens_per_s"
-                    ],
-                    "decode_tokens_per_s": record["inference"][
-                        "decode_tokens_per_s"
-                    ],
+                    "prefill_tokens_per_s": record["inference"]["prefill_tokens_per_s"],
+                    "decode_tokens_per_s": record["inference"]["decode_tokens_per_s"],
                     "token_gap_p50_ms": gap["p50"],
                     "token_gap_p95_ms": gap["p95"],
                     "token_gap_max_ms": gap["max"],
@@ -762,6 +959,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--configs", nargs="+", default=["K0", "FULL"])
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--context-tokens", type=int, default=512)
+    parser.add_argument(
+        "--contexts",
+        nargs="+",
+        type=int,
+        help="父进程多上下文矩阵；未提供时使用 --context-tokens",
+    )
     parser.add_argument("--generation-tokens", type=int, default=128)
     parser.add_argument("--llm-cores", type=int, default=14)
     parser.add_argument("--system-cores", type=int, default=2)
@@ -769,19 +972,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gpu-sample-interval", type=float, default=0.25)
     parser.add_argument("--gpu-warmup-timeout", type=float, default=5.0)
     parser.add_argument("--max-gpu-sample-age-ms", type=float, default=750.0)
-    parser.add_argument(
-        "--max-resource-jitter-p95-ms", type=float, default=5.0
-    )
-    parser.add_argument(
-        "--max-resource-jitter-max-ms", type=float, default=30.0
-    )
+    parser.add_argument("--max-resource-jitter-p95-ms", type=float, default=5.0)
+    parser.add_argument("--max-resource-jitter-max-ms", type=float, default=30.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--child-timeout", type=float, default=1800.0)
+    parser.add_argument("--inter-run-cooldown", type=float, default=1.0)
+    parser.add_argument(
+        "--continue-on-failure",
+        action="store_true",
+        help="子进程失败后继续矩阵；正式运行默认 fail-fast",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="只在冻结配置、源码、环境和模型完全一致时续跑缺失单元",
+    )
     parser.add_argument(
         "--output-root",
-        default=str(
-            PROJECT_ROOT / "experiment_results" / "elastic_residency" / "c1"
-        ),
+        default=str(PROJECT_ROOT / "experiment_results" / "elastic_residency" / "c1"),
     )
     parser.add_argument(
         "--run-id",
@@ -803,6 +1011,8 @@ def main() -> None:
     args = build_parser().parse_args()
     if args.runs < 1:
         raise ValueError("--runs 必须大于 0")
+    if args.inter_run_cooldown < 0:
+        raise ValueError("--inter-run-cooldown 不能小于 0")
     if args.child_config:
         try:
             result = run_child(args)
@@ -827,7 +1037,11 @@ def main() -> None:
             encoding="utf-8",
         )
         return
-    print(run_parent(args))
+    result_root = run_parent(args)
+    print(result_root)
+    summary = json.loads((result_root / "summary.json").read_text(encoding="utf-8"))
+    if not summary["passed"]:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
