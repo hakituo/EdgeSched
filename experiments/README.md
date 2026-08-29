@@ -149,8 +149,37 @@ python -m experiments.elastic_residency.llm_residency_curve \
 配置在每个轮次内确定性轮转，降低固定顺序热漂移。意外中断时，只能用完全相同的参数、源码 commit、Python/平台和模型 manifest 加 `--resume`；已有 `(context, config, run)` 会跳过，矩阵外或重复记录会拒绝。子轮超时、进程失败或测量有效性验收失败默认立即停止，总汇总失败时命令返回非零。C2 的 jitter 阈值是待测性能目标而非证据有效性门，因此正式矩阵必须显式使用 `observe`：超标轮次写入 `performance_target_checks` 并保留在完整曲线中，不会被隐藏或改写为通过。若 `failures.jsonl` 非空，该 run 即使后来补齐也不能成为通过记录，修复后必须换新 run id。
 
 正式 GPU sampler 通过 ctypes 直接调用 NVML，不启动 `nvidia-smi` 子进程，也不做静默 CLI fallback；manifest、summary 和每轮验收必须记录 `gpu_telemetry_backend=direct_nvml` 与 `gpu_cli_subprocess_used=false`。GPU 数据最大年龄 750 ms 仍是测量有效性硬门。周期探针若越过下一采样 tick，完成后必须立即补采，禁止继续等待固定网格而人为放大陈旧窗口；`gpu_deadline_recovery_count` 记录这种恢复。驻留曲线的显存查询必须位于辅助 utilization/power/temperature 查询之后，使样本时间戳紧邻显存读数。WSL 若无法返回数值化的 compute-process 显存，必须保留 unavailable 原因；`gpu_card_delta_from_baseline_mb` 只表示隔离运行下的整卡差值，不得称为精确进程显存。TTS 另以 PyTorch allocated/reserved 峰值作为框架内主证据。
-旧 C2/B2/Forge 结果使用 CLI 采样，保留为工程基线和链路证据；direct NVML 改造后，粗测、细化和参与 `H_TTS/H_D` 的整卡数据必须使用同一新后端重跑，不能跨后端拼接为论文曲线。
+旧 B2/Forge 结果及更早的 C2/C3 结果使用 CLI 采样，只保留为工程基线和链路证据。C2 direct v2（90 条）与 C3 direct v2（150 条）已组成同后端完整驻留曲线；参与 `H_TTS/H_D` 的 T0/T3 与 Forge 整卡数据仍须在 direct NVML 下校准，不能跨后端拼接为论文阈值。
 冻结的 10 档临界矩阵（K2/K4/K6/K10/K12/K14/K18/K20/K28/K30、3 上下文、5 轮、128 生成 token、observe）标记为 `c3_critical_refinement`；建议显式使用 `--output-root experiment_results/elastic_residency/c3`，避免与 C1 smoke 产物混放。有效性门失败时控制台会直接打印失败检查名。
+
+### 11. KV Cache 容量校准（独立入口，不影响 C2/C3 曲线）
+
+`llm_residency_curve.py` v3 起在推理计时窗口之外增补 `full_state_serialized_bytes`、`kv_sequence_state_bytes`、`kv_position_min/max`、`kv_tokens_used`、`kv_gpu_buffer_mb`、`kv_cpu_buffer_mb`、`compute_gpu_buffer_mb`、`compute_cpu_buffer_mb` 等字段，语义由 `experiments/elastic_residency/kv_measurement.py` 的 `kv_measurement_semantics` 固定；历史 C2/C3 记录不含这些字段但仍然有效，不需要重跑。`kv_state_bytes` 保留为兼容字段，其语义是含 logits、embedding 与 KV memory 的完整序列化状态，不是纯 GPU KV 显存。
+
+KV buffer 容量由独立校准入口提供（16 configs × 3 contexts × 1 run = 48 条确定性容量数据，KV 分配不依赖随机性因此无需多轮）：
+
+```bash
+python -m experiments.elastic_residency.llm_kv_cache_calibration \
+  --run-id <new_run_id> \
+  --output-root experiment_results/elastic_residency/kv_calibration \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false --source-git-status-entry-count 0
+```
+
+入口复用 C2 的模型初始化参数，`n_ctx` 与填充状态均为 `context + generation`（默认 generation=128），对应 C2/C3 完成 128-token 生成后的状态；同时复用 CPU affinity、direct NVML 与 artifact contract。入口不做性能计时，KV 查询全部在 eval 之后。每条记录验证层数、状态 token 数、KV position、序列状态与完整状态大于 0、buffer 日志捕获、direct NVML、CLI=false、swap=0、资源归还与 Git provenance。
+
+### 12. LLM+TTS 真实共置显存测量
+
+`experiments/elastic_residency/llm_tts_colocated.py` 在同一进程加载真实 GGUF LLM（填充 context 后记录整卡基线 `B_LLM`）与 Qwen3-TTS（T0/T3 放置，分阶段 `torch.cuda.synchronize()` + reset peak），TTS 执行窗口内由 direct NVML 时间线和阶段快照取整卡峰值 `P_colocated`，并计算 `tts_colocated_increment_mb = P_colocated - B_LLM` 与 `colocated_positive_residual_mb = max(0, colocated_increment - isolated_increment)`（隔离增量由 `--tts-isolated-increment-mb CONFIG=value` 注入，缺失时保持 None，禁止估计）。容量裁决只用实测峰值：`P_colocated + safety_margin <= gpu_total`；`M_L(k, context)` 已包含该 LLM 配置的 KV buffer，容量计算不得再叠加一次 KV。共置候选由 C2+C3 新曲线分析后确定，先 smoke 后小矩阵：
+
+```bash
+python -m experiments.elastic_residency.llm_tts_colocated \
+  --run-id <new_run_id> \
+  --llm-configs <K...> --tts-configs T0 T3 --contexts 2048 --runs 5 \
+  --tts-isolated-increment-mb T0=<isolated_mb> T3=<isolated_mb> \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false --source-git-status-entry-count 0
+```
 
 WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：
 

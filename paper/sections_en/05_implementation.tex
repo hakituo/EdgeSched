@@ -37,7 +37,7 @@ EdgeSched is implemented in Python with an asynchronous serving stack. The proto
 \begin{itemize}
 \item Model: Qwen2.5-7B-Instruct (GGUF format, Q4\_K\_M quantization)
 \item Model weights: $\sim$4.7GB
-\item KV Cache: roughly 1--2GB at context length 4096 in our tested configuration
+\item KV Cache: the fully migratable serialized state (\texttt{save\_state()}, which includes logits, embeddings, and KV memory) is not pure GPU KV VRAM; the pre-allocated GPU KV buffer is measured by a dedicated calibration matrix, and only validated calibration values are reported
 \item Total VRAM occupation: $\sim$6-7GB
 \item GPU layers: Default -1 (auto-allocate), typically loads 25-33 layers in 8GB VRAM environment
 \item First token timeout: 30 seconds

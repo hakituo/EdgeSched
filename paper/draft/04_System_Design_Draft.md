@@ -25,7 +25,7 @@ EdgeSched 针对边缘设备上最常见的两类大模型应用——对话交�
 
 ### 4.3.1 Asymmetric Migration Strategy
 
-**Downlink (GPU → CPU): Urgent Mode**. 当图像任务到达时，系统触发紧急迁移以立即释放显存。该模式首先通过 `save_state()` 将 KV Cache 从显存经 PCIe 复制到内存（约 200-300ms），保留对话上下文；随后立即释放 GPU 显存，消除显存碎片以避免 OOM 风险。释放完成后，系统并行启动两个操作：后台加载 CPU 版 LLM（从 DDR 到 DDR，利用 Page Cache 加速，>20GB/s），以及加载图像生成模型到 GPU（从 DDR 经 PCIe 到 GDDR）。此模式通过短暂的上下文保存延迟，换取显存安全与用户体验的兼顾。
+**Downlink (GPU → CPU): Urgent Mode**. 当图像任务到达时，系统触发紧急迁移以释放显存。该模式首先通过 `save_state()` 保存包含 KV Cache、logits 与 embedding 的完整序列化推理状态，保留对话上下文；随后释放 GPU 分配以降低 OOM 风险。释放完成后，系统并行启动两个操作：后台加载 CPU 版 LLM（利用 Page Cache）以及加载图像生成模型到 GPU。该步骤的真实耗时由驻留曲线的 save/restore 与切换阶段数据报告，不使用未校准的固定时延。
 
 **Uplink (CPU → GPU): Atomic Hot-Swap**. 当图像任务完成、显存空闲时，系统执行原子热切换以恢复 LLM 的高性能推理。该模式采用 Double Buffering 策略：
 1. **Preload**: 首先在 GPU 上全新加载 LLM 实例（从 DDR 经 PCIe 到 GDDR），此时 CPU 实例仍在服务用户请求（不中断）；

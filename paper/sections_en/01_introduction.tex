@@ -6,7 +6,7 @@ In recent years, local AI applications on consumer-grade devices have grown rapi
 
 \subsection{Core Challenges}
 
-\textbf{Hard Memory Constraints}. In our tested configuration, 8GB VRAM is insufficient to keep both the LLM runtime (about 6--7GB including weights and KV cache) and the image model (about 6.7GB) resident at the same time, making traditional GPU isolation approaches impractical. When a GPU-intensive burst task arrives, the VRAM occupied by the resident task must be released or downgraded quickly to avoid CUDA OOM.
+\textbf{Hard Memory Constraints}. In our tested configuration, 8GB VRAM is insufficient to keep both the quantized LLM runtime and the image model resident at the same time, making traditional GPU isolation approaches impractical. We measure the full serialized migration state, the pre-allocated GPU KV buffer, and the whole-card co-located peak separately; the \texttt{save\_state()} payload is never used as a proxy for GPU KV VRAM. When a GPU-intensive burst task arrives, the VRAM occupied by the resident task must be released or downgraded quickly to avoid CUDA OOM.
 
 \textbf{Asymmetric Service Requirements}. The two workload roles in our target setting behave differently at the service level, as shown in Table~\ref{tab:task_characteristics}:
 

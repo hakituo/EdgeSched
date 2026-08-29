@@ -14,7 +14,7 @@ EdgeSched 基于 Python 3.10 实现，主要依赖如下：
 
 ## 5.2 关键模块实现
 
-**动态资源迁移**。算法 1 展示了紧急卸载流程。系统首先通过 `save_state()` 保存 KV Cache，然后释放 GPU 显存，最后异步加载 CPU 后端。
+**动态资源迁移**。算法 1 展示了紧急卸载流程。系统首先通过 `save_state()` 保存完整推理状态（含 KV Cache、logits 与 embedding，见第 5.3 节口径说明），然后释放 GPU 显存，最后异步加载 CPU 后端。
 
 ```python
 async def offload_llm_to_cpu(urgent=True):
@@ -53,7 +53,7 @@ def register_task(task_id, status, priority):
 **LLM 配置**：
 - 模型：Qwen2.5-7B-Instruct（GGUF 格式，Q4_K_M 量化）
 - 模型权重：约 4.7GB
-- KV Cache：约 1-2GB（上下文长度 4096）
+- KV Cache：完整可迁移状态（`save_state()` 序列化，含 logits、embedding 与 KV memory）不是纯 GPU KV 显存；GPU 预分配 KV buffer 的容量由独立 KV 校准矩阵实测，正文只填写校准通过后的数值
 - 总显存占用：约 6-7GB
 - GPU 层数：默认 -1（自动分配），8GB 显存环境下通常加载 25-33 层
 - 首字超时：30 秒

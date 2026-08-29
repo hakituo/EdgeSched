@@ -43,6 +43,12 @@ from experiments.elastic_residency.cpu_topology import (  # noqa: E402
 from experiments.elastic_residency.gpu_telemetry import (  # noqa: E402
     DirectNvmlProbe,
 )
+from experiments.elastic_residency.kv_measurement import (  # noqa: E402
+    KV_MEASUREMENT_SEMANTICS,
+    LlamaInitLogCapture,
+    buffer_report_acceptance,
+    capture_llama_kv_state,
+)
 from experiments.elastic_residency.resource_sampler import ResourceSampler  # noqa: E402
 from experiments.elastic_residency.tts_component_offload import (  # noqa: E402
     _git_source,
@@ -278,23 +284,25 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
             gpu_ready = sampler.start(wait_for_gpu_timeout_s=args.gpu_warmup_timeout)
             load_started_ns = time.monotonic_ns()
             load_started = time.perf_counter()
-            llm = Llama(
-                model_path=str(model_path),
-                n_gpu_layers=n_gpu_layers,
-                n_ctx=args.context_tokens + args.generation_tokens,
-                n_batch=min(args.context_tokens, 512),
-                n_ubatch=min(args.context_tokens, 512),
-                n_threads=len(llm_lease.affinity),
-                n_threads_batch=len(llm_lease.affinity),
-                seed=args.seed,
-                use_mmap=True,
-                offload_kqv=offload_kqv,
-                op_offload=offload_kqv,
-                flash_attn=True,
-                verbose=False,
-            )
+            with LlamaInitLogCapture() as log_capture:
+                llm = Llama(
+                    model_path=str(model_path),
+                    n_gpu_layers=n_gpu_layers,
+                    n_ctx=args.context_tokens + args.generation_tokens,
+                    n_batch=min(args.context_tokens, 512),
+                    n_ubatch=min(args.context_tokens, 512),
+                    n_threads=len(llm_lease.affinity),
+                    n_threads_batch=len(llm_lease.affinity),
+                    seed=args.seed,
+                    use_mmap=True,
+                    offload_kqv=offload_kqv,
+                    op_offload=offload_kqv,
+                    flash_attn=True,
+                    verbose=False,
+                )
             load_s = time.perf_counter() - load_started
             load_finished_ns = time.monotonic_ns()
+            buffer_report = log_capture.buffer_report()
             memory_loaded = _native_memory_snapshot(
                 process=process,
                 baseline_card_used_mb=baseline_card_used_mb,
@@ -308,6 +316,9 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
                 prompt_tokens=prompt_tokens,
                 generation_tokens=args.generation_tokens,
             )
+            # KV 原生接口查询：位于推理计时窗口之外（_decode_fixed_tokens
+            # 返回后其计时已经固定），失败直接抛错，不填 0 冒充。
+            kv_native_state = capture_llama_kv_state(llm)
             memory_after_inference = _native_memory_snapshot(
                 process=process,
                 baseline_card_used_mb=baseline_card_used_mb,
@@ -419,6 +430,12 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "kv_state_restored": (
             kv_restore_s > 0 and restored_tokens == expected_state_tokens
         ),
+        "kv_native_state_captured": (
+            kv_native_state["full_state_serialized_bytes"] > 0
+            and kv_native_state["kv_sequence_state_bytes"] > 0
+            and kv_native_state["kv_tokens_used"] == expected_state_tokens
+        ),
+        **buffer_report_acceptance(buffer_report),
         "worker_affinity_matches": set(actual_affinity) == set(llm_lease.affinity),
         "sampler_affinity_matches": (
             set(resource_summary["sampler_thread_affinity"])
@@ -481,6 +498,24 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "kv_save_s": kv_save_s,
         "kv_restore_s": kv_restore_s,
         "kv_state_bytes": state_bytes,
+        # 新 KV 口径字段：完整序列化状态、单序列状态、position/token 与
+        # 预分配 buffer 容量；语义见 kv_measurement_semantics。
+        "full_state_serialized_bytes": kv_native_state[
+            "full_state_serialized_bytes"
+        ],
+        "kv_sequence_state_bytes": kv_native_state["kv_sequence_state_bytes"],
+        "kv_position_min": kv_native_state["kv_position_min"],
+        "kv_position_max": kv_native_state["kv_position_max"],
+        "kv_tokens_used": kv_native_state["kv_tokens_used"],
+        "kv_gpu_buffer_mb": buffer_report.get("kv_gpu_buffer_mb"),
+        "kv_cpu_buffer_mb": buffer_report.get("kv_cpu_buffer_mb"),
+        "compute_gpu_buffer_mb": buffer_report.get("compute_gpu_buffer_mb"),
+        "compute_cpu_buffer_mb": buffer_report.get("compute_cpu_buffer_mb"),
+        "kv_buffer_mb_by_device": buffer_report.get("kv_buffer_mb_by_device"),
+        "compute_buffer_mb_by_device": buffer_report.get(
+            "compute_buffer_mb_by_device"
+        ),
+        "kv_measurement_semantics": KV_MEASUREMENT_SEMANTICS,
         "restored_tokens": restored_tokens,
         "expected_state_tokens": expected_state_tokens,
         "memory_baseline": baseline,
@@ -1016,6 +1051,15 @@ def run_parent(args: argparse.Namespace) -> Path:
         "kv_save_s",
         "kv_restore_s",
         "kv_state_bytes",
+        "full_state_serialized_bytes",
+        "kv_sequence_state_bytes",
+        "kv_position_min",
+        "kv_position_max",
+        "kv_tokens_used",
+        "kv_gpu_buffer_mb",
+        "kv_cpu_buffer_mb",
+        "compute_gpu_buffer_mb",
+        "compute_cpu_buffer_mb",
     ]
     with writer.layout.summary_csv.open("w", encoding="utf-8", newline="") as file_obj:
         csv_writer = csv.DictWriter(file_obj, fieldnames=fields)
@@ -1047,6 +1091,17 @@ def run_parent(args: argparse.Namespace) -> Path:
                     "kv_save_s": record["kv_save_s"],
                     "kv_restore_s": record["kv_restore_s"],
                     "kv_state_bytes": record["kv_state_bytes"],
+                    "full_state_serialized_bytes": record.get(
+                        "full_state_serialized_bytes"
+                    ),
+                    "kv_sequence_state_bytes": record.get("kv_sequence_state_bytes"),
+                    "kv_position_min": record.get("kv_position_min"),
+                    "kv_position_max": record.get("kv_position_max"),
+                    "kv_tokens_used": record.get("kv_tokens_used"),
+                    "kv_gpu_buffer_mb": record.get("kv_gpu_buffer_mb"),
+                    "kv_cpu_buffer_mb": record.get("kv_cpu_buffer_mb"),
+                    "compute_gpu_buffer_mb": record.get("compute_gpu_buffer_mb"),
+                    "compute_cpu_buffer_mb": record.get("compute_cpu_buffer_mb"),
                 }
             )
     return writer.layout.root

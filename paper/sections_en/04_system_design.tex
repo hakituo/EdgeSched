@@ -82,12 +82,12 @@ Figure~\ref{fig:migration_flow} illustrates the complete resource migration work
 
 \subsubsection{Asymmetric Migration Strategy}
 
-\textbf{Downlink (GPU $\rightarrow$ CPU): Urgent Mode}. When image tasks arrive, the system triggers urgent migration to release VRAM quickly. This policy is optimized for memory safety: it first copies the KV cache from VRAM to host memory through \texttt{save\_state()} (about 200--300 ms in our measurements), preserving conversation context; it then releases GPU allocations so that the image model can be loaded with lower OOM risk. After release, the system starts two operations in parallel: background loading of a CPU LLM instance (helped by the OS page cache) and loading the image generation model to GPU. In other words, Urgent Mode accepts brief performance degradation in exchange for bounded time-to-release.
+\textbf{Downlink (GPU $\rightarrow$ CPU): Urgent Mode}. When image tasks arrive, the system triggers urgent migration to release VRAM quickly. This policy is optimized for memory safety: it first copies the full serialized inference state (which contains the KV cache together with logits and embeddings) to host memory through \texttt{save\_state()}, preserving conversation context; it then releases GPU allocations so that the image model can be loaded with lower OOM risk. After release, the system starts two operations in parallel: background loading of a CPU LLM instance (helped by the OS page cache) and loading the image generation model to GPU. In other words, Urgent Mode accepts brief performance degradation in exchange for bounded time-to-release.
 
 \textbf{Uplink (CPU $\rightarrow$ GPU): Atomic Hot-Swap}. When image tasks complete and VRAM becomes available again, the system executes atomic hot-swap to restore high-performance LLM inference. This policy is optimized for service continuity rather than immediate cut-over. It adopts a double-buffering strategy:
 \begin{enumerate}
 \item \textbf{Preload}: First load a fresh LLM instance on GPU while the CPU instance continues serving user requests
-\item \textbf{Hot Transfer}: Once the GPU instance is ready, briefly pause the CPU instance, extract the KV cache through \texttt{save\_state()}, and load it into the GPU instance
+\item \textbf{Hot Transfer}: Once the GPU instance is ready, briefly pause the CPU instance, extract the full serialized inference state (including the KV cache) through \texttt{save\_state()}, and load it into the GPU instance
 \item \textbf{Switch \& Unload}: Finally atomically replace the active instance pointer, route new requests to the GPU instance, and asynchronously unload the CPU instance
 \end{enumerate}
 
@@ -98,7 +98,7 @@ In our implementation, this mode limits the user-visible interruption during res
 Asymmetric migration implementation relies on three core mechanisms:
 \begin{enumerate}
 \item \textbf{Concurrency Control}: \texttt{asyncio.Lock()} keeps instance replacement atomic and reduces race-condition risk
-\item \textbf{State Serialization}: llama-cpp-python's \texttt{save\_state()} / \texttt{load\_state()} interfaces are used to migrate KV-cache state between GPU-backed and CPU-backed instances
+\item \textbf{State Serialization}: llama-cpp-python's \texttt{save\_state()} / \texttt{load\_state()} interfaces are used to migrate the serialized inference state (KV cache plus logits and embeddings) between GPU-backed and CPU-backed instances
 \item \textbf{Async Cleanup}: Background release of old instances through \texttt{asyncio.create\_task()} avoids blocking the main service path
 \end{enumerate}
 

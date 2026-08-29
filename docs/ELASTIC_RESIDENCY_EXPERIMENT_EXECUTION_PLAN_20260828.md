@@ -138,6 +138,9 @@ experiments/elastic_residency/
   auxiliary_core_budget.py     JSON RAG、BGE、ASR 核心曲线
   tts_component_offload.py     T0–T3
   llm_residency_curve.py       粗测、临界补测和 KV/切换
+  kv_measurement.py            KV buffer/序列状态/完整状态语义与采集
+  llm_kv_cache_calibration.py  16 档独立 KV 容量校准
+  llm_tts_colocated.py         LLM+TTS 真实共置峰值与残差
   no_image_placement.py        真正流式 LLM→TTS 重叠
   analyze_results.py           Pareto、阈值和汇总生成
 tests/elastic_residency/
@@ -371,17 +374,25 @@ experiment_results/elastic_residency/<run_id>/
 - [x] **B1**：T0–T3 真实单文本 smoke 通过。证据：`b1_tts_components_20260829_verified_v2`。
 - [x] **B2**：完成 `4 配置 × 3 句长 × 5 轮`；Pareto 候选为 T0/T3，证据为 `b2_tts_matrix_20260829_verified_v1`。
 - [x] **C1**：K0/FULL 的 512-token 真实端点 smoke 已通过。证据：`c1_llm_residency_512_20260829_verified_v1`。
-- [ ] **C2 direct NVML 重跑**：旧 `c2_llm_residency_curve_20260829_verified_v3` 完成 90/90 条但使用 CLI 采样，只保留为工程基线；论文曲线需用 direct NVML 统一重跑。
+- [x] **C2 direct NVML 重跑**：`c2_llm_residency_curve_20260829_direct_nvml_v2` 已完成 90/90 条并通过，干净 commit 为 `17c40d3495cb01237bdf2e7429f2635362e908cf`；旧 CLI 运行只保留为工程基线。
 - [x] **C3 工具**：Forge b=1 复测脚本、`G_safe`/`H_TTS`/`H_D` 筛选分析与临界补测建议已实现并通过静态测试；legacy 口径初步筛选见 `experiment_results/elastic_residency/c3_analysis/c3_h_screen_20260829_legacy_forge.json`。
 - [x] **C3 Forge 复测**：`forge_b1_reprofile_20260829_verified_v2` 通过全部门禁，`M_D = 5252 MiB`；复测后正式筛选见 `experiment_results/elastic_residency/c3_analysis/c3_h_reprofiled_20260829.json`（`H_TTS(T0)=16`、`H_TTS(T3)=32+FULL`、`H_D` 为 512:8 / 2048:0 / 4096:0）。
+- [x] **C3 临界补测**：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 已完成 150/150 条并通过；与 C2 direct v2 合并后覆盖 16 个 LLM 驻留档位。
 - [ ] **当前 C3 收尾**：
-  1. 按 `k={2,4,6,10,12,14,18,20,28,30}` 用 `llm_residency_curve.py` 跑临界补测（新 run id、3 上下文 × 5 轮、`--jitter-gate-mode observe`）；
-  2. 与 B2 Pareto TTS 配置（T0/T3）做真实共置验证，校准 colocated 残差分量后重算 `G_safe`；
-  3. 冻结 `H_TTS`/`H_D`（按 context 分组），进入 D 阶段。
+  1. 先运行 `llm_kv_cache_calibration.py` 的 48 条正式矩阵，补齐 GPU KV buffer、单序列状态与完整序列化状态的独立口径；C2/C3 性能曲线无需重跑；
+  2. 用 direct NVML 对进入阈值计算的 T0/T3 隔离整卡增量和 Forge b=1 峰值做同后端校准；旧 PyTorch allocator 峰值仍可保留，但旧 CLI 整卡差值不得直接混入冻结值；
+  3. 基于完整 16 档曲线重新筛选共置候选，先跑 LLM+TTS 单组合 smoke，再对保留的 context/LLM/T0-T3 组合各跑 5 轮，得到 colocated 正残差；
+  4. 重算 `G_safe`，冻结按 context 分组的 `H_TTS/H_D`，然后进入 D 阶段。
 
 **C3 临界补测 v2 停止记录（2026-08-29）**：`c3_llm_critical_refinement_20260829_verified_v2` 完成 94/150 条后，在 C2048/K20/r5 因推理期 GPU 样本最大年龄 772.875 ms 超过 750 ms 有效性硬门而停止；其余有效性检查及该轮 jitter 性能目标均通过。94 条中所有记录的最大样本年龄均超过 500 ms，10 条超过 700 ms，第 91 条已达 749.570 ms。根因是周期 sampler 每次先查询整卡指标、再查询 WSL 驱动无法数值化返回的 compute-process 显存，后者不贡献正式曲线证据却显著拉长探针周期。修复仅在 LLM 周期 sampler 中关闭无效的进程显存查询；阶段性显存快照与整卡基线差值估算保持不变，750 ms 门槛不放宽。v2 保留为停止记录，不续跑、不用于完整曲线。
 
 **direct NVML 口径修订（2026-08-29）**：对 v2 的第一次修复只减少了 CLI 查询次数，仍未消除子进程采样对论文实验的扰动，因此 `e446e33` 下的 card-only smoke 也只保留为调试记录。正式 GPU 遥测改为 ctypes direct NVML，CLI 不允许静默 fallback；本机空闲校准中 direct NVML 完整设备指标查询约为毫秒级，且 manifest/summary/acceptance 显式锁定后端。由于测量后端变化，C2 粗测、C3 细化及用于安全余量的 B2/Forge 整卡指标均须在新后端下重跑或校准，旧结果不得与新结果拼接冻结阈值。
+
+**C2 direct NVML 完成记录（2026-08-29）**：`c2_llm_residency_curve_20260829_direct_nvml_v2` 基于干净 commit `17c40d3495cb01237bdf2e7429f2635362e908cf` 完成 90/90 条，`summary.passed=true`、0 failure。全部轮次使用 `direct_nvml` 且 `gpu_cli_subprocess_used=false`；推理期最大 GPU 样本年龄为 685.582 ms，最大单次探针耗时为 504.778 ms，deadline recovery 合计 3 次，均未突破 750 ms 有效性门。所有轮次无 swap、固定生成 128 tokens，并完成 KV save/restore。该 run 取代旧 CLI C2 作为当前完整粗测曲线。
+
+**C3 direct NVML 完成记录（2026-08-29）**：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 使用同一干净 commit 完成 `10 配置 × 3 上下文 × 5 轮 = 150/150` 条，`summary.passed=true`、0 failure。全部轮次使用 `direct_nvml` 且未启动 GPU CLI；推理期最大 GPU 样本年龄为 630.711 ms，最大单次探针耗时为 425.154 ms，deadline recovery 合计 11 次。该 run 与 C2 direct v2 共同构成当前 16 档完整驻留曲线；旧的 94 条停止记录不参与合并。
+
+**KV/共置测量实现记录（2026-08-30）**：新增 `kv_measurement.py`、`llm_kv_cache_calibration.py` 与 `llm_tts_colocated.py`。历史 `kv_state_bytes` 明确为 `save_state()` 完整序列化状态，不再表述为纯 GPU KV 显存；独立 KV 校准从 llama.cpp 初始化日志采集 GPU/CPU/CUDA_Host KV/compute buffer，并分别查询单序列状态、原生 position 边界和 `llm.n_tokens`。校准和共置入口都以 `n_ctx = context + generation`（正式默认 128）重建与 C2/C3 相同的推理后状态。共置入口在同一进程实测 `B_LLM`、TTS 窗口整卡峰值 `P_colocated`、PyTorch 分阶段峰值与正残差，正式矩阵支持每组合 5 轮。Windows 静态测试 91/91 通过；WSL2 短状态 K0/K2 KV smoke 均通过并分别识别 CPU 与 CUDA0 buffer，最小 K0+T3 共置 smoke 也通过 direct NVML、生成 1.2 s 非静音 WAV。上述临时 smoke 只证明真实链路可运行，不代替 48 条 KV 正式产物或共置正式矩阵。
 - [ ] **D1**：实现 JSON RAG 和 BGE 核心曲线；冻结辅助 SLA。
 - [ ] **D2**：接入已验证的 Faster-Whisper，并在音频路由就绪后接入真实 underrun 探针。
 - [ ] **D3**：运行 `R_sys={0,1,2,4}` 正式验证。
