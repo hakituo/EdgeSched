@@ -8,6 +8,7 @@ from typing import Any
 from experiments.elastic_residency.forge_b1_reprofile import (
     build_txt2img_payload,
     build_parser,
+    evaluate_swap_growth,
     extract_gpu_used_series,
     summarize_gpu_series,
 )
@@ -84,3 +85,22 @@ def test_parser_defaults_match_frozen_c2_baseline() -> None:
     assert args.gpu_sample_interval == 0.25
     assert args.system_cores == 2
     assert args.min_baseline_gpu_samples == 8
+    assert args.max_swap_growth_mb == 4.0
+
+
+def test_evaluate_swap_growth_tolerates_system_noise() -> None:
+    # v1 复测观察到的 WSL2/Forge 系统噪声：780 KB 级，应在 4 MiB 容忍内。
+    noise = evaluate_swap_growth([0, 0, 274432, 798720, 798720], 4 * 1024 * 1024)
+    assert noise["growth_bytes"] == 798720
+    assert noise["within_tolerance"] is True
+
+    # 真实换页增长（数百 MB）必须被拒绝。
+    pressure = evaluate_swap_growth([0, 512 * 1024 * 1024], 4 * 1024 * 1024)
+    assert pressure["growth_bytes"] == 512 * 1024 * 1024
+    assert pressure["within_tolerance"] is False
+
+    # swap 回落不计增长；空序列按通过处理（另有样本数门禁兜底）。
+    dropped = evaluate_swap_growth([798720, 0, 0], 4 * 1024 * 1024)
+    assert dropped["growth_bytes"] == 0
+    assert dropped["within_tolerance"] is True
+    assert evaluate_swap_growth([], 1024)["within_tolerance"] is True

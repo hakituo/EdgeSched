@@ -124,6 +124,36 @@ def summarize_gpu_series(series: Sequence[float]) -> Mapping[str, float | int]:
     }
 
 
+def evaluate_swap_growth(
+    swap_values: Sequence[int],
+    tolerance_bytes: int,
+) -> Mapping[str, Any]:
+    """评估时间线 swap 增长是否在容忍范围内。
+
+    Forge 复测必须与 Forge 服务同机运行，WSL2/Forge 带来数百 KB 级的
+    系统性 swap 噪声属于正常现象；这里只拒绝实验期间的真实换页增长
+    （超过 tolerance_bytes），口径与 A1/C2 的 ``swap==0`` 不同，需在
+    manifest 与 summary 中保留完整数值供人工复核。
+    """
+
+    if not swap_values:
+        return {
+            "start_bytes": None,
+            "max_bytes": None,
+            "growth_bytes": None,
+            "within_tolerance": True,
+        }
+    start = int(swap_values[0])
+    maximum = int(max(swap_values))
+    growth = max(0, maximum - start)
+    return {
+        "start_bytes": start,
+        "max_bytes": maximum,
+        "growth_bytes": growth,
+        "within_tolerance": growth <= int(tolerance_bytes),
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True)
@@ -150,6 +180,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gpu-sample-interval", type=float, default=0.25)
     parser.add_argument("--gpu-warmup-timeout", type=float, default=5.0)
     parser.add_argument("--system-cores", type=int, default=2)
+    parser.add_argument(
+        "--max-swap-growth-mb",
+        type=float,
+        default=4.0,
+        help="swap 增长容忍上限（MiB）；Forge/WSL2 系统噪声通常低于 1 MiB",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--source-git-commit", default="")
     parser.add_argument("--source-git-dirty", choices=("true", "false"))
@@ -278,7 +314,6 @@ def main() -> None:
         writer=writer,
         thread_affinity=system_lease.affinity,
     )
-    swap_used_start = None
     try:
         gpu_ready = sampler.start(wait_for_gpu_timeout_s=args.gpu_warmup_timeout)
         if not gpu_ready:
@@ -289,7 +324,6 @@ def main() -> None:
         idle_window_start_ns = time.monotonic_ns()
         time.sleep(args.idle_observe_s)
         idle_window_end_ns = time.monotonic_ns()
-        swap_used_start = sampler.samples[-1].system_swap_used_bytes if sampler.samples else 0
         idle_series = extract_gpu_used_series(
             sampler.samples, idle_window_start_ns, idle_window_end_ns
         )
@@ -372,12 +406,9 @@ def main() -> None:
     peak_mean = statistics.mean(valid_peaks) if valid_peaks else None
     latencies = [record["latency_s"] for record in iteration_records]
 
-    swap_used_end = (
-        sampler.samples[-1].system_swap_used_bytes if sampler.samples else swap_used_start
-    )
-    swap_grew = (
-        swap_used_start is not None and swap_used_end is not None
-        and swap_used_end > swap_used_start
+    swap_evaluation = evaluate_swap_growth(
+        [sample.system_swap_used_bytes for sample in sampler.samples],
+        int(args.max_swap_growth_mb * 1024 * 1024),
     )
 
     checks = {
@@ -396,7 +427,9 @@ def main() -> None:
         "single_image_per_iteration": all(
             record["image_count"] == 1 for record in iteration_records
         ),
-        "swap_unused": not swap_grew,
+        "swap_growth_within_tolerance": bool(
+            swap_evaluation["within_tolerance"]
+        ),
         "all_leases_released": allocator_snapshot["active_lease_count"] == 0,
         "all_physical_cores_returned": (
             allocator_snapshot["free_physical_core_count"]
@@ -429,6 +462,11 @@ def main() -> None:
                 "max": max(latencies) if latencies else None,
                 "p95": percentile(latencies, 0.95) if latencies else None,
             },
+        },
+        "swap": {
+            **dict(swap_evaluation),
+            "tolerance_bytes": int(args.max_swap_growth_mb * 1024 * 1024),
+            "policy": "growth_within_tolerance",
         },
         "records": iteration_records,
         "resource_sampler": sampler_stats,

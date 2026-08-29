@@ -275,6 +275,8 @@ C 阶段收尾前仍必须完成：Forge b=1 同日复测、按 3.3 节校准 `G
 
 **C3 初步筛选（2026-08-29，legacy Forge 口径）**：`experiment_results/elastic_residency/c3_analysis/c3_h_screen_20260829_legacy_forge.json` 使用 C2 v3 + B2 v1 + 旧 Forge 峰值 5904 MiB（idle 314 MiB）计算：`G_safe = 501.3 MiB`（由 B2 T0 的 allocator slack 主导，colocated 残差 pending）；三个上下文结论一致：`H_TTS(T0) = 16`（K24 差约 17 MiB 不可行）、`H_TTS(T3) = 32` 且 FULL 可行、`H_D = 0`（K0–K8 临界）。该筛选值不得用于冻结，Forge 复测后必须重算；T0 下 K24 的临界贴边也说明补测 `k={20,22}` 有实际价值。
 
+**Forge 复测 v1 停止记录（2026-08-29）**：`forge_b1_reprofile_20260829_verified_v1` 采集数据全部正常（idle 高水位 185 MiB、Forge 常驻基线 409 MiB、5 轮峰值 max/mean 5669/5668.6 MiB、`M_D` 增量估计 5484 MiB），但 `swap_unused` 门禁失败：时间线中 WSL2/Forge 带来 780 KB 级系统性 swap 噪声，而 v1 沿用了 A1/C2 的 `swap==0` 口径。A1/C2 当时无 Forge 服务常驻，该口径对 Forge 复测不可达。修复将 Forge 复测的 swap 门禁改为"增长容忍"（`swap_growth_within_tolerance`，默认 4 MiB，实测噪声远低于此值；真实换页压力为数百 MB 量级仍会被拒绝），并在 summary 中保留 start/max/growth 全量数值。v1 保留为口径调试记录；口径修复后使用新 run id 重跑，其数据不得直接作为 `M_D` 证据。
+
 ### 阶段 D：辅助任务动态核心预算
 
 初始固定 `R_sys=2` 个物理核。辅助任务在独立进程中运行，结束后进程退出并释放 affinity，主流水线不得永久少核。
