@@ -7,6 +7,7 @@ from experiments.elastic_residency.resource_sampler import (
     EventLoopJitterProbe,
     NvidiaSmiProbe,
     ResourceSampler,
+    _advance_periodic_deadline,
 )
 
 
@@ -14,6 +15,11 @@ def _fake_nvidia(command: list[str]) -> str:
     if any("query-gpu" in part for part in command):
         return "512, 8151, 7, 42.5, 55"
     return "999999, 100\n"
+
+
+def test_gpu_deadline_skips_missed_ticks_without_adding_full_interval() -> None:
+    assert _advance_periodic_deadline(0.0, 0.25, 0.20) == 0.25
+    assert _advance_periodic_deadline(0.0, 0.25, 0.624) == 0.75
 
 
 def test_resource_sampler_writes_resource_and_jitter_timeline(tmp_path) -> None:

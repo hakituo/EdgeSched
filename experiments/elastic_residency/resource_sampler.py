@@ -34,6 +34,20 @@ def _percentile(values: list[float], fraction: float) -> float:
     return ordered[lower] * (1 - weight) + ordered[upper] * weight
 
 
+def _advance_periodic_deadline(
+    previous_deadline: float,
+    interval_s: float,
+    now: float,
+) -> float:
+    """推进固定周期 deadline；超时只跳过旧 tick，不叠加完整等待。"""
+
+    next_deadline = previous_deadline + interval_s
+    if next_deadline < now:
+        missed = int((now - next_deadline) / interval_s) + 1
+        next_deadline += missed * interval_s
+    return next_deadline
+
+
 class NvidiaSmiProbe:
     """低频读取整卡与目标进程显存，失败时显式返回 unavailable。"""
 
@@ -334,7 +348,11 @@ class ResourceSampler:
     def _run_gpu(self) -> None:
         try:
             self._gpu_thread_affinity = self._apply_current_thread_affinity()
+            next_deadline = time.monotonic()
             while not self._stop_event.is_set():
+                wait_s = next_deadline - time.monotonic()
+                if wait_s > 0 and self._stop_event.wait(wait_s):
+                    break
                 probe_started = time.monotonic()
                 sampled = self.gpu_probe.sample(self.process_pid)
                 sampled_at = time.monotonic()
@@ -348,8 +366,11 @@ class ResourceSampler:
                     )
                 if bool(sampled.get("available", False)):
                     self._gpu_first_success.set()
-                if self._stop_event.wait(self.gpu_interval_s):
-                    break
+                next_deadline = _advance_periodic_deadline(
+                    next_deadline,
+                    self.gpu_interval_s,
+                    sampled_at,
+                )
         except BaseException as exc:
             self._gpu_error = exc
 

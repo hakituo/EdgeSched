@@ -233,6 +233,8 @@ H_D   = max k: M_L(k) + M_D + G_safe <= V_GPU
 
 **C2 v1 停止记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v1` 在第 22/90 条（512-token、K0、第 4 轮）按旧语义 fail-fast。该轮 18 项其他检查通过，jitter p95 为 0.866 ms，但出现一次 39.490 ms 最大迟到，超过 30 ms 目标。v1 证明性能目标确有尾部失败，也暴露了“性能不达标会阻止收集 No-Go 证据”的口径错误；它只作为停止/调试记录，不续跑、不作为完整 C2 曲线。后续新 run id 保留 30 ms 目标但使用 `observe`，同时报告有效性 `passed` 与性能目标 `performance_target_passed`。
 
+**C2 v2 停止记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v2` 完成 512-token 全部 30 条后，在第 31/90 条（2048-token、K0、首轮）因 GPU 数据最大年龄 856.023 ms 超过 750 ms 有效性门而停止。探针始终可用，根因是旧 GPU sampler 在一次 `nvidia-smi` 探针耗时 624.415 ms 后又固定等待 250 ms，使实际采样间隔叠加到 874.730 ms。修复将 GPU sampler 改为固定 deadline：慢探针只跳过已经错过的 tick，不再在完成后额外等待整个周期；750 ms 门槛不放宽。v2 只作为停止/调试记录，不续跑、不作为完整 C2 曲线。
+
 ### 阶段 D：辅助任务动态核心预算
 
 初始固定 `R_sys=2` 个物理核。辅助任务在独立进程中运行，结束后进程退出并释放 affinity，主流水线不得永久少核。
