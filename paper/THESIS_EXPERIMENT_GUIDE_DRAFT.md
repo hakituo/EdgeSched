@@ -1,6 +1,6 @@
 # EdgeSched 论文与实验指南（弹性驻留重构版）
 
-> **版本**：v4.7
+> **版本**：v4.8
 > **最后更新**：2026-08-29
 > **状态**：研究设计与实验路线草案。本文档描述目标、口径和验收条件，不代表所有机制已经实现或已有真实实验支持。
 
@@ -793,6 +793,8 @@ H_D=\max k:\ M_L(k)+M_D(b=1)+G_{safe}\le V_{GPU}.
 
 已有 Forge batch=1 的约 5904 MiB 峰值只能用于预估。计算正式 \(H_D\) 前必须在同一代码、驱动、采样器和空闲基线下复测 Forge，不能把历史整卡峰值与新的进程显存口径直接相加。
 
+**C2 完成记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v3` 基于干净 commit `63e75ba` 完成 `6 配置 × 3 上下文 × 5 轮 = 90/90` 条真实驻留曲线，0 failure、0 fallback，有效性门与 30 ms 性能目标全部通过。K32 与 FULL 的整卡增量仅差约 140 MiB，但 decode 从 36.2 升至 55.5 tok/s（约 +53%）；decode 吞吐在 K24→K32 之间存在非线性跳变（10.5 → 36.2 tok/s），K0→K24 段平缓。完整数据表与关键观察见 `docs/ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md` 的 C2 完成记录。Forge b=1 同日复测、`G_safe` 校准、临界补测与真实共置验证尚未执行，\(H_{TTS}\)/\(H_D\) 尚未冻结。
+
 ### P2：静态共存可行性
 
 不修改在线规划器，先人工固定并测试 S0 与 S1 的候选配置。
@@ -1194,6 +1196,14 @@ manifest 至少记录：
   -包含 45 条原始迭代、manifest、汇总、拟合和图表；
   -45/45 条成功且顺序正确，但 45/45 条 RTF 都大于 1；
   -只证明当前后端的探索性句长画像，尚未证明 LLM→TTS 重叠或真实音频播放无 underrun。
+- `experiment_results/elastic_residency/c2/c2_llm_residency_curve_20260829_verified_v3/`
+  - 真实 llama.cpp/Qwen3.5-9B 完整驻留曲线，`6 配置 × 3 上下文 × 5 轮 = 90/90` 条全部通过，0 failure、0 fallback，干净 commit；
+  - K32 与 FULL 整卡增量仅差约 140 MiB 但 decode 相差约 53%，层级驻留收益非线性（K24→K32 跳变）；
+  - 尚未完成 Forge 同日复测、`G_safe` 校准、临界补测与真实共置验证，`H_TTS`/`H_D` 尚未冻结，不作为论文性能结论。
+- `experiment_results/elastic_residency/c3_analysis/c3_h_screen_20260829_legacy_forge.json`
+  - 基于 C2 v3 + B2 v1 + 旧 Forge 峰值的 `G_safe`/`H_TTS`/`H_D` 容量筛选（`analyze_results.py` 产物）；
+  - `G_safe=501.3 MiB`（allocator slack 主导，colocated 残差 pending）；`H_TTS(T0)=16`、`H_TTS(T3)=32 且 FULL 可行`、`H_D=0`（三上下文一致）；
+  - Forge 使用 2026-08-28 旧峰值 legacy 估算，仅用于排程，不得用于冻结或论文结论。
 - `experiment_results/phase_aware/exp2_*`、`exp3_*`
   -使用 Mock/sleep；
   -只能验证流程和统计字段。
@@ -1391,7 +1401,8 @@ No-Go：
 - [x] B1：`b1_tts_components_20260829_verified_v2` 已在真实 Qwen3-TTS/CUDA 后端完成 T0–T3 组件发现与单文本 smoke，4/4 配置通过；该冷态单轮数据不用于性能结论
 - [x] B2：`b2_tts_matrix_20260829_verified_v1` 已完成 60/60 条；T0/T3 为条件式 Pareto，T1/T2 被支配，且 60 条 RTF 全部大于 1
 - [x] C1：`c1_llm_residency_512_20260829_verified_v1` 已完成 K0/FULL 的 512-token 真实端点 smoke，两端均通过 19/19 项门禁；它是单轮基础设施证据，不作为正式性能曲线
-- [ ] **当前 C2**：LLM `k={0,8,16,24,32,FULL}` × 3 个上下文 × 5 轮正式驻留曲线、Forge b=1 同日复测与临界补测
+- [x] C2：`c2_llm_residency_curve_20260829_verified_v3` 已完成 90/90 条完整驻留曲线（`k={0,8,16,24,32,FULL}` × 3 上下文 × 5 轮，0 failure、0 fallback）；v1/v2 为停止/调试记录
+- [ ] **当前 C3**：Forge b=1 同日复测（`forge_b1_reprofile.py` 已就绪）、`G_safe`/`H_TTS/H_D` 冻结（`analyze_results.py` 已就绪，legacy 初筛见 `experiment_results/elastic_residency/c3_analysis/`）、临界补测 `k±2`/`k±4` 与 B2 Pareto TTS 配置的真实共置验证
 - [ ] JSON RAG/BGE/Faster-Whisper 核心预算；音频路由就绪后补真实播放探针
 - [ ] `R_sys={0,1,2,4}` 正式辅助任务验证
 - [ ] S0 无图像真实重叠静态放置实验
@@ -1399,7 +1410,7 @@ No-Go：
 - [ ] Go 后才实现 `PlacementPlan` 与新代价模型，再开展 S1 和正式策略评测
 - [ ] 同步论文、图表和必要的 C++ 契约
 
-B1/B2 已确认 T0/T3 是条件式 Pareto，但 T3 能否释放足够显存增加有效 LLM 层仍由 C2 裁决；在完整驻留曲线和真实共置验证前，不据此修改在线规划器或论文性能结论。
+B1/B2 已确认 T0/T3 是条件式 Pareto；C2 曲线显示 K32 与 FULL 仅差约 140 MiB 但 decode 相差约 53%，且 K24→K32 存在非线性跳变。T3 能否释放足够显存增加有效 LLM 层仍由同日复测后的 `H_TTS/H_D` 冻结与真实共置验证裁决；在此之前不据此修改在线规划器或论文性能结论。
 
 - --
 

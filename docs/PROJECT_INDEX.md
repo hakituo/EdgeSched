@@ -12,7 +12,7 @@
 | 准入/背压 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/admission_controller.py`, `presentation/websocket/handler.py` | `experiments/admission/`, `tests/test_chat_service.py` |
 | 显存迁移 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/resource_manager.py`, `services/cpp_scheduler_engine.py`（门面）+ `cpp_engine_migration.py` / `cpp_engine_llm.py` / `cpp_engine_image.py` / `cpp_engine_utils.py` | `experiments/migration/` |
 | 独立 TTS | [TTS_SUBSYSTEM.md](TTS_SUBSYSTEM.md)、[GPU 句长画像](TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md) | `services/tts/`, `data/adapters/qwen3_tts_adapter.py` | `tests/tts/`, `experiments/tts/` |
-| 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md)、[B2 TTS 矩阵](TTS_COMPONENT_OFFLOAD_MATRIX_20260829.md)、[C1 LLM smoke](LLM_RESIDENCY_C1_20260829.md) | `experiments/elastic_residency/`；A1/B1/B2/C1 已通过，当前进入 C2 完整 LLM 驻留曲线 | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，不得自动晋升正文 |
+| 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md)、[B2 TTS 矩阵](TTS_COMPONENT_OFFLOAD_MATRIX_20260829.md)、[C1 LLM smoke](LLM_RESIDENCY_C1_20260829.md) | `experiments/elastic_residency/`；A1/B1/B2/C1/C2 已通过，当前 C 阶段收尾（Forge b=1 同日复测、G_safe/H_TTS/H_D 冻结与临界补测） | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，不得自动晋升正文 |
 | Phase-Aware | `.trae/skills/xiaoyou-mvp-core/SKILL.md` | `services/phase_aware/`, `cpp_scheduler/core/phase_strategy.*` | `tests/test_phase_aware_quick.py`, `experiments/phase_aware/` |
 | 崩溃恢复 | `docs/PROJECT_CONTEXT.md` | `services/state_backplane.py`, `services/task_scheduler.py` | `experiments/recovery/`, `experiments/semantic_validation/` |
 | C++ 调度器 | [cpp_scheduler/README.md](../cpp_scheduler/README.md) | `cpp_scheduler/core/`, `workers/`, `queue/`, `bindings/` | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` |
@@ -35,6 +35,8 @@
 | `experiments/elastic_residency/tts_component_offload.py` | B1 TTS T0–T3 单文本 smoke | 独立子进程、实际组件设备、code 传输、非静音 WAV 与分阶段 CUDA 峰值；v2 已通过 |
 | `experiments/elastic_residency/tts_component_offload_matrix.py` | B2 TTS 正式矩阵 | 20/50/100 字 × 5 轮、逐配置预热、原始 WAV/哈希、分组统计与 Pareto；v1 已通过 |
 | `experiments/elastic_residency/llm_residency_curve.py` | C1/C2 LLM 驻留 profiler | 真实层数、精确 prompt/decode、阶段资源和 KV；C2 支持多上下文轮转、严格续跑、checkpoint 与 fail-fast |
+| `experiments/elastic_residency/forge_b1_reprofile.py` | Forge b=1 同日复测（C 阶段收尾） | 依赖已启动的 Forge HTTP API；产出空闲高水位、常驻基线、逐轮峰值与 `m_d_incremental_estimate_mb`，供 H_D 冻结 |
+| `experiments/elastic_residency/analyze_results.py` | C 阶段 G_safe/H_TTS/H_D 筛选分析 | 纯标准库；读 C2/B2/Forge summary，输出 G_safe 分量、逐上下文 H 与 k±2/k±4 临界补测建议；只做容量筛选不做共置结论 |
 | `paper/compile_en.bat` | Windows 英文论文编译 | LaTeX 产物属于生成文件 |
 | `cpp_scheduler/build_wsl2.sh` | WSL2 原生扩展构建 | 使用 `mvp_core-cu128` 环境 |
 

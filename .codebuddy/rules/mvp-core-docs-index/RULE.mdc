@@ -1,0 +1,32 @@
+---
+description: MVP Core 文档索引与任务路由：开始任务前按任务类型应读的文档清单
+alwaysApply: false
+enabled: true
+updatedAt: 2026-08-29T10:00:00.000Z
+provider:
+---
+
+# MVP Core 文档索引与任务路由
+
+涉及本项目的结构定位、架构口径、实验设计或模块职责时，先按以下清单读取对应文档。
+
+## 开始任务前
+
+1. 先读 `docs/PROJECT_INDEX.md`，按任务类型定位文件。
+2. 涉及架构、实验口径或运行环境时，再读 `docs/PROJECT_CONTEXT.md`。
+3. 修改本模块前必须读 `.trae/skills/xiaoyou-mvp-core/SKILL.md`。
+4. 论文数据任务同时读 `paper/experiment_data/README.md`；C++ 任务同时读 `cpp_scheduler/README.md`。
+
+## 实验与子系统文档
+
+- 弹性驻留实验执行计划：`docs/ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md`
+- LLM 驻留 C1：`docs/LLM_RESIDENCY_C1_20260829.md`
+- TTS 卸载矩阵：`docs/TTS_COMPONENT_OFFLOAD_MATRIX_20260829.md`
+- TTS 句长画像：`docs/TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md`
+- TTS 子系统：`docs/TTS_SUBSYSTEM.md`
+
+## 历史设计材料（非实现真源，仅背景参考）
+
+- `docs/CPP_SCHEDULER_EVALUATION_REPORT.md`
+- `docs/DIFFERENCE_ASSESSMENT_REPORT.md`
+- `docs/NVRAM_ARCHITECTURE_DESIGN.md`

@@ -235,6 +235,46 @@ H_D   = max k: M_L(k) + M_D + G_safe <= V_GPU
 
 **C2 v2 停止记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v2` 完成 512-token 全部 30 条后，在第 31/90 条（2048-token、K0、首轮）因 GPU 数据最大年龄 856.023 ms 超过 750 ms 有效性门而停止。探针始终可用，根因是旧 GPU sampler 在一次 `nvidia-smi` 探针耗时 624.415 ms 后又固定等待 250 ms，使实际采样间隔叠加到 874.730 ms。修复将 GPU sampler 改为固定 deadline：慢探针只跳过已经错过的 tick，不再在完成后额外等待整个周期；750 ms 门槛不放宽。v2 只作为停止/调试记录，不续跑、不作为完整 C2 曲线。
 
+**C2 完成记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v3` 基于干净 commit `63e75baecd8895fc7fa1c6fc74cb351cb9c1db02` 完成 `6 配置 × 3 上下文 × 5 轮 = 90/90` 条真实 llama.cpp/Qwen3.5-9B 迭代，`failures.jsonl` 为空，0 fallback；每条记录的 17 项有效性门全部通过，`performance_target_passed` 为 90/90（30 ms jitter 目标在 observe 模式下全部满足）。所有 `gpu_delta_mb` 为相对空闲整卡的增量估计（WSL 驱动对 compute process 显存返回 N/A）。
+
+整卡增量估计（MiB）：
+
+| k | 512 | 2048 | 4096 |
+|---|---:|---:|---:|
+| K0 | 127 | 127 | 127 |
+| K8 | 2365 | 2417 | 2431 |
+| K16 | 3373 | 3425 | 3455 |
+| K24 | 4383 | 4439 | 4485 |
+| K32 | 5407 | 5455 | 5519 |
+| FULL | 5543 | 5593 | 5659 |
+
+性能总览（`by_config` 跨上下文 mean；TTFT 按 512/2048/4096 分列）：
+
+| k | decode tok/s | prefill tok/s | token gap p95 (ms) | TTFT 512/2048/4096 (s) | RSS (MiB) |
+|---|---:|---:|---:|---|---:|
+| K0 | 3.54 | 47.1 | 335 | 14.0 / 42.4 / 74.8 | 6439 |
+| K8 | 4.49 | 561.0 | 263 | 2.2 / 3.5 / 6.4 | 4345 |
+| K16 | 6.30 | 783.3 | 188 | 0.8 / 2.6 / 4.8 | 3328 |
+| K24 | 10.52 | 1180.7 | 114 | 0.5 / 1.8 / 3.3 | 2324 |
+| K32 | 36.24 | 2322.1 | 32 | 0.3 / 0.9 / 1.8 | 1334 |
+| FULL | 55.52 | 2690.8 | 20 | 0.25 / 0.81 / 1.58 | 1182 |
+
+关键观察：
+
+1. `K32` 与 `FULL` 的整卡增量只差约 140 MiB，但 decode 从 36.2 升至 55.5 tok/s（约 +53%）；非 block 张量（embedding/output 等）留在 CPU 是 k=32 的主要瓶颈，证实了"FULL 必须与 k=32 分开测"的预设。
+2. decode 吞吐在 K24→K32 之间出现跳变（10.5 → 36.2 tok/s），而 K0→K24 段平缓（3.5 → 10.5）；驻留层数的边际收益在 8151 MiB 卡上高度非线性，中间档位（K8–K24）的交互价值有限。
+3. KV save/restore mean 约 0.66/0.99 s，各配置基本一致；配置切换成本主体在实例创建与状态恢复。
+4. K0 的 TTFT 随上下文从 14 s 增至 74.8 s，全 CPU 降级在 2048+ 上下文不可交互。
+
+C 阶段收尾前仍必须完成：Forge b=1 同日复测、按 3.3 节校准 `G_safe`、临界补测 `k±2`/`k±4`，以及与 B2 Pareto TTS 峰值的真实共置验证。基于旧 Forge 峰值 5904 MiB 与 B2 数字的初步筛选（只用于排程，不是结论）：T0（3284 MiB）下候选约 K24，T3（1980 MiB）下 K32/FULL 可能可行，`H_D` 落在 K0–K8 之间；这些筛选值在 Forge 复测与 `G_safe` 校准后必须全部重算。
+
+**C 阶段收尾工具（2026-08-29）**：新增 `experiments/elastic_residency/forge_b1_reprofile.py` 与 `experiments/elastic_residency/analyze_results.py`，配套 13 项纯逻辑测试（`tests/elastic_residency/test_forge_b1_reprofile.py`、`test_analyze_results.py`，Windows 侧 pytest 与 Ruff 均通过）。
+
+- `forge_b1_reprofile.py`：Forge b=1 同日复测。通过 Forge HTTP API（服务需先在 `forge-cu128` 启动）执行 warmup + 5 轮 b=1 txt2img（口径与 `batch_scaling_experiment.py` 一致），产出 `global_idle_high_water_mb`、`forge_resident_baseline_mb`（冷却窗口口径）、逐轮峰值与 `m_d_incremental_estimate_mb = peak_max - idle_high_water`，写入统一证据契约产物目录。
+- `analyze_results.py`：按 3.3 节公式计算 `G_safe`（idle 高水位、`reserved-allocated` allocator slack、重复运行漂移、colocated 正残差四个分量，后者在真实共置验证前保持 pending）与逐上下文 `H_TTS`/`H_D`（mean 基准推荐 + max 基准保守双口径），并生成 `k±2`/`k±4` 临界补测建议。
+
+**C3 初步筛选（2026-08-29，legacy Forge 口径）**：`experiment_results/elastic_residency/c3_analysis/c3_h_screen_20260829_legacy_forge.json` 使用 C2 v3 + B2 v1 + 旧 Forge 峰值 5904 MiB（idle 314 MiB）计算：`G_safe = 501.3 MiB`（由 B2 T0 的 allocator slack 主导，colocated 残差 pending）；三个上下文结论一致：`H_TTS(T0) = 16`（K24 差约 17 MiB 不可行）、`H_TTS(T3) = 32` 且 FULL 可行、`H_D = 0`（K0–K8 临界）。该筛选值不得用于冻结，Forge 复测后必须重算；T0 下 K24 的临界贴边也说明补测 `k={20,22}` 有实际价值。
+
 ### 阶段 D：辅助任务动态核心预算
 
 初始固定 `R_sys=2` 个物理核。辅助任务在独立进程中运行，结束后进程退出并释放 affinity，主流水线不得永久少核。
@@ -315,7 +355,13 @@ experiment_results/elastic_residency/<run_id>/
 - [x] **B1**：T0–T3 真实单文本 smoke 通过。证据：`b1_tts_components_20260829_verified_v2`。
 - [x] **B2**：完成 `4 配置 × 3 句长 × 5 轮`；Pareto 候选为 T0/T3，证据为 `b2_tts_matrix_20260829_verified_v1`。
 - [x] **C1**：K0/FULL 的 512-token 真实端点 smoke 已通过。证据：`c1_llm_residency_512_20260829_verified_v1`。
-- [ ] **当前 C2**：运行完整粗测、同日复测 Forge、计算 `H_TTS/H_D`，再运行临界补测。
+- [x] **C2**：完整驻留曲线已通过。证据：`c2_llm_residency_curve_20260829_verified_v3`（90/90 条、0 failure、0 fallback）；v1/v2 为停止/调试记录。
+- [x] **C3 工具**：Forge b=1 复测脚本、`G_safe`/`H_TTS`/`H_D` 筛选分析与临界补测建议已实现并通过静态测试；legacy 口径初步筛选见 `experiment_results/elastic_residency/c3_analysis/c3_h_screen_20260829_legacy_forge.json`。
+- [ ] **当前 C3 运行**：
+  1. WSL2 启动 Forge 后运行 `experiments/elastic_residency/forge_b1_reprofile.py`（新 run id + 干净 commit）；
+  2. 用 `analyze_results.py --forge-summary <复测产物>` 重算并冻结 `H_TTS/H_D`；
+  3. 按补测建议（初步为 `k={2,4,12,14,18,20,22,26,28}`，复测后以脚本输出为准）用 `llm_residency_curve.py` 跑临界补测（新 run id，3 上下文 × 5 轮）；
+  4. 与 B2 Pareto TTS 配置（T0/T3）做真实共置验证。
 - [ ] **D1**：实现 JSON RAG 和 BGE 核心曲线；冻结辅助 SLA。
 - [ ] **D2**：接入已验证的 Faster-Whisper，并在音频路由就绪后接入真实 underrun 探针。
 - [ ] **D3**：运行 `R_sys={0,1,2,4}` 正式验证。

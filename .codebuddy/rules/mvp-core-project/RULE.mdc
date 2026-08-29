@@ -1,0 +1,54 @@
+---
+description: EdgeSched/MVP Core 核心强制规则：项目定位、环境分工（Windows/WSL2）、实验证据口径、修改与验证要求
+alwaysApply: true
+enabled: true
+updatedAt: 2026-08-29T10:00:00.000Z
+provider:
+---
+
+# EdgeSched / MVP Core 核心规则（CodeBuddy 入口）
+
+本规则与仓库根目录 `AGENTS.md`（Codex 局部入口）同源；冲突时以 `AGENTS.md` 为准。父仓库 `d:\AI\xiaoyou-core\AGENTS.md` 的安全、中文注释和虚拟环境规则在本目录仍然有效。
+
+## 项目边界
+
+- 本目录是 Xiaoyou Core 的实验/论文原型，论文对外名为 **EdgeSched**，不是主应用后端。
+- Python 控制面位于 `services/`；原生执行面位于 `cpp_scheduler/`；实验入口位于 `experiments/`；论文证据位于 `paper/experiment_data/`。
+- `main.py` 只是 FastAPI/WebSocket 演示入口，不代表论文全部实验的统一入口。
+- `config.py` 优先适配父仓库 `config/integrated_config.py`，独立运行时才使用环境变量回退配置。
+- 本目录是独立 git 仓库（remote: `origin` = `https://github.com/hakituo/EdgeSched`），与父仓库 `d:\AI\xiaoyou-core` 的版本管理分开；`.git` 不同步到 WSL2，git 提交/推送只在 Windows 侧进行。
+- 禁止调用父仓库 `scripts/doc_records/update_project_records.py` 修改父目录的 `UPDATES.md` 或 `Question_Reviewer/`；更新记录只维护在本目录的 `docs/`、README 和实验 manifest。
+
+## 环境与运行
+
+- 真实模型、CUDA、C++ 编译和论文实验优先在 WSL2 `/home/leslie/mvp_core` 运行，使用 `/home/leslie/.venvs/mvp_core-cu128`。
+- Forge 使用独立环境 `/home/leslie/.venvs/forge-cu128`，服务目录为 `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/`。
+- Windows 侧只做编辑、静态验证和结果收集；可用父仓库 `venv_core` 运行不依赖 GPU 的验证。
+- Windows 到 WSL2 只使用 `scripts/sync_to_wsl2_safe.ps1` 的增量同步语义，禁止 `--delete`、镜像覆盖或清理 WSL2 模型目录。
+- 该脚本同步后会自动 `git add -A && commit && push origin main`（无变化则跳过），因此运行该脚本即同时备份到 GitHub 私人仓库。
+- 不使用全局 Python，不修改任何虚拟环境；确需修改依赖时先与用户讨论。
+- 统一使用中文注释，优先编写 Windows 与 Linux 均可运行的代码。
+
+## 实验与证据规则
+
+- 明确区分 Mock、仿真、真实模型、真实 Forge 和论文正文证据；Mock 通过只证明链路和统计口径，不证明生产性能。
+- `experiment_results/` 是运行产物；`paper/experiment_data/01_paper_main/` 才是当前论文正文数据源。
+- 更新正文数据前必须保留原始迭代、环境、参数、随机种子和 manifest；不得用单次运行、历史归档或 `paper/previous/` 覆盖正文证据。
+- 论文中的性能数字必须能反向定位到 JSON、生成脚本和运行环境；没有真实重跑证据时只能写"设计目标""模拟结果"或"待验证"。
+- `docs/CPP_SCHEDULER_EVALUATION_REPORT.md`、`docs/DIFFERENCE_ASSESSMENT_REPORT.md`、`docs/NVRAM_ARCHITECTURE_DESIGN.md` 是历史设计材料，不是当前实现真源。
+
+## 修改与验证
+
+- 调度主路径：`services/task_scheduler.py`、`services/admission_controller.py`、`services/resource_manager.py`、`services/state_backplane.py`。
+- C++ 桥接：`services/cpp_scheduler_engine.py`、`services/cpp_scheduler_wrapper.py`、`cpp_scheduler/bindings/python_bindings.cpp`。
+- Phase-Aware：`services/phase_aware/` 与 `cpp_scheduler/core/phase_strategy.*`，Python/C++ 契约变更必须双向检查。
+- 每次优化补充或更新 `tests/` 下的验证；默认先跑静态/Mock 测试，真实 GPU/Forge 测试在 WSL2 单独执行。
+- 修改目录、入口、环境、数据口径或模块职责时，同步更新 `docs/PROJECT_INDEX.md`、`docs/PROJECT_CONTEXT.md` 和相关 README。
+- 不把 `cpp_scheduler/build/`、模型、运行日志、临时输出或本地 mmap 数据当作源码。
+
+## 通用工程规则（继承父仓库）
+
+- 不重复造轮子；确需新造轮子时先与用户讨论原因和用途。
+- 敏感内容只能放在已被 `.gitignore` 排除的位置；新增此类文件时同步更新 `.gitignore`。
+- 发现明显低质量代码时，在不扩大任务风险的前提下及时修正并验证。
+- git 提交/推送遵循用户明确指令，不主动提交。
