@@ -376,6 +376,8 @@ experiment_results/elastic_residency/<run_id>/
   1. 按 `k={2,4,6,10,12,14,18,20,28,30}` 用 `llm_residency_curve.py` 跑临界补测（新 run id、3 上下文 × 5 轮、`--jitter-gate-mode observe`）；
   2. 与 B2 Pareto TTS 配置（T0/T3）做真实共置验证，校准 colocated 残差分量后重算 `G_safe`；
   3. 冻结 `H_TTS`/`H_D`（按 context 分组），进入 D 阶段。
+
+**C3 临界补测 v2 停止记录（2026-08-29）**：`c3_llm_critical_refinement_20260829_verified_v2` 完成 94/150 条后，在 C2048/K20/r5 因推理期 GPU 样本最大年龄 772.875 ms 超过 750 ms 有效性硬门而停止；其余有效性检查及该轮 jitter 性能目标均通过。94 条中所有记录的最大样本年龄均超过 500 ms，10 条超过 700 ms，第 91 条已达 749.570 ms。根因是周期 sampler 每次先查询整卡指标、再查询 WSL 驱动无法数值化返回的 compute-process 显存，后者不贡献正式曲线证据却显著拉长探针周期。修复仅在 LLM 周期 sampler 中关闭无效的进程显存查询；阶段性显存快照与整卡基线差值估算保持不变，750 ms 门槛不放宽。v2 保留为停止记录，不续跑、不用于完整曲线。
 - [ ] **D1**：实现 JSON RAG 和 BGE 核心曲线；冻结辅助 SLA。
 - [ ] **D2**：接入已验证的 Faster-Whisper，并在音频路由就绪后接入真实 underrun 探针。
 - [ ] **D3**：运行 `R_sys={0,1,2,4}` 正式验证。

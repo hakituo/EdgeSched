@@ -5,6 +5,7 @@ import pytest
 from experiments.elastic_residency.llm_residency_curve import (
     _build_exact_prompt_tokens,
     _evidence_scope,
+    _failed_acceptance_checks,
     _jitter_acceptance_checks,
     _phase_resource_metrics,
     _record_key,
@@ -94,6 +95,12 @@ def test_record_key_is_context_config_and_run() -> None:
     )
 
 
+def test_failed_acceptance_checks_reports_only_failed_names() -> None:
+    assert _failed_acceptance_checks(
+        {"acceptance_checks": {"gpu_fresh": False, "swap_unused": True}}
+    ) == ("gpu_fresh",)
+
+
 def test_resume_contract_rejects_config_or_manifest_drift() -> None:
     _validate_resume_contract(
         existing_config={"runs": 5},
@@ -136,6 +143,15 @@ def test_only_frozen_full_matrix_gets_c2_scope() -> None:
         _evidence_scope((512, 2048, 4096), configs, 5, 128, "hard")
         == "c1_smoke"
     )
+
+
+def test_only_frozen_critical_matrix_gets_c3_scope() -> None:
+    configs = ("K2", "K4", "K6", "K10", "K12", "K14", "K18", "K20", "K28", "K30")
+    assert (
+        _evidence_scope((512, 2048, 4096), configs, 5, 128, "observe")
+        == "c3_critical_refinement"
+    )
+    assert _evidence_scope((512,), configs, 5, 128, "observe") == "c1_smoke"
 
 
 def test_c2_observes_jitter_target_without_invalidating_measurement() -> None:

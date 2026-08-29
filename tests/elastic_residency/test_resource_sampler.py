@@ -52,6 +52,25 @@ def test_resource_sampler_writes_resource_and_jitter_timeline(tmp_path) -> None:
     assert writer.layout.timeline.read_text().count("\n") == len(sampler.samples)
 
 
+def test_nvidia_probe_can_skip_unavailable_process_memory_query() -> None:
+    commands: list[list[str]] = []
+
+    def _recording_runner(command: list[str]) -> str:
+        commands.append(command)
+        return _fake_nvidia(command)
+
+    result = NvidiaSmiProbe(
+        _recording_runner,
+        include_process_memory=False,
+    ).sample(os.getpid())
+
+    assert result["available"] is True
+    assert result["process_used_mb"] == 0.0
+    assert result["process_memory_queried"] is False
+    assert len(commands) == 1
+    assert any("query-gpu" in part for part in commands[0])
+
+
 def test_event_loop_jitter_probe_collects_deadline_error() -> None:
     summary = asyncio.run(EventLoopJitterProbe(0.005).run_for(0.04))
     assert summary["sample_count"] >= 3

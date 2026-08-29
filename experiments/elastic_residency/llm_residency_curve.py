@@ -41,6 +41,7 @@ from experiments.elastic_residency.cpu_topology import (  # noqa: E402
     process_affinity_scope,
 )
 from experiments.elastic_residency.resource_sampler import (  # noqa: E402
+    NvidiaSmiProbe,
     ResourceSampler,
 )
 from experiments.elastic_residency.tts_component_offload import (  # noqa: E402
@@ -268,6 +269,10 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
             sampler = ResourceSampler(
                 interval_s=args.sample_interval,
                 gpu_interval_s=args.gpu_sample_interval,
+                # WSL 驱动不提供数值化的 compute-process 显存；正式曲线的
+                # 显存证据来自阶段快照的整卡基线差值。周期内重复查询该接口
+                # 只会拉长探针间隔，可能把有效样本误判为过期。
+                gpu_probe=NvidiaSmiProbe(include_process_memory=False),
                 thread_affinity=system_lease.affinity,
             )
             gpu_ready = sampler.start(wait_for_gpu_timeout_s=args.gpu_warmup_timeout)
@@ -603,6 +608,11 @@ def _record_key(record: dict[str, Any]) -> tuple[int, str, int]:
     )
 
 
+def _failed_acceptance_checks(record: dict[str, Any]) -> tuple[str, ...]:
+    checks = record.get("acceptance_checks", {})
+    return tuple(name for name, passed in checks.items() if not passed)
+
+
 def _validate_resume_contract(
     *,
     existing_config: dict[str, Any],
@@ -624,15 +634,36 @@ def _evidence_scope(
     jitter_gate_mode: str,
 ) -> str:
     formal_configs = {"K0", "K8", "K16", "K24", "K32", "FULL"}
-    if (
+    critical_configs = {
+        "K2",
+        "K4",
+        "K6",
+        "K10",
+        "K12",
+        "K14",
+        "K18",
+        "K20",
+        "K28",
+        "K30",
+    }
+    formal_matrix = (
         contexts == (512, 2048, 4096)
-        and set(configs) == formal_configs
-        and len(configs) == len(formal_configs)
         and runs >= 5
         and generation_tokens == 128
         and jitter_gate_mode == "observe"
+    )
+    if (
+        formal_matrix
+        and set(configs) == formal_configs
+        and len(configs) == len(formal_configs)
     ):
         return "c2_curve"
+    if (
+        formal_matrix
+        and set(configs) == critical_configs
+        and len(configs) == len(critical_configs)
+    ):
+        return "c3_critical_refinement"
     return "c1_smoke"
 
 
@@ -692,6 +723,7 @@ def run_parent(args: argparse.Namespace) -> Path:
             "matrix_order": "context_then_round_with_rotating_configs",
             "inter_run_cooldown_s": args.inter_run_cooldown,
             "jitter_gate_mode": args.jitter_gate_mode,
+            "periodic_gpu_process_memory_query": False,
             "fixed_generation_ignores_eos": True,
             "acceptance_thresholds": {
                 "max_inference_gpu_sample_age_ms": args.max_gpu_sample_age_ms,
@@ -885,8 +917,13 @@ def run_parent(args: argparse.Namespace) -> Path:
         writer.append_iteration(record)
         records.append(record)
         completed_keys.add(key)
+        failed_checks = _failed_acceptance_checks(record)
+        failure_suffix = (
+            f" failed_checks={','.join(failed_checks)}" if failed_checks else ""
+        )
         print(
-            f"[{ordinal}/{expected_records}] complete passed={record['passed']}",
+            f"[{ordinal}/{expected_records}] complete "
+            f"passed={record['passed']}{failure_suffix}",
             flush=True,
         )
         if not record["passed"] and not args.continue_on_failure:

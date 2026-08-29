@@ -54,8 +54,11 @@ class NvidiaSmiProbe:
     def __init__(
         self,
         command_runner: Callable[[list[str]], str] | None = None,
+        *,
+        include_process_memory: bool = True,
     ) -> None:
         self._run = command_runner or self._run_command
+        self.include_process_memory = include_process_memory
 
     @staticmethod
     def _run_command(command: list[str]) -> str:
@@ -90,23 +93,24 @@ class NvidiaSmiProbe:
                 return {"available": False}
         except ValueError:
             return {"available": False}
-        process_output = self._run(
-            [
-                "nvidia-smi",
-                "--query-compute-apps=pid,used_memory",
-                "--format=csv,noheader,nounits",
-            ]
-        )
         process_used_mb = 0.0
-        for line in process_output.splitlines():
-            parts = [part.strip() for part in line.split(",")]
-            if len(parts) != 2:
-                continue
-            try:
-                if int(parts[0]) == pid:
-                    process_used_mb += float(parts[1])
-            except ValueError:
-                continue
+        if self.include_process_memory:
+            process_output = self._run(
+                [
+                    "nvidia-smi",
+                    "--query-compute-apps=pid,used_memory",
+                    "--format=csv,noheader,nounits",
+                ]
+            )
+            for line in process_output.splitlines():
+                parts = [part.strip() for part in line.split(",")]
+                if len(parts) != 2:
+                    continue
+                try:
+                    if int(parts[0]) == pid:
+                        process_used_mb += float(parts[1])
+                except ValueError:
+                    continue
         return {
             "available": True,
             "card_used_mb": card_parts[0],
@@ -115,6 +119,7 @@ class NvidiaSmiProbe:
             "power_w": card_parts[3],
             "temperature_c": card_parts[4],
             "process_used_mb": process_used_mb,
+            "process_memory_queried": self.include_process_memory,
         }
 
 
