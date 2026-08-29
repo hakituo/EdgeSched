@@ -235,6 +235,8 @@ H_D   = max k: M_L(k) + M_D + G_safe <= V_GPU
 
 **C2 v2 停止记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v2` 完成 512-token 全部 30 条后，在第 31/90 条（2048-token、K0、首轮）因 GPU 数据最大年龄 856.023 ms 超过 750 ms 有效性门而停止。探针始终可用，根因是旧 GPU sampler 在一次 `nvidia-smi` 探针耗时 624.415 ms 后又固定等待 250 ms，使实际采样间隔叠加到 874.730 ms。修复将 GPU sampler 改为固定 deadline：慢探针只跳过已经错过的 tick，不再在完成后额外等待整个周期；750 ms 门槛不放宽。v2 只作为停止/调试记录，不续跑、不作为完整 C2 曲线。
 
+**C2 direct NVML v1 停止记录（2026-08-29）**：`c2_llm_residency_curve_20260829_direct_nvml_v1` 在第 64/90 条（4096-token、K24、首轮）遇到一次 512.231 ms 的 direct NVML 长尾；旧固定网格推进又等待到下一个 250 ms tick，把有效样本间隔放大到 756.209 ms，推理阶段最大样本年龄 751.457 ms，因而按 750 ms 硬门正确停止。主资源线程同阶段最大 jitter 仅 0.775 ms，排除 CPU sampler 饥饿；运行时后端为 `direct_nvml` 且 `gpu_cli_subprocess_used=false`。修复改为越过下一 tick 后立即补采，并把显存查询放到辅助 NVML 查询之后以保证时间戳贴近显存读数。该 64 条运行冻结为停止/调试证据，不得续跑或与修复后曲线合并。
+
 **C2 完成记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v3` 基于干净 commit `63e75baecd8895fc7fa1c6fc74cb351cb9c1db02` 完成 `6 配置 × 3 上下文 × 5 轮 = 90/90` 条真实 llama.cpp/Qwen3.5-9B 迭代，`failures.jsonl` 为空，0 fallback；每条记录的 17 项有效性门全部通过，`performance_target_passed` 为 90/90（30 ms jitter 目标在 observe 模式下全部满足）。所有 `gpu_delta_mb` 为相对空闲整卡的增量估计（WSL 驱动对 compute process 显存返回 N/A）。
 
 整卡增量估计（MiB）：

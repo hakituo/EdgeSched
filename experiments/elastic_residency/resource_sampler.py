@@ -40,12 +40,14 @@ def _advance_periodic_deadline(
     interval_s: float,
     now: float,
 ) -> float:
-    """推进固定周期 deadline；超时只跳过旧 tick，不叠加完整等待。"""
+    """推进 GPU deadline；探针越过下一 tick 时立即补采一次。"""
 
     next_deadline = previous_deadline + interval_s
     if next_deadline < now:
-        missed = int((now - next_deadline) / interval_s) + 1
-        next_deadline += missed * interval_s
+        # 慢查询完成后已经产生了新鲜样本，下一次应立即开始；若继续等待到
+        # 下一个固定网格点，样本间隔会被放大到 ceil(duration / interval)
+        # 个周期，反而制造额外陈旧窗口。
+        next_deadline = now
     return next_deadline
 
 
@@ -168,6 +170,7 @@ class ResourceSampler:
         self._gpu_sample_count = 0
         self._gpu_sample_times: list[float] = []
         self._gpu_probe_durations_ms: list[float] = []
+        self._gpu_deadline_recovery_count = 0
         self._gpu_first_success = threading.Event()
         self._gpu_ready_before_timeline = False
         self._sampler_thread_affinity: tuple[int, ...] = ()
@@ -185,6 +188,7 @@ class ResourceSampler:
         self._gpu_ready_before_timeline = False
         self._gpu_sample_times.clear()
         self._gpu_probe_durations_ms.clear()
+        self._gpu_deadline_recovery_count = 0
         self._error = None
         self._gpu_error = None
         self._gpu_thread = threading.Thread(
@@ -249,6 +253,7 @@ class ResourceSampler:
             "gpu_probe_duration_max_ms": max(
                 self._gpu_probe_durations_ms, default=0.0
             ),
+            "gpu_deadline_recovery_count": self._gpu_deadline_recovery_count,
             "gpu_ready_before_timeline": self._gpu_ready_before_timeline,
             "gpu_available_timeline_sample_count": len(available_gpu_samples),
             "gpu_unavailable_timeline_sample_count": (
@@ -379,6 +384,8 @@ class ResourceSampler:
                     )
                 if bool(sampled.get("available", False)):
                     self._gpu_first_success.set()
+                if next_deadline + self.gpu_interval_s < sampled_at:
+                    self._gpu_deadline_recovery_count += 1
                 next_deadline = _advance_periodic_deadline(
                     next_deadline,
                     self.gpu_interval_s,

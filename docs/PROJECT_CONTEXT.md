@@ -237,6 +237,7 @@ GPU burst arrives
 - B2 `b2_tts_matrix_20260829_verified_v1` 基于干净 commit `ce024a0` 完成 60/60 条真实 TTS 迭代。T0/T3 为条件式 Pareto，T1/T2 被 T3 严格支配；T3 比 T0 少约 1304 MiB 最大整卡增量，但 TTFA p95 增加 26.1%。60 条 RTF 全部大于 1，所以当前后端不具备持续实时播放能力；T3 是否值得保留还要等 LLM 层驻留曲线。该数据没有晋升论文正文。
 - C1 `c1_llm_residency_512_20260829_verified_v1` 基于干净 commit `234d2df`，用真实 32 层 Qwen3.5-9B GGUF 完成 K0/FULL 的 512-token 端点 smoke，两端均通过 19/19 项门禁并正确保存/恢复 640-token KV state。FULL 相对 K0 的 TTFT 为 0.326/10.659 s、decode 为 51.03/2.77 tok/s，GPU 增量估计为 5543/127 MiB，推理后 RSS 为 1.139/6.253 GiB。进程显存仍是整卡基线差值估计，KV 阶段存在单独 jitter 尖峰；本轮单次端点结果没有晋升论文正文，C2 仍须完成全部档位、上下文和重复轮次。
 - 2026-08-29 复核发现旧弹性驻留 GPU 时间线由 `nvidia-smi` CLI 子进程轮询，长矩阵中探针耗时会接近或超过采样周期。正式后端已改为 ctypes direct NVML；旧 C2/B2/Forge 的整卡差值数据保留为工程基线，但在 direct NVML 下统一重跑和校准前不得合并冻结 `H_TTS/H_D` 或晋升论文正文。TTS 的 PyTorch allocator 峰值仍是独立的框架内证据。
+- direct NVML C2 首轮在 4096-token/K24 暴露 512 ms 驱动查询长尾；旧固定网格会在查询完成后额外等待，把样本间隔放大到 756 ms。GPU sampler 现改为越过下一 tick 后立即补采，显存查询放在辅助 NVML 指标之后，并记录 `gpu_deadline_recovery_count`；750 ms 新鲜度硬门保持不变。修复前的 64 条不得续跑或与新曲线合并。
 
 该快照只确认当前依赖和绑定加载链路。模型加载、CUDA offload、真实推理、迁移以及 Forge 仍须用对应验证单独证明。
 

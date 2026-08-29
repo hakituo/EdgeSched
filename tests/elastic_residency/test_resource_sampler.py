@@ -33,9 +33,9 @@ class _FakeDirectNvmlProbe:
         }
 
 
-def test_gpu_deadline_skips_missed_ticks_without_adding_full_interval() -> None:
+def test_gpu_deadline_recovers_immediately_after_probe_overrun() -> None:
     assert _advance_periodic_deadline(0.0, 0.25, 0.20) == 0.25
-    assert _advance_periodic_deadline(0.0, 0.25, 0.624) == 0.75
+    assert _advance_periodic_deadline(0.0, 0.25, 0.624) == 0.624
 
 
 def test_resource_sampler_writes_resource_and_jitter_timeline(tmp_path) -> None:
@@ -61,6 +61,7 @@ def test_resource_sampler_writes_resource_and_jitter_timeline(tmp_path) -> None:
     assert summary["gpu_max_sample_age_ms"] >= 0
     assert summary["gpu_actual_gap_max_ms"] >= 0
     assert summary["gpu_probe_duration_max_ms"] >= 0
+    assert summary["gpu_deadline_recovery_count"] >= 0
     assert summary["cpu_warmup_samples_discarded"] == 1
     assert summary["cpu_valid_sample_count"] == summary["sample_count"] - 1
     assert sampler.samples[0].cpu_sample_valid is False

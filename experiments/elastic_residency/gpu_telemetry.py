@@ -118,11 +118,6 @@ class NvmlBindings:
 
     def device_metrics(self) -> dict[str, float]:
         with self._lock:
-            memory = _NvmlMemory()
-            self._check(
-                self._get_memory(self._handle, ctypes.byref(memory)),
-                "nvmlDeviceGetMemoryInfo",
-            )
             utilization = _NvmlUtilization()
             utilization_rc = self._get_utilization(
                 self._handle,
@@ -135,6 +130,14 @@ class NvmlBindings:
                 self._handle,
                 0,
                 ctypes.byref(temperature),
+            )
+            # 显存是驻留曲线的有效性主量。放在可能出现驱动长尾的辅助
+            # 查询之后，使 ResourceSampler 在函数返回时记录的时间戳紧邻
+            # nvmlDeviceGetMemoryInfo，而不是把旧显存值误标为新样本。
+            memory = _NvmlMemory()
+            self._check(
+                self._get_memory(self._handle, ctypes.byref(memory)),
+                "nvmlDeviceGetMemoryInfo",
             )
         return {
             "card_used_mb": memory.used / BYTES_PER_MIB,
