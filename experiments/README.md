@@ -197,7 +197,13 @@ python -m experiments.elastic_residency.audio_playback_probe \
 
 ### 13. 弹性驻留 SM-A：GPU 计算份额能力探针
 
-对应论文指南 P1-C / SM-A。当前状态：**实现完成，真实能力待验证**（尚未在 WSL2 运行真实 MPS probe）。
+对应论文指南 P1-C / SM-A。当前状态：**真实 WSL2 probe 已完成，结论为 NO_GO**。
+正式记录 `sm_a_20260830_direct_nvml_v1` 基于干净 commit
+`ca7a7ff0832342fc76f261b6b7d8d720b5a116fa`：普通 CUDA 基线成功，识别到
+RTX 5070 Laptop 的 36 个物理 SM，direct NVML 与 Git provenance 均完整，0 failure、
+0 fallback、0 cleanup failure；但 WSL2 中 `nvidia-cuda-mps-control` 不存在，
+四个 percentage 均按 `UNSUPPORTED` 记录。因此停止 SM-B/SM-C，不把普通 CUDA
+共享写成受控 SM 分配，也不自动转向 Green Context 生产实现。
 
 ```bash
 python -m experiments.elastic_residency.sm.sm_capability \

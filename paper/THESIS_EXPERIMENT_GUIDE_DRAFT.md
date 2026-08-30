@@ -972,6 +972,14 @@ H_D=\max k:\ M_L(k)+M_D(b=1)+G_{safe}\le V_{GPU}.
 
 第一版优先使用 MPS 独立进程 profile；只有 MPS 在当前 WSL2 环境不可用或无法验证实际有效 SM 数时，才评估 Green Context。不得同时实现两套生产后端。
 
+**SM-A 正式结果（2026-08-30）**：`sm_a_20260830_direct_nvml_v1` 基于干净 commit
+`ca7a7ff0832342fc76f261b6b7d8d720b5a116fa` 在 WSL2 真实 CUDA 环境完成。
+普通 CUDA 基线成功，RTX 5070 Laptop 报告 36 个物理 SM，direct NVML、Git provenance、
+0 failure、0 fallback 与 0 cleanup failure 均满足；但环境中不存在
+`nvidia-cuda-mps-control`，100/75/50/25% 四个配置均为 `UNSUPPORTED`，最终
+`verdict=NO_GO`。因此当前停止 SM-B/SM-C，不宣称受控 SM 分配，不修改在线规划器；
+Green Context 只保留只读能力探测结果，不自动转为生产后端。
+
 建议新增：
 
 ```text
@@ -1701,9 +1709,9 @@ No-Go：
   2. Forge b=1 的 direct NVML 同后端校准；
   3. 用完整 16 档曲线重新筛选最小共置候选；
   4. 共置 smoke + 每候选 5 轮，加入 colocated 残差后冻结 `G_safe/H_TTS/H_D`
-- [ ] **SM-A：GPU 计算份额能力探针**：验证 WSL2 中 MPS daemon/client、GPU SM 总数、请求比例、实际有效 SM 数、显存限制和安全退出；未通过时不进入受控 SM 实验
-- [ ] **SM-B：TTS T0/T3 隔离 SM 曲线**：先跑 `100/75/50/25%`，再在满足 TTFA/RTF 的临界点附近细化
-- [ ] **SM-C：Diffusion b=1 隔离 SM 曲线**：与 SM-B 使用相同后端和有效 SM 口径
+- [x] **SM-A：GPU 计算份额能力探针**：真实 WSL 记录 `sm_a_20260830_direct_nvml_v1` 已完成；MPS binary 不存在，结论 NO_GO
+- [x] **SM-B：TTS T0/T3 隔离 SM 曲线**：因 SM-A NO_GO 按门禁停止，不运行、不伪造受控 SM 曲线
+- [x] **SM-C：Diffusion b=1 隔离 SM 曲线**：因 SM-A NO_GO 按门禁停止，不运行、不伪造受控 SM 曲线
 - [ ] **SM-D：LLM→TTS 平衡实验**：比较不受控共享、显存共驻留但计算串行、静态 SM 分配，并记录第一句、TTFA、chunk deadline 与真实 underrun
 - [ ] **SM-E：TTS→Diffusion 共运行实验**：先固定 LLM 在 CPU，求 TTS 最小可行 SM 数，将剩余 SM 给 Diffusion；前序形成 Pareto 后才测试三阶段 GPU 共享
 - [ ] JSON RAG/BGE/Faster-Whisper 核心预算；音频路由就绪后补真实播放探针
@@ -1713,7 +1721,7 @@ No-Go：
 - [ ] Go 后才实现 `PlacementPlan` 与新代价模型，再开展 S1 和正式策略评测
 - [ ] 同步论文、图表和必要的 C++ 契约
 
-B1/B2 已确认 T0/T3 是条件式 Pareto；C2+C3 direct NVML 已完成 16 档性能曲线，独立 KV 校准也已完成。当前先完成 T0/T3、Forge 的同后端整卡校准和真实共置残差，冻结 `G_safe/H_TTS/H_D`。SM-A 至 SM-C 可以在独立实验目录中实现和校准，但在驻留阈值与 SM 画像都通过前，不修改在线规划器或论文性能结论。
+B1/B2 已确认 T0/T3 是条件式 Pareto；C2+C3 direct NVML 已完成 16 档性能曲线，独立 KV 校准也已完成。SM-A 已在真实 WSL 中因 MPS binary 不存在判定 NO_GO，SM-B/SM-C 按门禁停止。当前继续完成 T0/T3、Forge 的同后端整卡校准和真实共置残差，冻结 `G_safe/H_TTS/H_D`；不修改在线规划器或宣称受控 SM 分配。
 
 - --
 
