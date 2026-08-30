@@ -1,3 +1,5 @@
+% Background role: establishes the edge-computing motivation and the need to
+% move computation closer to users under latency and resource constraints.
 @article{shi2016edge,
   title={Edge computing: Vision and challenges},
   author={Shi, Weisong and Cao, Jie and Zhang, Quan and Li, Youhuizi and Xu, Lanyu},
@@ -10,6 +12,8 @@
   url={https://ieeexplore.ieee.org/document/7488250}
 }
 
+% Background role: motivates edge intelligence and on-device/near-device AI
+% execution as the application context for EdgeSched.
 @article{zhou2019edge,
   title={Edge intelligence: Paving the last mile of artificial intelligence with edge computing},
   author={Zhou, Zhi and Chen, Xu and Li, En and Zeng, Liekang and Luo, Ke and Zhang, Junshan},
@@ -22,6 +26,8 @@
   url={https://ieeexplore.ieee.org/document/8736011}
 }
 
+% Background role: representative distributed execution framework; contrasts
+% cluster-level task orchestration with EdgeSched's single-device coordination.
 @inproceedings{moritz2018ray,
   title={Ray: A distributed framework for emerging AI applications},
   author={Moritz, Philipp and Nishihara, Robert and Wang, Stephanie and Tumanov, Alexey and Liaw, Richard and Liang, Eric and Elibol, Melih and Yang, Zongheng and Paul, William and Jordan, Michael I and others},
@@ -31,6 +37,8 @@
   url={https://www.usenix.org/conference/osdi18/presentation/moritz}
 }
 
+% Background role: canonical cluster resource-management reference used to
+% position EdgeSched relative to datacenter-scale schedulers.
 @inproceedings{verma2015borg,
   title={Large-scale cluster management at Google with Borg},
   author={Verma, Abhishek and Pedrosa, Luis and Korupolu, Madhukar and Oppenheimer, David and Tune, Eric and Wilkes, John},
@@ -40,6 +48,8 @@
   url={https://dl.acm.org/doi/10.1145/2741948.2741964}
 }
 
+% LLM-serving role: canonical high-throughput LLM serving and KV-cache memory
+% management reference; provides context for resident interactive inference.
 @inproceedings{kwon2023vllm,
   title={Efficient memory management for large language model serving with PagedAttention},
   author={Kwon, Woosuk and Li, Zhuohan and Zhuang, Siyuan and Sheng, Ying and Zheng, Lianmin and Yu, Cody Hao and Gonzalez, Joseph E and Zhang, Hao and Stoica, Ion},
@@ -49,6 +59,8 @@
   url={https://dl.acm.org/doi/10.1145/3600006.3613165}
 }
 
+% Comparison role: GPU-memory-constrained LLM inference through CPU/disk
+% offloading; demonstrates the latency-throughput cost of aggressive offload.
 @inproceedings{sheng2023flexgen,
   title={FlexGen: High-throughput generative inference of large language models with a single GPU},
   author={Sheng, Ying and Zheng, Lianmin and Yuan, Binhang and Li, Zhuohan and Ryabinin, Max and Chen, Beidi and Liang, Percy and R{\'e}, Christopher and Stoica, Ion and Zhang, Ce},
@@ -59,6 +71,8 @@
   url={https://proceedings.mlr.press/v202/sheng23a.html}
 }
 
+% Mechanism analogy: asynchronous state replication and fast recovery; supports
+% discussion of preserving service state across resource transitions.
 @inproceedings{cully2008remus,
   title={Remus: High availability via asynchronous virtual machine replication},
   author={Cully, Brendan and Lefebvre, Geoffrey and Meyer, Dutch and Feeley, Mike and Hutchinson, Norm and Warfield, Andrew},
@@ -68,6 +82,8 @@
   url={https://www.usenix.org/legacy/event/nsdi08/tech/full_papers/cully/cully.pdf}
 }
 
+% Comparison role: fast LLM serving on consumer GPUs using activation sparsity;
+% represents model-specific optimization rather than cross-model scheduling.
 @inproceedings{song2023powerinfer,
   title={PowerInfer: Fast Large Language Model Serving with a Consumer-grade GPU},
   author={Song, Yuxin and Wang, Qidong and others},
@@ -78,6 +94,8 @@
   url={https://ipads.se.sjtu.edu.cn/_media/publications/powerinfer-20231219.pdf}
 }
 
+% Background role: contextual sparsity for LLM inference; distinguishes
+% model-level acceleration from EdgeSched's system-level resource coordination.
 @inproceedings{liu2023dejavu,
   title={Deja Vu: Contextual Sparsity for Efficient LLMs at Inference Time},
   author={Liu, Zichang and Wang, Jue and Dao, Tri and Zhou, Tianyi and Yuan, Binhang and Song, Zhao and Shrivastava, Anshumali and Zhang, Ce and Beutel, Yuandong and Re, Christopher and others},
@@ -88,6 +106,8 @@
   url={https://proceedings.mlr.press/v202/liu23am.html}
 }
 
+% Implementation context: portable consumer-device LLM deployment stack;
+% supports discussion of heterogeneous local inference environments.
 @misc{wu2023mlc,
   title={{MLC-LLM}: Universal LLM Deployment on Consumer Devices},
   author={{MLC Team}},
@@ -95,6 +115,8 @@
   year={2023}
 }
 
+% Implementation reference: local GGUF LLM runtime used by EdgeSched; exposes
+% layer-level GPU offload through n_gpu_layers.
 @misc{llamacpp,
   title = {llama.cpp: Port of Facebook's LLaMA model in C/C++},
   author = {Gerganov, Georgi},
@@ -104,6 +126,8 @@
   howpublished = {\url{https://github.com/ggerganov/llama.cpp}}
 }
 
+% Related-work role: separates LLM prefill and decode across resources; contrasts
+% phase disaggregation with whole-workflow heterogeneous placement.
 @inproceedings{patel2024splitwise,
   title={Splitwise: Efficient Generative {LLM} Inference Using Phase Splitting},
   author={Patel, Pratyush and Choukse, Esha and Zhang, Chaojie and Shah, Aashaka and Goiri, I{\~n}igo and Maleki, Saeed and Bianchini, Ricardo},
@@ -112,6 +136,8 @@
   url={https://www.microsoft.com/en-us/research/publication/splitwise-efficient-generative-llm-inference-using-phase-splitting/}
 }
 
+% Related-work role: large-scale disaggregated prefill/decode serving; used to
+% distinguish datacenter LLM phase placement from local multimodal scheduling.
 @misc{jin2024pdserve,
   title={P/D-Serve: Serving Disaggregated Large Language Model at Scale},
   author={Jin, Yibo and Wang, Tao and Lin, Huimin and Song, Mingyang and Li, Peiyang and Ma, Yipeng and Shan, Yicheng and Yuan, Zhengfan and Li, Cailong and Sun, Yajing and Wu, Tiandeng and Chu, Xing and Huan, Ruizhi and Li, Ma and You, Xiao and Zhou, Wenting and Ye, Yunpeng and Liu, Wen and Xu, Xiangkun and Zhang, Yongsheng and Dong, Tiantian and Zhu, Jiawei and Wang, Zhe and Ju, Xijian and Song, Jianxun and Cheng, Haoliang and Li, Xiaojing and Ding, Jiandong and Guo, Hefei and Zhang, Zhengyong},
@@ -122,6 +148,8 @@
   url={https://arxiv.org/abs/2408.08147}
 }
 
+% Related-work role: disaggregates LLM inference to isolate mixed downstream
+% workloads; motivates interference-aware coordination.
 @misc{hu2024interference,
   title={Inference without Interference: Disaggregate {LLM} Inference for Mixed Downstream Workloads},
   author={Hu, Cunchen and Huang, Heyang and Xu, Liangliang and Chen, Xusheng and Xu, Jiang and Chen, Shuang and Feng, Hao and Wang, Chenxi and Wang, Sa and Bao, Yungang and Sun, Ninghui and Shan, Yizhou},
@@ -133,6 +161,8 @@
   url={https://arxiv.org/abs/2401.11181}
 }
 
+% Background role: representative cloud-to-edge orchestration framework;
+% positions EdgeSched as a device-local execution scheduler.
 @inproceedings{xiong2019kubeedge,
   title={Extend Cloud to Edge with KubeEdge},
   author={Xiong, Ying and Sun, Yulin and Xing, Li and Huang, Ying},
@@ -141,4 +171,287 @@
   year={2018},
   organization={IEEE},
   url={https://ieeexplore.ieee.org/document/8567693}
+}
+
+% -----------------------------------------------------------------------------
+% GPU spatial sharing, SM partitioning, and multi-tenant inference
+% -----------------------------------------------------------------------------
+
+% Comparison role: controlled spatial GPU-sharing baseline; motivates using
+% explicit compute-share control instead of relying on unmanaged co-location.
+@inproceedings{dhakal2020gslice,
+  title={{GSLICE}: Controlled Spatial Sharing of {GPUs} for a Scalable Inference Platform},
+  author={Dhakal, Aditya and Kulkarni, Sameer G. and Ramakrishnan, K. K.},
+  booktitle={Proceedings of the 11th ACM Symposium on Cloud Computing (SoCC '20)},
+  pages={492--506},
+  year={2020},
+  publisher={Association for Computing Machinery},
+  doi={10.1145/3419111.3421284},
+  url={https://dl.acm.org/doi/10.1145/3419111.3421284}
+}
+
+% Comparison role: spatio-temporal multi-model inference baseline; supports
+% profiling interference and comparing dynamic scheduling with static sharing.
+@inproceedings{choi2022gpulets,
+  title={Serving Heterogeneous Machine Learning Models on {Multi-GPU} Servers with {Spatio-Temporal} Sharing},
+  author={Choi, Seungbeom and Lee, Sunho and Kim, Yeonjae and Park, Jongse and Kwon, Youngjin and Huh, Jaehyuk},
+  booktitle={2022 USENIX Annual Technical Conference (USENIX ATC 22)},
+  pages={199--216},
+  year={2022},
+  publisher={USENIX Association},
+  url={https://www.usenix.org/conference/atc22/presentation/choi-seungbeom}
+}
+
+% Mechanism reference: characterizes NVIDIA GPU compute partitioning and the
+% isolation limitations of MPS-style SM control.
+@inproceedings{bakita2023sm_partitioning,
+  title={Hardware Compute Partitioning on {NVIDIA} {GPUs}},
+  author={Bakita, Joshua and Anderson, James H.},
+  booktitle={2023 IEEE 29th Real-Time and Embedded Technology and Applications Symposium (RTAS)},
+  pages={54--66},
+  year={2023},
+  publisher={IEEE},
+  doi={10.1109/RTAS58335.2023.00012},
+  url={https://ieeexplore.ieee.org/document/10155679}
+}
+
+% Comparison role: kernel-wise GPU right-sizing baseline; motivates measuring
+% performance saturation rather than assigning SMs from average utilization.
+@inproceedings{chow2023krisp,
+  title={{KRISP}: Enabling Kernel-wise {RIght-sizing} for Spatial Partitioned {GPU} Inference Servers},
+  author={Chow, Marcus and Jahanshahi, Ali and Wong, Daniel},
+  booktitle={2023 IEEE International Symposium on High-Performance Computer Architecture (HPCA)},
+  pages={624--637},
+  year={2023},
+  publisher={IEEE},
+  doi={10.1109/HPCA56546.2023.10071121},
+  url={https://www.computer.org/csdl/proceedings-article/hpca/2023/10071121/1LMbxLmLBzG}
+}
+
+% Comparison role: elastic multi-DNN scheduling on an edge GPU; the closest
+% peer-reviewed reference for real-time compute sharing in an edge setting.
+@inproceedings{zhao2023miriam,
+  title={Miriam: Exploiting Elastic Kernels for Real-Time Multi-{DNN} Inference on Edge {GPU}},
+  author={Zhao, Zhihe and Ling, Neiwen and Guan, Nan and Xing, Guoliang},
+  booktitle={Proceedings of the 21st ACM Conference on Embedded Networked Sensor Systems (SenSys '23)},
+  pages={97--110},
+  year={2023},
+  publisher={Association for Computing Machinery},
+  doi={10.1145/3625687.3625789},
+  url={https://dl.acm.org/doi/10.1145/3625687.3625789}
+}
+
+% Related-work role: collaborative CPU--GPU execution for recurrent inference;
+% supports the feasibility of heterogeneous placement for sequential models.
+@misc{cai2023chrion,
+  title={Chrion: Optimizing Recurrent Neural Network Inference by Collaboratively Utilizing {CPUs} and {GPUs}},
+  author={Cai, Zinuo and Wang, Hao and Song, Tao and Hua, Yang and Ma, Ruhui and Guan, Haibing},
+  year={2023},
+  eprint={2307.11339},
+  archivePrefix={arXiv},
+  primaryClass={cs.DC},
+  doi={10.48550/arXiv.2307.11339},
+  url={https://arxiv.org/abs/2307.11339}
+}
+
+% Comparison role: priority-aware multi-tenant DNN inference with resource-aware
+% compilation; represents a stronger managed co-location design.
+@inproceedings{ma2024elasticroom,
+  title={ElasticRoom: Multi-Tenant {DNN} Inference Engine via Co-design with Resource-Constrained Compilation and Strong Priority Scheduling},
+  author={Ma, Lixian and Chen, Haoruo and Shao, En and Wang, Leping and Chen, Quan and Tan, Guangming},
+  booktitle={Proceedings of the 33rd International Symposium on High-Performance Parallel and Distributed Computing (HPDC '24)},
+  pages={1--14},
+  year={2024},
+  publisher={Association for Computing Machinery},
+  doi={10.1145/3625549.3658654},
+  url={https://dl.acm.org/doi/10.1145/3625549.3658654}
+}
+
+% Comparison role: efficient spatial GPU sharing for cloud DNN inference;
+% contrasts large-scale partition management with EdgeSched's edge constraints.
+@inproceedings{lee2024parvagpu,
+  title={ParvaGPU: Efficient Spatial {GPU} Sharing for Large-Scale {DNN} Inference in Cloud Environments},
+  author={Lee, Munkyu and Seong, Sihoon and Kang, Minki and Lee, Jihyuk and Na, Gap-Joo and Chun, In-Geol and Nikolopoulos, Dimitrios and Hong, Cheol-Ho},
+  booktitle={SC24: International Conference for High Performance Computing, Networking, Storage and Analysis},
+  pages={1--14},
+  year={2024},
+  publisher={IEEE},
+  doi={10.1109/SC41406.2024.00048},
+  url={https://dl.acm.org/doi/10.1109/SC41406.2024.00048}
+}
+
+% Related-work role: fast GPU-memory handover between colocated training and
+% inference; motivates measuring transition and handover overhead explicitly.
+@inproceedings{wang2025sirius,
+  title={Colocating {ML} Inference and Training with Fast {GPU} Memory Handover},
+  author={Wang, Jiali and Wang, Yankui and Han, Mingcong and Chen, Rong},
+  booktitle={2025 USENIX Annual Technical Conference (USENIX ATC 25)},
+  pages={1657--1675},
+  year={2025},
+  publisher={USENIX Association},
+  url={https://www.usenix.org/conference/atc25/presentation/wang-jiali}
+}
+
+% -----------------------------------------------------------------------------
+% CPU--GPU offloading, elastic residency, and GPU memory management
+% -----------------------------------------------------------------------------
+
+% Comparison role: CPU--GPU offloading baseline for memory-constrained online
+% LLM inference; covers offloading but not heterogeneous multimodal workflows.
+@inproceedings{jiang2025neo,
+  title={{NEO}: Saving {GPU} Memory Crisis with {CPU} Offloading for Online {LLM} Inference},
+  author={Jiang, Xuanlin and Zhou, Yang and Cao, Shiyi and Stoica, Ion and Yu, Minlan},
+  booktitle={Proceedings of Machine Learning and Systems (MLSys)},
+  volume={7},
+  year={2025},
+  url={https://proceedings.mlsys.org/paper_files/paper/2025/hash/66a026c0d17040889b50f0dfa650e5e0-Abstract-Conference.html}
+}
+
+% Related-work role: network-assisted LLM memory offloading in scale-up GPU
+% domains; contrasts specialized datacenter fabrics with local CPU memory.
+@inproceedings{kumar2025aqua,
+  title={Network-Accelerated Memory Offloading for {LLMs} in Scale-Up {GPU} Domains},
+  author={Vijaya Kumar, Abhishek and Antichi, Gianni and Singh, Rachee},
+  booktitle={Proceedings of the Twentieth European Conference on Computer Systems (EuroSys '25)},
+  year={2025},
+  publisher={Association for Computing Machinery},
+  doi={10.1145/3676641.3715983},
+  url={https://dl.acm.org/doi/10.1145/3676641.3715983}
+}
+
+% Comparison role: strongest peer-reviewed GPU-memory residency reference;
+% covers multi-LLM memory ballooning but not CPU/GPU multimodal placement.
+@inproceedings{yu2026prism,
+  title={Prism: {Cost-Efficient} {Multi-LLM} Serving via {GPU} Memory Ballooning},
+  author={Yu, Shan and Qiao, Yifan and Ma, Mingyuan and Li, Yangmin and Yang, Shuo and Tong, Xinyuan and Wang, Yang and Xie, Zhiqiang and An, Yuwei and Cao, Shiyi and Bao, Ke and Vij, Deepak and Ding, Xiaoning and Wang, Yichen and Lu, Qingda and Wang, Zhong and Gao, Gao and Xu, Harry and Shu, Junyi and Xing, Jiarong and Sheng, Ying},
+  booktitle={20th USENIX Symposium on Operating Systems Design and Implementation (OSDI 26)},
+  pages={75--93},
+  year={2026},
+  publisher={USENIX Association},
+  url={https://www.usenix.org/conference/osdi26/presentation/yu-shan}
+}
+
+% Comparison role: automated tensor scheduling for hybrid CPU--GPU LLM
+% inference on consumer devices; the closest placement-focused consumer work.
+@misc{liu2026atsinfer,
+  title={Automated Tensor Scheduling for Hybrid {CPU--GPU} {LLM} Inference on Consumer Devices},
+  author={Liu, Yangyijian and Ye, Hongyi and Li, Mingyang and Li, Wu-Jun},
+  year={2026},
+  eprint={2607.10183},
+  archivePrefix={arXiv},
+  primaryClass={cs.DC},
+  doi={10.48550/arXiv.2607.10183},
+  url={https://arxiv.org/abs/2607.10183}
+}
+
+% -----------------------------------------------------------------------------
+% Speech, omni-model, and multimodal workflow serving
+% -----------------------------------------------------------------------------
+
+% Related-work role: streaming-centric speech-language-model serving; provides
+% speech-specific latency and continuous-output scheduling context.
+@misc{kamahori2026voxserve,
+  title={VoxServe: Streaming-Centric Serving System for Speech Language Models},
+  author={Kamahori, Keisuke and Lee, Wei-Tzu and Jha, Atindra and Kadekodi, Rohan and Wang, Stephanie and Krishnamurthy, Arvind and Kasikci, Baris},
+  year={2026},
+  eprint={2602.00269},
+  archivePrefix={arXiv},
+  primaryClass={cs.LG},
+  doi={10.48550/arXiv.2602.00269},
+  url={https://arxiv.org/abs/2602.00269}
+}
+
+% Workload reference: modern speech-generation architecture and serving profile;
+% motivates treating speech generation as a streaming GPU workload.
+@misc{fishaudio2026s2,
+  title={Fish Audio {S2} Technical Report},
+  author={{Fish Audio Team}},
+  year={2026},
+  eprint={2603.08823},
+  archivePrefix={arXiv},
+  primaryClass={cs.SD},
+  doi={10.48550/arXiv.2603.08823},
+  url={https://arxiv.org/abs/2603.08823}
+}
+
+% Serving-stack role: disaggregated serving framework for any-to-any multimodal
+% models; establishes the modern omni-model execution architecture.
+@misc{yin2026vllmomni,
+  title={{vLLM-Omni}: Fully Disaggregated Serving for Any-to-Any Multimodal Models},
+  author={Yin, Peiqi and Zhu, Jiangyun and Gao, Han and Zheng, Chenguang and Huang, Yongxiang and Zhou, Taichang and Yang, Ruirui and Liu, Weizhi and Chen, Weiqing and Guo, Canlin and Deng, Didan and Mo, Zifeng and Wang, Cong and Cheng, James and Wang, Roger and Liu, Hongsheng},
+  year={2026},
+  eprint={2602.02204},
+  archivePrefix={arXiv},
+  doi={10.48550/arXiv.2602.02204},
+  url={https://arxiv.org/abs/2602.02204}
+}
+
+% Related-work role: scalable real-time multimodal generation serving; contrasts
+% datacenter multimodal scheduling with EdgeSched's constrained local setting.
+@misc{qiu2026streamwise,
+  title={StreamWise: Serving Multi-Modal Generation in Real-Time at Scale},
+  author={Qiu, Haoran and Chaudhry, Gohar Irfan and Zhang, Chaojie and Goiri, I{\~n}igo and Choukse, Esha and Fonseca, Rodrigo and Bianchini, Ricardo},
+  year={2026},
+  eprint={2603.05800},
+  archivePrefix={arXiv},
+  primaryClass={cs.DC},
+  doi={10.48550/arXiv.2603.05800},
+  url={https://arxiv.org/abs/2603.05800}
+}
+
+% Comparison role: concurrent omni-model scheduling preprint; provides the
+% mechanism-level baseline for path-aware scheduling and dynamic SM sharing.
+@misc{zhang2026horizonserve,
+  title={HorizonServe: Coordinating Request Scheduling with {GPU} Sharing for Omni-Model Serving},
+  author={Zhang, Yuning and Yuan, Dong},
+  year={2026},
+  eprint={2608.01785},
+  archivePrefix={arXiv},
+  primaryClass={cs.DC},
+  doi={10.48550/arXiv.2608.01785},
+  url={https://arxiv.org/abs/2608.01785}
+}
+
+% -----------------------------------------------------------------------------
+% Implementation references for CUDA GPU partitioning
+% -----------------------------------------------------------------------------
+
+% Implementation reference: official MPS configuration and execution-resource
+% controls used for the first SM-partitioning prototype.
+@misc{nvidia_mps_2026,
+  title={{NVIDIA} Multi-Process Service Documentation},
+  author={{NVIDIA Corporation}},
+  year={2026},
+  note={Accessed 2026-08-30},
+  url={https://docs.nvidia.com/deploy/mps/}
+}
+
+% Implementation reference: official CUDA Driver API for creating SM-partitioned
+% Green Contexts and streams.
+@misc{nvidia_green_contexts_2026,
+  title={{CUDA} Driver API: Green Contexts},
+  author={{NVIDIA Corporation}},
+  year={2026},
+  note={Accessed 2026-08-30},
+  url={https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__GREEN__CONTEXTS.html}
+}
+
+% Implementation reference: official unified-memory semantics and migration
+% behavior; prevents conflating managed memory with explicit model residency.
+@misc{nvidia_unified_memory_2026,
+  title={{CUDA} Programming Guide: Unified Memory},
+  author={{NVIDIA Corporation}},
+  year={2026},
+  note={Accessed 2026-08-30},
+  url={https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/unified-memory.html}
+}
+
+% Implementation reference: PyTorch-facing Green Context APIs and integration
+% constraints for routing framework kernels through partitioned streams.
+@misc{pytorch_green_contexts_2026,
+  title={{PyTorch CUDA Green Contexts API}},
+  author={{PyTorch Contributors}},
+  year={2026},
+  note={Accessed 2026-08-30},
+  url={https://docs.pytorch.org/docs/2.13/cuda.html}
 }

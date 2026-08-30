@@ -41,6 +41,12 @@ def _json_value(value: Any) -> Any:
     return value
 
 
+def to_jsonable(value: Any) -> Any:
+    """把实验数据结构转换为可序列化 JSON 值（禁止 NaN/Inf/二进制）。"""
+
+    return _json_value(value)
+
+
 @dataclass(frozen=True)
 class BackendEvidence:
     """单个真实或 Mock 后端的证据。"""

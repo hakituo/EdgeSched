@@ -1,4 +1,4 @@
-# EdgeSched 论文与实验指南（弹性驻留重构版）
+# EdgeSched 论文与实验指南（弹性驻留与异构资源协同版）
 
 > **版本**：v5.0
 > **最后更新**：2026-08-30
@@ -22,7 +22,7 @@
 - Mock 结果只能验证调度语义和统计链路，不能证明真实模型性能。
 - `experiment_results/` 是探索性运行产物；只有人工核对后，结果才可晋升到 `paper/experiment_data/01_paper_main/`。
 - 换用新模型、修改调度策略或改变运行环境后，旧性能数字默认失效。
-- 本文档是新版论文重写规划真源；历史设计报告、旧稿和旧数据统一位于 `paper/archive/`，不得当成当前实现或正文证据。
+- 本文档不再把历史设计报告、旧稿或 `paper/previous/` 当成当前实现真源。
 - 论文只陈述已经由真实运行和可追溯证据支持的能力。
 
 - --
@@ -67,13 +67,28 @@ EdgeSched 面向单用户、单机、资源受限的本地多模态 AI 助手。
 
 新版研究问题是：
 
-> 在显存、CPU 核心和系统内存同时受限时，如何根据多模态流水线状态、任务时长和迁移代价，联合决定模型驻留程度、设备放置、CPU 核心预算与图像执行方式，从而保持文本、语音和图像交互的可用性？
+> 在显存、GPU 计算份额、CPU 核心和系统内存同时受限时，如何根据多模态流水线状态、任务时长和转换代价，联合决定模型驻留程度、设备放置、CPU 核心预算、GPU SM 预算与图像执行方式，从而保持文本、语音和图像交互的可用性？
 
 建议将核心贡献描述为：
 
-> **面向本地多模态流水线的代价感知弹性驻留与异构资源调度。**
+> **面向模型无法全部驻留于加速器的本地多模态流水线，进行代价感知的弹性驻留与 CPU/GPU 联合资源调度。**
 
 “非对称迁移”保留为弹性驻留状态转换中的关键机制，而不是整篇论文唯一的创新点。
+
+论文不得把“消费级设备”本身写成创新。5090 等大显存设备同样属于消费级产品，真正需要强调的是以下资源区间：
+
+\[
+\sum_i M_i^{FULL}>V_{GPU},
+\]
+
+即所有活跃模型无法以完整高性能配置同时驻留于 GPU，CPU/DDR 因而从辅助运行环境变成一等计算与驻留资源。与只在完整共驻留模型之间分配 GPU 时间或 SM 的系统相比，EdgeSched 还必须决定哪些权重、组件和状态能够留在 GPU、哪些退回 CPU/DDR，以及转换成本是否值得支付。
+
+新增 GPU SM 分配不单独作为创新点。已有工作已经研究 MPS、Green Contexts、时空 GPU 共享以及 LLM/语音阶段共运行；EdgeSched 的差异必须落在：
+
+1. 8GB 级硬显存约束下，模型不能全部完整共驻留；
+2. 独立 LLM、TTS 与 Diffusion 后端之间存在真实跨设备驻留与状态转换；
+3. CPU 物理核、GPU SM、显存驻留和转换方式由同一个计划联合决定；
+4. 目标是单用户交互中的 TTFA、连续播放和第一张图片时间，而不是只优化服务器吞吐。
 
 - --
 
@@ -140,9 +155,9 @@ ASR、RAG embedding 和文档解析用于证明调度器能够容纳 CPU 辅助�
 
 OCR 若由多模态 LLM 完成，不必额外引入独立大模型。不得为了凑任务数量而人为增加不符合应用流程的模型。
 
-### 2.5 通用任务抽象：设备亲和性与驻留能力
+### 2.5 通用任务抽象：设备亲和性、驻留能力与 GPU 计算份额能力
 
-EdgeSched 不按 LLM、TTS 或 Diffusion 等模型名称硬编码路由规则。每个阶段首先声明两个正交维度：
+EdgeSched 不按 LLM、TTS 或 Diffusion 等模型名称硬编码路由规则。每个阶段首先声明三个正交维度；第三个维度描述阶段及其后端能否接受可验证的 GPU 计算份额约束，而不是根据一次平均 GPU 利用率猜测所需算力。
 
 #### 设备亲和性
 
@@ -190,13 +205,45 @@ g_i\in\{LAYER,COMPONENT,STATE\}.
 
 设备亲和性与驻留能力不能互相替代。例如，一个阶段可以同时是 `GPU_REQUIRED + PARTITIONABLE`：主要计算仍必须在 GPU 上，但部分权重或组件可以驻留在 DDR。另一个阶段可以是 `GPU_PREFERRED + WHOLE_MIGRATABLE`：CPU 路径可用，但实现只支持整体切换。
 
+#### GPU 计算份额能力
+
+GPU 计算份额能力属于“阶段 + 后端”的联合能力，而不是模型名称的固定属性：
+
+\[
+\chi_i\in\{
+UNMANAGED,
+CAP\_LIMITABLE,
+SM\_PARTITIONABLE
+\}.
+\]
+
+- `UNMANAGED`：能够在 GPU 上运行，但当前后端不能施加或验证独立计算份额；
+- `CAP_LIMITABLE`：可以通过 CUDA MPS 等机制限制客户端可使用的执行资源上限，但该上限不等同于独占保留；
+- `SM_PARTITIONABLE`：可以通过经过验证的 Green Context、静态 MPS 分区或等价机制，在离散 SM 子集中提交该阶段的全部 GPU kernel。
+
+GPU 计算份额统一记录为实际有效 SM 数：
+
+\[
+s_i\in\mathcal S_i=\{S_i^0,S_i^1,\ldots,S_i^n\}.
+\]
+
+百分比只用于请求配置和展示。正式分析必须记录 GPU 的物理 SM 总数、后端要求的最小分区粒度、请求比例、舍入后的有效 SM 数以及客户端实际观测值。平均 GPU utilization 为 20\% 不等于该阶段只需要 20\% 的 SM；它可能来自突发 kernel、CPU 等待、显存带宽瓶颈或小 batch 并行度不足。
+
+显存驻留与 SM 份额必须分开描述。限制 SM 不会自动限制显存，也不会把超出的权重分页到 CPU；限制显存也不会保证某个阶段获得固定 GPU 算力。因此，一个 GPU 配置至少写成：
+
+\[
+G_i=\langle r_i,s_i,m_i,backend_i\rangle,
+\]
+
+其中 \(r_i\) 是驻留档位，\(s_i\) 是有效 SM 预算，\(m_i\) 是显存上限或预测峰值，\(backend_i\) 是 `NONE`、`MPS` 或 `GREEN_CONTEXT` 等实际执行后端。
+
 每个阶段最终提供有限、离散且经过 profiling 的驻留集合：
 
 \[
 r_i\in\mathcal R_i=\{R_i^0,R_i^1,\ldots,R_i^m\}.
 \]
 
-声明 `PARTITIONABLE` 不等于允许任意百分比切分。只有真实后端能够构造、能够正确运行并已有资源画像的配置，才进入 \(\mathcal R_i\)。当前可用于说明抽象的实例包括：LLM 的层级/状态拆分、组件化 TTS 的组件拆分，以及只允许完整 GPU 运行的图像阶段；这些只是任务画像实例，不是调度器中的模型名称分支。
+声明 `PARTITIONABLE` 不等于允许任意百分比切分。只有真实后端能够构造、能够正确运行并已有资源画像的配置，才进入 \(\mathcal R_i\) 或 \(\mathcal S_i\)。当前可用于说明抽象的实例包括：LLM 的层级/状态拆分、组件化 TTS 的组件拆分，以及只允许完整 GPU 运行的图像阶段；这些只是任务画像实例，不是调度器中的模型名称分支。
 
 - --
 
@@ -208,7 +255,7 @@ r_i\in\mathcal R_i=\{R_i^0,R_i^1,\ldots,R_i^m\}.
 
 \[
 x_t = \langle
-q_I, q_T, K, \{r_i\}_{i\in\mathcal A_t}, M_G, U_C, v, h
+q_I, q_T, K, \{r_i\}_{i\in\mathcal A_t}, M_G, S_G, U_C, v, h
 \rangle,
 \]
 
@@ -220,6 +267,7 @@ q_I, q_T, K, \{r_i\}_{i\in\mathcal A_t}, M_G, U_C, v, h
 - \(\mathcal A_t\)：当前活跃或候选执行的阶段集合；
 - \(r_i\)：阶段 \(i\) 当前采用的离散驻留配置；当前工作负载中包括 \(r_L\) 和 \(r_T\)；
 - \(M_G\)：可用显存及近期峰值；
+- \(S_G\)：GPU 物理 SM 总量、各阶段当前有效 SM 预算、分区后端及近期 GPU 利用率/带宽压力；
 - \(U_C\)：CPU 利用率、核心拓扑和可用核心预算；
 - \(v\)：是否处于连续语音会话；
 - \(h\)：近期任务时长、到达间隔与转换历史。
@@ -230,6 +278,7 @@ q_I, q_T, K, \{r_i\}_{i\in\mathcal A_t}, M_G, U_C, v, h
 - 新 TTS chunk 入队；
 - 图像任务完成；
 - TTS 队列清空；
+- GPU 分区 worker 创建、退出或分区能力失效；
 - LLM 回复或语音会话结束；
 - 模型重新配置完成或资源压力越界。
 
@@ -238,20 +287,21 @@ q_I, q_T, K, \{r_i\}_{i\in\mathcal A_t}, M_G, U_C, v, h
 通用联合动作表示为：
 
 \[
-a_t=\left(\{(r_i,c_i,b_i)\}_{i\in\mathcal A_t},\mu\right),
+a_t=\left(\{(r_i,c_i,s_i,b_i)\}_{i\in\mathcal A_t},\mu\right),
 \]
 
 其中：
 
 - \(r_i\)：阶段 \(i\) 的设备和驻留档位；
 - \(c_i\)：阶段 \(i\) 的 CPU 核心预算；
+- \(s_i\)：阶段 \(i\) 的有效 GPU SM 预算；不在 GPU 上执行时取 0，后端不能受控时标记为 `UNMANAGED` 而不是伪造为满卡；
 - \(b_i\)：阶段 \(i\) 的可选 batch 或并发参数；不适用时取 1；
 - \(\mu\)：保持、紧急迁出、原子切换、恢复或重新配置。
 
 对当前 LLM、TTS、Diffusion 工作负载，该动作可具体展开为：
 
 \[
-a_t=(r_L,r_T,c_L,c_T,b_D,\mu).
+a_t=(r_L,r_T,c_L,c_T,s_L,s_T,s_D,b_D,\mu).
 \]
 
 该展开只是一种 workload 实例，不是调度接口的固定上限。
@@ -324,6 +374,14 @@ T_{pipe}\approx
 
 如果把 LLM 放到 CPU 后导致第一句产生过慢，即使 TTS 在 GPU 上很快，也不一定改善 TTFA。因此不能预先认定 S0-B 或 S0-C 一定优于 S0-A。
 
+对于同时在 GPU 上执行的 LLM 与 TTS，驻留可行后还必须测试离散 SM 分配：
+
+\[
+(s_L,s_T)\in\mathcal S_{LT},\qquad s_L+s_T\le S_{GPU}.
+\]
+
+第一轮不穷举任意百分比，先测试不受控共享以及由单模型曲线推导出的少量候选，例如 `75/25`、`50/50` 和临界点邻域。选择目标不是平均利用率最大，而是最小化第一段音频时间并保证后续 chunk 能在播放截止时间前准备完成。
+
 ### 4.2 S1：一个图像任务运行
 
 需要评估的候选配置：
@@ -337,12 +395,20 @@ T_{pipe}\approx
 
 S1-C 与 S1-D 只有在显存安全且 Diffusion slowdown 可接受时才进入调度候选。显存放得下不等于 GPU 计算共存一定有收益，必须测量实际干扰。
 
+S1 必须区分两类共享：
+
+1. **显存共驻留但计算串行**：保留部分 LLM/TTS GPU 状态以减少恢复成本，Diffusion 执行时不提交它们的 kernel；
+2. **显存共驻留且计算并发**：为 TTS 或部分 LLM 分配有限 SM，Diffusion 使用剩余 SM，并真实测量显存带宽竞争与 slowdown。
+
+建议优先测试 `LLM_CPU + TTS_T3_GPU + Diffusion_GPU`。先求满足语音约束的最小 \(s_T\)，再将剩余 SM 交给 Diffusion。只有该二阶段共享形成 Pareto 改进后，才测试 LLM、TTS、Diffusion 三者同时具有 GPU 计算份额的配置。
+
 ### 4.3 S2：图像队列非空
 
 - 保持当前可行的降级或混合驻留状态。
 - 不在相邻图像任务之间恢复到 S0。
 - 不同 prompt 串行执行。
 - 同一请求的多候选图可以根据画像选择 b=1、2、4。
+- 图片队列非空期间保持已验证的 SM 配置，除非语音 SLO、显存安全或后端健康状态越界；不因短时 utilization 波动反复重建分区。
 - 队列清空后重新选择 S0 的目标配置，而不是无条件恢复 LLM 全 GPU。
 
 - --
@@ -353,27 +419,28 @@ S1-C 与 S1-D 只有在显存安全且 Diffusion slowdown 可接受时才进入�
 
 \[
 \Phi_i=\langle
-d_i,\rho_i,g_i,role_i,preempt_i,queue_i,deps_i
+d_i,\rho_i,g_i,\chi_i,role_i,preempt_i,queue_i,deps_i
 \rangle,
 \]
 
-其中 \(d_i\) 是设备亲和性，\(\rho_i\) 是驻留能力，\(g_i\) 是拆分粒度，其余字段描述阶段角色、可抢占性、可排队性和工作流依赖。
+其中 \(d_i\) 是设备亲和性，\(\rho_i\) 是驻留能力，\(g_i\) 是拆分粒度，\(\chi_i\) 是 GPU 计算份额能力，其余字段描述阶段角色、可抢占性、可排队性和工作流依赖。
 
 随后为每个允许的驻留配置建立动态性能画像：
 
 \[
-\mathcal P_i(r_i,z)=\langle
-\hat M_i(r_i,z),\hat T_i(r_i,z),\hat C_i(r_i,z),\hat E_i(r_i,z)
+\mathcal P_i(r_i,s_i,z)=\langle
+\hat M_i(r_i,s_i,z),\hat T_i(r_i,s_i,z),\hat C_i(r_i,s_i,z),\hat E_i(r_i,s_i,z)
 \rangle,
 \]
 
-其中 \(r_i\in\mathcal R_i\)，\(z\) 包括核心预算、输入规模和运行环境。静态能力决定哪些配置可以被考虑，动态画像决定这些配置在当前设备上是否值得选择。
+其中 \(r_i\in\mathcal R_i\)，\(s_i\in\mathcal S_i\)，\(z\) 包括核心预算、输入规模和运行环境。静态能力决定哪些配置可以被考虑，动态画像决定这些配置在当前设备上是否值得选择。SM 画像必须同时包含隔离运行和目标共运行组合；单模型曲线不能直接预测显存带宽竞争下的共运行性能。
 
 ### 5.1 LLM 画像
 
 输入特征：
 
 - `n_gpu_layers` / 驻留档位；
+- 有效 SM 数或不受控共享标记；
 - CPU 物理核心预算与线程数；
 - 上下文长度和 KV Cache 大小；
 - prefill token 数；
@@ -394,6 +461,7 @@ d_i,\rho_i,g_i,role_i,preempt_i,queue_i,deps_i
 输入特征：
 
 - CPU、GPU 或经过验证的组件级驻留配置；
+- 有效 SM 数、MPS/Green Context 后端或不受控共享标记；
 - 组件放置映射以及哪些中间表示已缓存；
 - CPU 核心预算；
 - 文本字符数和分句长度；
@@ -420,6 +488,7 @@ d_i,\rho_i,g_i,role_i,preempt_i,queue_i,deps_i
 - 分辨率；
 - steps、sampler、CFG；
 - batch size；
+- 有效 SM 数或不受控共享标记；
 - 是否有 LLM/TTS GPU 工作共存。
 
 记录：
@@ -428,6 +497,7 @@ d_i,\rho_i,g_i,role_i,preempt_i,queue_i,deps_i
 - 第一张图片完成时间；
 - 峰值显存及时间线；
 - 共存时的 slowdown；
+- 与 TTS/LLM 共运行时的有效 SM 分配、GPU utilization、显存带宽压力代理与尾延迟；
 - 失败和 OOM 原因。
 
 画像首先来自离线 profiling，随后可按配置使用 EMA 修正。不同配置不得共用同一个全局平均时长。
@@ -439,7 +509,7 @@ d_i,\rho_i,g_i,role_i,preempt_i,queue_i,deps_i
 ### 6.1 显存约束
 
 \[
-\sum_{i\in\mathcal A_t}\hat M_i(r_i,z_i)+G_{safe}
+\sum_{i\in\mathcal A_t}\hat M_i(r_i,s_i,z_i)+G_{safe}
 \le V_{GPU}.
 \]
 
@@ -493,7 +563,32 @@ ASR、RAG 和 BERT 不永久占用这两个系统核心。它们作为短时阶�
 
 SMT 逻辑线程不能直接当作额外物理核心。正式实验必须记录物理核心、逻辑 CPU、亲和掩码和 CCD 拓扑。
 
-### 6.3 分层目标
+### 6.3 GPU 计算份额与共运行约束
+
+对能够形成显式空间分区的后端，GPU 计算份额满足：
+
+\[
+\sum_{i\in\mathcal G_t}s_i\le S_{GPU},
+\]
+
+其中 \(\mathcal G_t\) 是当前提交 GPU kernel 的阶段集合，\(S_{GPU}\) 是设备物理 SM 总数。所有 \(s_i\) 必须属于设备和后端真实支持的离散集合，并记录请求比例与实际有效 SM 数。对于仅支持 MPS active-thread cap 的配置，该式只表示客户端上限，不得表述为严格独占的 SM 保留。
+
+SM 数量约束不能代替性能可行性。共享配置还必须满足：
+
+- TTS 的 \(RTF^{p95}\)、TTFA 和真实播放 underrun 门槛；
+- LLM 的 TTFT、decode throughput 和 token-gap 门槛；
+- Diffusion 在 5\%、10\%、20\% slowdown 边界下的可行性；
+- 无 OOM、无静默 fallback，且实际显存峰值通过第 6.1 节门槛；
+- 所有 GPU kernel 确实通过目标 MPS client 或 Green Context/stream 提交，不能有未记录的 default-stream 逃逸。
+
+将配置分为两层验证：
+
+1. **容量可行**：显存公式和真实共置峰值通过；
+2. **执行可行**：并发运行后仍满足交互约束并形成 Pareto 点。
+
+论文需要明确给出一个关键结论：`VRAM-compatible co-residency` 不必然意味着 `execution-compatible co-scheduling`。GPU utilization 的单个平均值也不能替代 SM 曲线与共运行画像。
+
+### 6.4 分层目标
 
 不使用难以解释的单一主观加权和。采用分层约束与 Pareto 比较。
 
@@ -523,7 +618,7 @@ SMT 逻辑线程不能直接当作额外物理核心。正式实验必须记录�
 
 Diffusion slowdown 不预先锁死为唯一阈值。正式报告应展示 5%、10%、20% slowdown 约束下的可行配置或 Pareto 前沿。
 
-### 6.4 保守回退
+### 6.5 保守回退
 
 画像缺失、预测显存不足或共享 GPU 配置未经验证时，回退到：
 
@@ -544,21 +639,21 @@ Diffusion_{GPU}+LLM_{CPU}+TTS_{CPU}.
 需要维护：
 
 \[
-\hat T_i(r_i,c_i,z_i),
+\hat T_i(r_i,c_i,s_i,z_i),
 \]
 
 以及当前工作负载的具体预测器：
 
 \[
-\hat T_D(model,resolution,steps,b,co\_runner),
+\hat T_D(model,resolution,steps,b,s_D,co\_runner),
 \]
 
 \[
-\hat T_L(r_L,c_L,K,input,output),
+\hat T_L(r_L,c_L,s_L,K,input,output),
 \]
 
 \[
-\hat T_T(r_T,c_T,text\_length),
+\hat T_T(r_T,c_T,s_T,text\_length,co\_runner),
 \]
 
 \[
@@ -580,6 +675,7 @@ T_{load}+T_{KVsave}+T_{KVrestore}+T_{swap}+P_{service}.
 
 - 图像队列非空时不恢复到 S0；
 - 刚完成配置转换时，在最小驻留窗口内不因微小预测变化再次切换；
+- SM 配置只在新会话、首个 TTS chunk、图像到达/完成、队列清空或后端异常等安全事件点重选，不在每个 token 或短时 utilization 波动后重建；
 - 连续语音会话可将一次转换成本摊销到多轮回复；
 - 队列清空或会话状态改变时重新评估目标配置；
 - 任何迟滞不能给普通单图请求增加主动聚批等待。
@@ -595,11 +691,16 @@ PlacementPlan
     target_device
     residency_profile
     cpu_core_budget
+    gpu_compute_backend
+    requested_sm_share
+    effective_sm_count
+    gpu_memory_limit
     batch_or_concurrency
   transitions[]
   predicted_vram
   predicted_latency
   predicted_audio_rtf
+  predicted_diffusion_slowdown
   fallback_plan
   decision_reason
 ```
@@ -666,11 +767,75 @@ c_L=C_{physical}-R-c_T.
 
 这样才能区分收益来自减少线程、核心隔离、缓存局部性还是 SMT。
 
+### 8.4 GPU SM 分配与 LLM→TTS 流水线平衡
+
+SM 分配的目标不是复现任务管理器中的平均 GPU utilization，也不是预先固定 TTS 使用 20\%。应首先求满足语音交互门槛的最小 GPU 计算预算：
+
+\[
+s_T^{min}=\min\{s:
+RTF_T^{p95}(r_T,s)\le0.8
+\land Gap_{audio}=0
+\}.
+\]
+
+若当前后端在完整 GPU 上仍无法达到 \(RTF^{p95}\le0.8\)，则同时报告 \(RTF<1\) 的可持续边界和有限回复通过预缓冲实现零 underrun 时所需的额外 TTFA。不得因为 CPU LLM 产生文本较慢就把 TTS 的持续实时性判为通过。
+
+LLM 与 TTS 共运行时，资源平衡以端到端流水线为准：
+
+\[
+TTFA=T_{transition}+T_{LLM}^{first\ sentence}(r_L,c_L,s_L)
++T_{TTS}^{first\ chunk}(r_T,c_T,s_T),
+\]
+
+并对每个后续 chunk 检查：
+
+\[
+t_{j+1}^{ready}\le t_j^{playback\_end}.
+\]
+
+第一版 SM 管理只实现离散静态 profile，不实现 kernel 执行中的任意连续缩放：
+
+```text
+GpuShareProfile
+  backend: NONE | MPS | GREEN_CONTEXT
+  requested_percentage
+  effective_sm_count
+  gpu_memory_limit_mb
+  phase_id
+```
+
+最低实现要求：
+
+1. 启动前记录 GPU UUID、CUDA/driver、物理 SM 总数、计算能力、后端和最小分区粒度；
+2. MPS 环境变量必须在客户端创建任何 CUDA context 前设置；每个静态配置使用独立子进程；
+3. 客户端必须回报实际有效 SM 数，不能只写目标百分比；
+4. TTS 与 Forge 退出前执行 CUDA synchronize，异常退出写入结构化失败；
+5. GPU 显存限制和 SM 限制分别记录，任何一方都不能被描述成另一方；
+6. 真实后端不支持或分区未生效时明确失败，不静默退回普通共享；
+7. 第一版不修改生产规划器，只在 `experiments/elastic_residency/` 建立独立能力探针和实验 wrapper。
+
+能力探针至少输出：
+
+```text
+GpuPartitionCapability
+  backend_available
+  total_physical_sms
+  minimum_partition_sms
+  requested_percentage
+  effective_sm_count
+  dynamic_reconfiguration_supported
+  cuda_context_created_after_configuration
+```
+
+推荐的第一轮候选为 `100/75/50/25%`，随后只在 TTS 性能临界点附近补测。正式论文使用实际 SM 数分组，百分比仅用于解释。对于 LLM→TTS，先测不受控共享，再测试少量 \((s_L,s_T)\) 候选；对于 TTS→Diffusion 共运行，先固定 LLM 在 CPU，测试 TTS 的最小可行 \(s_T\)，其余 SM 分配给 Diffusion。
+
+第一版 Go 条件：至少存在一个受控 SM 配置，相对 CPU TTS 或不受控 GPU 共享形成端到端 Pareto 改进，并满足显存、正确性和播放门槛。No-Go 条件：分区后端不可用、实际 SM 数无法验证，或所有配置都在 TTFA、RTF、Diffusion slowdown 和转换成本上被现有方案支配。
+
 - --
 
 ## 9. 当前实现差距
 
-截至 2026-08-28，当前代码与目标机制之间至少存在以下差距：
+截至 2026-08-30，当前代码与目标机制之间至少存在以下差距：
 
 1. `services/phase_aware/phase_model.py`
    - LLM 仍是 GPU_NORMAL / CPU_DEGRADED / RESTORING 三态。
@@ -700,6 +865,12 @@ c_L=C_{physical}-R-c_T.
 9. 辅助任务与播放环境
    - BGE ONNX 已完成接口 smoke；Faster-Whisper 权重、固定 Python 依赖和 CPU int8 单核真实接口 smoke 均已就绪。3.42 s 参考音频的单轮 RTF 约为 1.44，只能证明链路可用，不能替代 1/2/4 核正式测量。
    - WSL2 已通过 ALSA→WSLg Pulse 桥接打开真实 PortAudio 输出，并实现 Windows WASAPI 回退与显式采样率协商。两条路径的 1 s 静音 smoke 均为 0 underflow；这只解除环境门槛，真实 TTS chunk 与并发负载下的 underrun 仍须正式测量，缓冲时间线不能替代真实播放 callback。
+10. GPU SM 管理
+   - 当前没有 `GpuShareManager`、MPS/Green Context 能力探针或有效 SM 数验证；
+   - TTS、LLM 与 Forge 仍由默认 CUDA 调度器竞争，平均 GPU utilization 不能证明任一阶段只需要对应比例的 SM；
+   - WSL2 上的 MPS 可用性尚未通过真实客户端 smoke，不能把文档层面的支持假设写成已实现能力；
+   - `PlacementPlan` 尚无 `gpu_compute_backend`、`effective_sm_count` 和 `gpu_memory_limit` 字段；
+   - 尚无受控 SM 份额下的 TTS 独立曲线、LLM→TTS 流水线或 TTS→Diffusion 共运行证据。
 
 实现和论文必须诚实反映这些边界。
 
@@ -795,6 +966,38 @@ H_D=\max k:\ M_L(k)+M_D(b=1)+G_{safe}\le V_{GPU}.
 
 **C2 旧 CLI 完成记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v3` 基于干净 commit `63e75ba` 完成 `6 配置 × 3 上下文 × 5 轮 = 90/90` 条真实驻留曲线，0 failure、0 fallback，有效性门与 30 ms 性能目标全部通过。该批次现位于 `_archive/superseded/c2/`，只作工程基线；当前性能真源是 C2/C3 direct NVML v2。完整目录映射见 `docs/ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md`。
 
+#### P1-C：GPU SM 能力探针与单模型计算份额曲线
+
+目标：确认当前 RTX 5070 Laptop + WSL2 + CUDA/PyTorch 环境是否能够真实限制并验证不同客户端的 GPU 计算份额，并得到 TTS、LLM 和 Diffusion 的离散 SM 性能曲线。
+
+第一版优先使用 MPS 独立进程 profile；只有 MPS 在当前 WSL2 环境不可用或无法验证实际有效 SM 数时，才评估 Green Context。不得同时实现两套生产后端。
+
+建议新增：
+
+```text
+experiments/elastic_residency/
+  sm_capability.py
+  mps_runtime.py
+  tts_sm_curve.py
+  llm_sm_curve.py
+  diffusion_sm_curve.py
+  tts_diffusion_sm_colocation.py
+tests/elastic_residency/
+  test_sm_capability.py
+  test_sm_profiles.py
+  test_sm_plan_validation.py
+```
+
+执行顺序：
+
+1. `SM-A`：能力 preflight，确认 daemon/client、SM 总数、请求比例、实际有效 SM 数、显存限制和退出清理；
+2. `SM-B`：TTS T0/T3 的 `100/75/50/25%` 隔离曲线，之后只在性能临界点附近细化；
+3. `SM-C`：Diffusion b=1 的对应曲线；
+4. `SM-D`：LLM FULL/H 候选的必要曲线，仅在 S0 最终候选确实需要 GPU 计算共享时展开；
+5. `SM-E`：先测 `LLM_CPU + TTS_GPU + Diffusion_GPU`，再决定是否测试三阶段 GPU 共享。
+
+所有 profile 均先写入探索目录。SM-A 未通过时，后续结果必须标记为普通 CUDA 不受控共享，不能写成受控 SM 分配。
+
 ### P2：静态共存可行性
 
 不修改在线规划器，先人工固定并测试 S0 与 S1 的候选配置。
@@ -808,6 +1011,12 @@ H_D=\max k:\ M_L(k)+M_D(b=1)+G_{safe}\le V_{GPU}.
 3. `LLM_H_TTS + TTS_FULL_GPU`；
 4. `LLM_H_k + TTS_H_COMP`，仅在 P1-A 证明 TTS 组件拆分有效时加入；
 5. `LLM_FULL_GPU + TTS_FULL_GPU`，仅在显存安全时加入。
+
+若两个阶段均在 GPU 上执行，每个驻留候选还需比较：
+
+1. 默认 CUDA 不受控共享；
+2. 静态 SM 分配，例如由单模型曲线推导的 `75/25` 或相邻有效 SM 档位；
+3. 串行执行但保持显存共驻留，用于分离“减少加载成本”和“同时计算”的收益。
 
 `LLM_CPU + TTS_CPU` 只作为故障回退，不进入 S0 主性能候选。实验必须让 LLM 生成后续文本与 TTS 合成前一段音频真实重叠，并记录两个阶段同时处于 running 的交集时长；交集为零的轮次不能计为流水线重叠。场景覆盖单段回复、3个 TTS chunk 的中等回复、6个以上 chunk 的长回复和连续 5 轮语音会话。
 
@@ -849,9 +1058,10 @@ reconfigure_residency(phase_id, target_profile, transition_mode)
 ### P4：联合规划器
 
 - 使用真实画像生成 `PlacementPlan`；
-- 加入显存约束、CPU预算、语音实时约束和迟滞；
+- 加入显存约束、CPU 核心预算、GPU SM 预算、语音实时约束和迟滞；
 - 图片队列非空时避免重复迁移；
-- 只允许经过 profiling 的共享 GPU 配置；
+- 只允许经过 profiling 且实际有效 SM 数可验证的共享 GPU 配置；
+- 先选择驻留可行配置，再在其内部选择计算份额；不得以 SM 约束替代显存准入；
 - 提供保守回退计划和可解释决策日志。
 
 ### P5：C++ 契约同步
@@ -863,6 +1073,7 @@ Python 控制面先完成和验证策略。
 - 驻留状态；
 - `PlacementPlan`；
 - 显存配额；
+- GPU SM 预算及实际分区后端；
 - CPU 核心预算；
 - pybind11 绑定；
 - Python/C++ 契约测试。
@@ -922,6 +1133,7 @@ Implementation \rightarrow Calibration \rightarrow Freeze
 - 真实 Forge 生成；
 - KV 保存恢复；
 - 设备与资源采样；
+- SM 分区后端、请求比例和实际有效 SM 数验证；
 - 取消、队列和失败闭合。
 
 ### E1：单模型画像
@@ -950,9 +1162,18 @@ Implementation \rightarrow Calibration \rightarrow Freeze
 - 冷加载和稳态执行；
 - 显存时间线。
 
+#### E1-G：GPU 计算份额
+
+- MPS/Green Context 能力 preflight；
+- TTS T0/T3 在离散有效 SM 档位下的 TTFA、RTF、显存和输出正确性；
+- Diffusion b=1 在离散有效 SM 档位下的延迟、显存和利用率；
+- LLM 仅对进入 S0 共享候选的驻留档位补测 SM 曲线；
+- 请求百分比、实际有效 SM 数、后端、客户端 CUDA context 创建顺序和异常清理；
+- 不受控共享作为必需基线。
+
 ### E2：无图像的 LLM→TTS 流水线
 
-比较 S0-A、S0-B、S0-C(k)，S0-D 仅在可行时加入。
+比较 S0-A、S0-B、S0-C(k)，S0-D 仅在可行时加入。对同时在 GPU 执行的 LLM/TTS 配置，额外比较不受控共享、显存共驻留但计算串行，以及由 E1-G 推导的静态 SM 分配。
 
 场景：
 
@@ -967,11 +1188,12 @@ Implementation \rightarrow Calibration \rightarrow Freeze
 - 音频 gap / underrun；
 - 完整语音回复时间；
 - LLM tokens/s；
+- 请求/实际有效 SM 数与 SM 配置切换成本；
 - 转换成本及其跨轮摊销。
 
 ### E3：Diffusion 期间的语音流水线
 
-比较 S1-A、S1-B(k)、S1-C，S1-D(k) 仅在可行时加入。
+比较 S1-A、S1-B(k)、S1-C，S1-D(k) 仅在可行时加入。S1-C/S1-D 必须分别测试显存共驻留但计算串行、不受控并发和受控 SM 分配，不能把三种模式混成一个“共享 GPU”配置。
 
 至少包含：
 
@@ -984,9 +1206,11 @@ Implementation \rightarrow Calibration \rightarrow Freeze
 - Diffusion slowdown；
 - LLM TTFT、tokens/s 和 token gap；
 - TTS TTFA、RTF 和音频断流；
+- TTS/Diffusion 的请求与实际有效 SM 数；
+- 不受控共享相对受控 SM 分配的尾延迟差异；
 - 峰值显存、内存和 CPU 利用率。
 
-### E4：CPU 核心分配
+### E4：CPU 核心与 GPU SM 分配
 
 候选必须由 E1 推导，不能预先穷举等分组合。
 
@@ -997,6 +1221,13 @@ Implementation \rightarrow Calibration \rightarrow Freeze
 3. 将剩余核心分配给 LLM；
 4. 对最优两个候选做绑核、CCD、SMT 和系统保留核心消融。
 
+随后对需要 GPU 共享的流水线：
+
+1. 求满足 TTS 门槛的最小 \(s_T^{min}\)；
+2. 将剩余 SM 分配给 LLM 或 Diffusion；
+3. 只在临界点邻域补测，不穷举所有 CPU 核 × SM × 驻留档位组合；
+4. 比较 CPU 分核、GPU 分 SM 以及二者联合启用，隔离每个维度的贡献。
+
 ### E5：代价感知策略对比
 
 主基线：
@@ -1006,7 +1237,9 @@ Implementation \rightarrow Calibration \rightarrow Freeze
 | Serial/Wait | 保持当前驻留，竞争任务等待 |
 | Always Full Migration | 当前完整 LLM 迁出/恢复策略 |
 | Static Best | 使用校准阶段得到的固定最优配置 |
-| Cost-Aware Elastic Residency | 新版联合规划器 |
+| Uncontrolled GPU Co-run | 显存允许时直接并发，不限制 SM |
+| Static SM Split | 使用离线标定得到的固定 SM 份额 |
+| Cost-Aware Joint Planner | 联合选择驻留、CPU 核、SM、batch 和转换方式 |
 | Oracle | 使用真实未来执行时长进行事后最优选择 |
 
 迁移机制基线可保留：
@@ -1044,6 +1277,8 @@ ASR/RAG 可以轻量，但必须是真实执行。Mock N-phase 实验保留为�
 - 无时长预测；
 - 禁用 `PARTITIONABLE`，将相关阶段退化为完整设备配置；
 - 无CPU核心隔离；
+- 无 SM 分配，退化为默认 CUDA 不受控共享；
+- 固定 SM 分配，不根据工作流状态或画像调整；
 - 无驻留迟滞；
 - 无KV保存；
 - 固定设备放置。
@@ -1056,6 +1291,8 @@ ASR/RAG 可以轻量，但必须是真实执行。Mock N-phase 实验保留为�
 - 图像队列深度；
 - 预测误差；
 - 显存安全余量。
+- SM 分区粒度与 TTS 最小有效 SM 数；
+- GPU utilization 或带宽压力预测误差。
 
 ### E9：控制面与可靠性补充
 
@@ -1102,12 +1339,15 @@ ASR/RAG 可以轻量，但必须是真实执行。Mock N-phase 实验保留为�
 ### 13.4 系统
 
 - 峰值 GPU VRAM；
+- GPU 物理 SM 总数、请求比例、实际有效 SM 数与分区后端；
+- GPU utilization、功耗、温度，以及可获得时的显存带宽压力代理；
 - 峰值 RSS 和 WSL 可用内存；
 - CPU 利用率和亲和配置；
 - 迁移次数、方向和时间；
 - 驻留档位变化；
 - OOM、失败和回退次数；
 - 调度决策开销；
+- SM profile 创建/销毁或 worker 重启成本；
 - 预测值与真实值误差。
 
 “Restore Gap=0”只能在采样分辨率和指标定义明确时使用。不得将异步预加载时间等同于用户完全无感知。
@@ -1162,6 +1402,7 @@ manifest 至少记录：
 - CUDA、驱动和主要库版本；
 - WSL2 内存与 swap；
 - CPU 核心和亲和配置；
+- SM 分区后端、请求份额、实际有效 SM 数、MPS server/client 状态与 GPU UUID；
 - 运行参数与随机种子；
 - 代码提交哈希；
 - 是否发生 fallback。
@@ -1172,7 +1413,7 @@ manifest 至少记录：
 
 ### 15.1 可以保留为历史或辅助证据
 
-- `paper/archive/pre_rewrite_20260830/experiment_data/01_paper_main/migration/` 中的旧迁移结果；
+- `paper/experiment_data/01_paper_main/migration/` 中的旧迁移结果；
 - Cold-Start vs Hot-Swap；
 - 崩溃恢复和状态背板；
 - 取消语义；
@@ -1188,7 +1429,7 @@ manifest 至少记录：
   - b=1、2、4、8；
   -只对 b=1 做了统一预热；
   -可用于设计下一轮实验，尚未晋升为正文证据。
-- `experiment_results/_archive/pre_rewrite_20260830/legacy_paper_v1/streaming_pipeline/smoke_tts_gpu.wav`
+- `experiment_results/streaming_pipeline/smoke_tts_gpu.wav`
   -只能证明一次 GPU TTS 输出存在；
   -没有对应可复现脚本和 manifest，不能引用性能。
 - `experiment_results/tts/profiling/gpu_sentence_length/gpu_sentence_length_xvector_r3_20260828/`
@@ -1245,8 +1486,9 @@ manifest 至少记录：
 
 1. 本地助手已经形成 LLM、语音和图像流水线。
 2. 单个 8GB GPU 无法让所有模型以最高性能长期驻留。
-3.整体迁出虽然安全，但忽略了剩余显存、CPU核心和流水线阶段之间的互补性。
-4. EdgeSched 使用弹性驻留、代价预测和状态感知规划进行联合调度。
+3. 整体迁出虽然安全，但忽略了剩余显存、CPU 核心、GPU SM 和流水线阶段之间的互补性。
+4. 仅做 GPU SM 分配又假设所有活跃模型已经能够共驻留，无法解决 8GB 设备上的容量冲突。
+5. EdgeSched 使用弹性驻留、CPU/GPU 计算份额、代价预测和状态感知规划进行联合调度。
 
 贡献应正面陈述，不再反复写“priority queue、offloading 本身并不新”。
 
@@ -1256,6 +1498,7 @@ manifest 至少记录：
 
 - 不同模型的显存需求；
 - CPU/GPU 性能差异；
+- 不同 SM 份额下的非线性性能曲线及显存带宽干扰；
 - TTS实时约束；
 - 整体迁移成本；
 - 为什么固定放置不能覆盖 S0、S1、S2。
@@ -1265,11 +1508,11 @@ manifest 至少记录：
 建议结构：
 
 1. workflow 和 phase model；
-2. 设备亲和性与驻留能力的正交任务抽象；
+2. 设备亲和性、驻留能力与 GPU 计算份额能力的正交任务抽象；
 3. 配置相关任务画像；
 4. 弹性驻留状态；
-5. 可行配置过滤；
-6. 代价感知 PlacementPlan；
+5. 显存容量与 GPU 执行兼容性的两级可行配置过滤；
+6. 联合驻留、CPU 核、GPU SM 和 batch 的代价感知 PlacementPlan；
 7. 非对称状态转换；
 8. 队列、迟滞与保守回退。
 
@@ -1281,6 +1524,7 @@ manifest 至少记录：
 - llama.cpp LLM 执行；
 - Qwen3-TTS worker；
 - Forge 图像服务；
+- MPS/Green Context 能力探针、静态 SM profile 与实际有效 SM 验证；
 - C++ 原生执行面目前实际承担的职责。
 
 不能把 Python 迁移实现写成 C++ 已完成能力。
@@ -1290,11 +1534,31 @@ manifest 至少记录：
 建议主线：
 
 1. 单模型画像与动机；
-2.无图像时的语音流水线；
-3.图像期间的联合调度；
-4.弹性策略对比；
-5.多任务工作流与消融；
-6.控制面和可靠性补充。
+2. CPU 核与 GPU SM 的资源—性能曲线；
+3. 无图像时的语音流水线；
+4. 图像期间的联合调度；
+5. 弹性策略对比；
+6. 多任务工作流与消融；
+7. 控制面和可靠性补充。
+
+### 16.6 Related Work 与创新边界
+
+提交前必须优先引用已有正式会议版本；只有尚无正式版本的近期工作使用 arXiv preprint，并在参考文献中明确标注版本与日期。截至 2026-08-30，至少需要覆盖：
+
+- GSLICE（SoCC 2020）：MPS 控制的 GPU 空间共享；
+- GPUlets（USENIX ATC 2022）：面向多模型推理的时空 GPU 共享与资源画像；
+- Miriam（SenSys 2023）：边缘 GPU 上基于弹性 kernel 的多 DNN 实时推理；
+- Chrion（EMSOFT 2023）：CPU 核与 GPU 协同执行 RNN 推理；
+- VoxServe（2026 arXiv）：流式语音模型的 TTFA 与后续音频可播放性调度；
+- Fish Audio S2（2026 arXiv）：通过 MPS 共运行 LLM decode 与 vocoder；
+- vLLM-Omni、StreamWise（2026 arXiv）：多阶段/多模态生成服务；
+- HorizonServe（2026-08-03 arXiv）：单 GPU Omni 模型的时间共享、SM 空间共享和带宽感知分配。
+
+论文不得将以下内容单独声称为新贡献：MPS/Green Context 本身、按比例分 SM、LLM 与语音解码阶段并发、TTFA/RTF 指标、CPU/GPU 协同或模型 offload。创新边界应表述为：
+
+> 现有空间共享系统主要决定已经能够共驻留的阶段如何分享 GPU；EdgeSched 面向所有模型无法完整共驻留的 8GB 级设备，先决定独立模型及其组件在哪里驻留，再联合决定 CPU 物理核、GPU SM、batch 与跨层转换方式。
+
+相关工作对比表至少包含：目标硬件、模型是否完整共驻留、是否支持 CPU 模型计算、是否支持部分驻留、是否控制 SM、是否保持有状态流式会话，以及主要优化指标。
 
 - --
 
@@ -1304,7 +1568,8 @@ manifest 至少记录：
 
 1. **资源流与控制流架构图**
    -显示 LLM、TTS、Diffusion、DDR、GPU、队列和规划器；
-   -明确区分 `DeviceAffinity` 与 `ResidencyCapability`，避免把部分卸载画成特定模型特例；
+   -明确区分 `DeviceAffinity`、`ResidencyCapability` 与 GPU 计算份额能力，避免把部分卸载或 SM 分配画成特定模型特例；
+   -在 GPU 池中显示显存配额与有效 SM 预算是两个独立维度；
    -区分数据流、控制流和状态转换；
    -不再只画软件工程分层框。
 2. **驻留状态与转换图**
@@ -1314,6 +1579,7 @@ manifest 至少记录：
 3. **单模型资源—性能曲线**
    - LLM GPU layers；
    - TTS cores/RTF；
+   - TTS 与 Diffusion 的 SM/性能曲线；
    - Diffusion batch/VRAM。
 4. **LLM→TTS 流水线时间线**
    -文本 chunk；
@@ -1322,11 +1588,12 @@ manifest 至少记录：
 5. **Diffusion 期间联合调度时间线**
    -迁移、图像、LLM token、TTS音频。
 6. **策略 Pareto 图**
-   - TTFA、第一张图、LLM吞吐、Diffusion slowdown。
+   - TTFA、第一张图、LLM吞吐、Diffusion slowdown；
+   - 区分不受控 GPU 共运行、静态 SM 分配与联合规划器。
 
 ### 主表
 
-1. 工作负载的设备亲和性、驻留能力与可选驻留档位；
+1. 工作负载的设备亲和性、驻留能力、GPU 计算份额能力与可选档位；
 2.系统状态、候选计划与回退；
 3.主策略和基线能力对比；
 4.端到端结果；
@@ -1356,6 +1623,9 @@ manifest 至少记录：
 
 - 不实现通用显存分页。
 - `PARTITIONABLE` 只表示调度抽象能够描述部分驻留，不代表任意后端或任意拆分粒度已经实现。
+- SM 分配不等于逐个 CUDA core 管理，也不等于显存分页；第一版只使用后端支持的离散静态 profile。
+- MPS active-thread percentage 是客户端执行资源上限时，不得表述为严格独占的 SM 保留。
+- Green Context 或 MPS 在当前 WSL2 环境未经 capability smoke 前，不进入论文实现主张。
 - 不硬中断正在运行的 Diffusion kernel。
 - 第一版 TTS 以句子/chunk 级流式为主。
 - 部分驻留通过实例重新配置实现，不是原地层迁移。
@@ -1391,11 +1661,16 @@ No-Go：
 
 Go：
 
-- TTS或部分 LLM 与 Diffusion 共存时形成可解释的 Pareto 点。
+- 能力探针能够验证请求比例与实际有效 SM 数，且无静默普通共享 fallback；
+- 至少一个 LLM→TTS 或 TTS→Diffusion 配置在受控 SM 份额下形成可解释的 Pareto 点；
+- 容量可行和执行可行均通过，真实播放无 underrun；
+- 受控分配相对 CPU 回退或默认 CUDA 不受控共享至少改善一个主要端到端指标，且没有突破冻结的其他交互约束。
 
 No-Go：
 
-- 共存导致明显 OOM 风险或所有任务都更慢。
+- MPS/Green Context 在目标 WSL2 环境不可用或实际有效 SM 数无法验证；
+- 共存导致明显 OOM 风险；
+- 所有受控 SM 配置都被 CPU 回退、不受控共享或显存共驻留但计算串行方案支配。
 
 ### Gate D：正式实验
 
@@ -1426,6 +1701,11 @@ No-Go：
   2. Forge b=1 的 direct NVML 同后端校准；
   3. 用完整 16 档曲线重新筛选最小共置候选；
   4. 共置 smoke + 每候选 5 轮，加入 colocated 残差后冻结 `G_safe/H_TTS/H_D`
+- [ ] **SM-A：GPU 计算份额能力探针**：验证 WSL2 中 MPS daemon/client、GPU SM 总数、请求比例、实际有效 SM 数、显存限制和安全退出；未通过时不进入受控 SM 实验
+- [ ] **SM-B：TTS T0/T3 隔离 SM 曲线**：先跑 `100/75/50/25%`，再在满足 TTFA/RTF 的临界点附近细化
+- [ ] **SM-C：Diffusion b=1 隔离 SM 曲线**：与 SM-B 使用相同后端和有效 SM 口径
+- [ ] **SM-D：LLM→TTS 平衡实验**：比较不受控共享、显存共驻留但计算串行、静态 SM 分配，并记录第一句、TTFA、chunk deadline 与真实 underrun
+- [ ] **SM-E：TTS→Diffusion 共运行实验**：先固定 LLM 在 CPU，求 TTS 最小可行 SM 数，将剩余 SM 给 Diffusion；前序形成 Pareto 后才测试三阶段 GPU 共享
 - [ ] JSON RAG/BGE/Faster-Whisper 核心预算；音频路由就绪后补真实播放探针
 - [ ] `R_sys={0,1,2,4}` 正式辅助任务验证
 - [ ] S0 无图像真实重叠静态放置实验
@@ -1433,7 +1713,7 @@ No-Go：
 - [ ] Go 后才实现 `PlacementPlan` 与新代价模型，再开展 S1 和正式策略评测
 - [ ] 同步论文、图表和必要的 C++ 契约
 
-B1/B2 已确认 T0/T3 是条件式 Pareto；C2+C3 direct NVML 已完成 16 档性能曲线，独立 KV 校准也已完成。当前只剩 T0/T3、Forge 的同后端整卡校准和真实共置残差，才能冻结 `G_safe/H_TTS/H_D`；在此之前不据此修改在线规划器或论文性能结论。
+B1/B2 已确认 T0/T3 是条件式 Pareto；C2+C3 direct NVML 已完成 16 档性能曲线，独立 KV 校准也已完成。当前先完成 T0/T3、Forge 的同后端整卡校准和真实共置残差，冻结 `G_safe/H_TTS/H_D`。SM-A 至 SM-C 可以在独立实验目录中实现和校准，但在驻留阈值与 SM 画像都通过前，不修改在线规划器或论文性能结论。
 
 - --
 
@@ -1443,11 +1723,14 @@ B1/B2 已确认 T0/T3 是条件式 Pareto；C2+C3 direct NVML 已完成 16 档�
 
 - 真实 LLM、TTS、Diffusion 能形成可复现端到端工作流；
 - 调度器能够输出完整、可解释的 PlacementPlan；
+- PlacementPlan 同时包含驻留档位、CPU 物理核预算、GPU 有效 SM 数、显存上限、batch 和转换方式；
 - 所有允许的共享配置都经过真实 profiling；
 - 异常和未知状态能安全回退；
 - 不同 prompt 不会错误合批；
 - 图片队列不会触发无意义的重复迁移；
 - 核心数由测量曲线推导，而不是固定写死；
+- SM 数由能力探针和性能曲线推导，而不是根据平均 GPU utilization 猜测百分比；
+- LLM→TTS 的后续 chunk 能在播放截止时间前准备完成，或论文明确报告当前后端无法满足持续流式条件；
 - 至少一个场景中，新策略相对二元完整迁移形成真实 Pareto 改进；
 - 若不存在该改进，论文主动收缩主张；
 - 所有正文性能数字可追溯到脚本、原始迭代、manifest 和运行环境。

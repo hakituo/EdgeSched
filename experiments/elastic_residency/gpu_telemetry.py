@@ -16,6 +16,8 @@ NVML_SUCCESS = 0
 NVML_ERROR_INSUFFICIENT_SIZE = 7
 NVML_VALUE_NOT_AVAILABLE = (1 << 64) - 1
 BYTES_PER_MIB = 1024.0 * 1024.0
+NVML_DRIVER_VERSION_BUFFER_SIZE = 256
+NVML_DEVICE_UUID_BUFFER_SIZE = 96
 
 
 class GPUProbe(Protocol):
@@ -85,6 +87,14 @@ class NvmlBindings:
             "nvmlDeviceGetComputeRunningProcesses_v2",
             None,
         )
+        # 以下两个符号只用于环境 manifest（driver 版本、GPU UUID），
+        # 缺失时保持 None，不影响核心遥测路径。
+        self._get_driver_version = getattr(
+            self._library,
+            "nvmlSystemGetDriverVersion",
+            None,
+        )
+        self._get_uuid = getattr(self._library, "nvmlDeviceGetUUID", None)
         self._init.restype = ctypes.c_int
         self._get_handle.argtypes = [ctypes.c_uint, ctypes.POINTER(ctypes.c_void_p)]
         self._get_handle.restype = ctypes.c_int
@@ -110,6 +120,19 @@ class NvmlBindings:
                 ctypes.POINTER(_NvmlProcessInfoV2),
             ]
             self._get_processes.restype = ctypes.c_int
+        if self._get_driver_version is not None:
+            self._get_driver_version.argtypes = [
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            ]
+            self._get_driver_version.restype = ctypes.c_int
+        if self._get_uuid is not None:
+            self._get_uuid.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            ]
+            self._get_uuid.restype = ctypes.c_int
 
     @staticmethod
     def _check(return_code: int, operation: str) -> None:
@@ -154,6 +177,47 @@ class NvmlBindings:
                 else 0.0
             ),
         }
+
+    def system_driver_version(self) -> tuple[str | None, str | None]:
+        """返回 NVML 报告的驱动版本与失败原因。
+
+        WSL2 客体内该值对应 Windows 宿主驱动；读取失败时返回 ``None`` 与原因，
+        绝不回退到 ``nvidia-smi`` 子进程。
+        """
+
+        if self._get_driver_version is None:
+            return None, "nvml_system_driver_version_symbol_unavailable"
+        buffer = ctypes.create_string_buffer(NVML_DRIVER_VERSION_BUFFER_SIZE)
+        with self._lock:
+            return_code = self._get_driver_version(
+                buffer,
+                ctypes.c_uint(NVML_DRIVER_VERSION_BUFFER_SIZE),
+            )
+        if return_code != NVML_SUCCESS:
+            return None, f"nvml_system_driver_version_failed_rc_{return_code}"
+        version = buffer.value.decode("utf-8", errors="replace").strip()
+        if not version:
+            return None, "nvml_system_driver_version_empty"
+        return version, None
+
+    def device_uuid(self) -> tuple[str | None, str | None]:
+        """返回设备 UUID 与失败原因，用于实验 manifest。"""
+
+        if self._get_uuid is None:
+            return None, "nvml_device_uuid_symbol_unavailable"
+        buffer = ctypes.create_string_buffer(NVML_DEVICE_UUID_BUFFER_SIZE)
+        with self._lock:
+            return_code = self._get_uuid(
+                self._handle,
+                buffer,
+                ctypes.c_uint(NVML_DEVICE_UUID_BUFFER_SIZE),
+            )
+        if return_code != NVML_SUCCESS:
+            return None, f"nvml_device_uuid_failed_rc_{return_code}"
+        uuid = buffer.value.decode("utf-8", errors="replace").strip()
+        if not uuid:
+            return None, "nvml_device_uuid_empty"
+        return uuid, None
 
     def process_memory(self, pid: int) -> tuple[float | None, str | None]:
         if self._get_processes is None:
@@ -226,3 +290,29 @@ class DirectNvmlProbe:
 @lru_cache(maxsize=2)
 def get_direct_nvml_probe(include_process_memory: bool = False) -> DirectNvmlProbe:
     return DirectNvmlProbe(include_process_memory=include_process_memory)
+
+
+def get_system_driver_version(
+    bindings: Any | None = None,
+) -> tuple[str | None, str | None]:
+    """只读查询系统驱动版本；失败时返回原因，不启动任何子进程。"""
+
+    try:
+        target = bindings or NvmlBindings()
+    except NvmlUnavailableError as exc:
+        return None, f"nvml_unavailable:{exc}"
+    except OSError as exc:
+        return None, f"nvml_load_failed:{exc.__class__.__name__}"
+    return target.system_driver_version()
+
+
+def get_device_uuid(bindings: Any | None = None) -> tuple[str | None, str | None]:
+    """只读查询设备 UUID；失败时返回原因，不启动任何子进程。"""
+
+    try:
+        target = bindings or NvmlBindings()
+    except NvmlUnavailableError as exc:
+        return None, f"nvml_unavailable:{exc}"
+    except OSError as exc:
+        return None, f"nvml_load_failed:{exc.__class__.__name__}"
+    return target.device_uuid()

@@ -15,3 +15,11 @@ def _ensure_mvp_core_on_path() -> None:
 
 _ensure_mvp_core_on_path()
 
+
+def pytest_configure(config) -> None:
+    """注册需要真实硬件/环境的测试标记。"""
+
+    config.addinivalue_line(
+        "markers",
+        "wsl_gpu: 需要 WSL2 + CUDA + MPS 的集成测试，默认不运行",
+    )

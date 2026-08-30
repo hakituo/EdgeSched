@@ -97,6 +97,72 @@ GlobalTaskScheduler (services/task_scheduler.py)
 | `services/phase_aware/cpp_adapter.py` | Python 策略与 C++ 策略/迁移回调对接 |
 | `cpp_scheduler/core/phase_strategy.*` | C++ 侧同构的阶段、代价、lease 与默认策略 |
 
+### GPU 计算份额（SM-A，实验期基础设施）
+
+这一组模块位于 `experiments/elastic_residency/sm/` 子包，只服务于实验，不接入任何在线调度路径。
+
+| 文件 | 职责 |
+|---|---|
+| `sm/sm_capability.py` | SM-A 探针入口：基线 → MPS 可用性 → 逐 percentage 独立子进程 → 清理 → manifest/JSONL/summary/failures/events |
+| `sm/sm_profiles.py` | 枚举、后端→能力映射、百分比/SM 校验原语、`estimate_requested_sm_count`（只生成请求值） |
+| `sm/sm_share_profile.py` | `GpuShareProfile` 与 `unsupported_profile`（fail-closed） |
+| `sm/sm_partition_rules.py` | `GpuPartitionCapability`、`GpuPartitionProbeResult` 与独占 SM 预算规则 |
+| `sm/mps_protocol.py` | interactive 协议层：`CommandSpec`/`CommandResult`、stdin 编码、`subprocess_runner`、客户端环境、`quit` 成败判定 |
+| `sm/mps_commands.py` | 常量、`MpsDaemonHealth`、`ControllerReadiness`、解析与 PID 文件读取 |
+| `sm/mps_runtime.py` | control daemon 启动器：探测二进制、`-d` 启动、私有 pipe/log 目录 |
+| `sm/mps_daemon.py` | daemon 句柄：controller 就绪判定、客户端环境、清理与退出证据 |
+| `sm/mps_queries.py` | `get_server_list` / `get_client_list` / `ps` / `start_server` 查询；持久记录 server PID 与进程身份 |
+| `sm/mps_shutdown.py` | 关闭阶段证据：controller 退出后按进程身份核对 server，`reached_quiescent` 判定与超时 |
+| `sm/mps_artifacts.py` | daemon 日志归档、残迹检查与证据快照 |
+| `sm/sm_client_probe.py` / `sm/sm_client_workload.py` | 独立进程客户端：env 先于 CUDA 初始化、context 有效 SM 数、短 workload 同步 |
+| `sm/cuda_exec_affinity.py` | `cuCtxGetExecAffinity` 与驱动版本只读查询 |
+| `sm/green_context_types.py` / `sm/green_context_probe.py` | Green Context 符号表/结构体自检与只读探测；默认结论为 `UNSUPPORTED` |
+| `sm/sm_probe_env.py` / `sm/sm_client_process.py` / `sm/sm_client_runner.py` / `sm/sm_probe_records.py` / `sm/sm_probe_verdict.py` | 环境采集、子进程执行、客户端编排、记录构造与 Go/No-Go 判定 |
+
+语义边界：
+
+- `UNMANAGED`：普通 CUDA 共享，没有可验证份额。
+- `MPS_CAP`：`CUDA_MPS_ACTIVE_THREAD_PERCENTAGE` 只是客户端执行资源上限，不是独占 SM，不参与 “SM 数之和 <= 物理 SM” 的准入判断。
+- `MPS_STATIC` / `GREEN_CONTEXT`：只有真实验证成功后才按空间分区处理；当前没有可用的静态分区后端。
+- `UNSUPPORTED`：后端不存在、初始化失败或实际份额无法验证，禁止静默退回普通 CUDA。
+- `effective_sm_count` 只接受客户端 CUDA context 的实测结果；比例推算值只能写入 `requested_sm_count`。
+- 显存限制与 SM 限制分别建模，互不代表。
+
+真实 NVIDIA API 契约（已按驱动头文件/文档核对，违反会导致结论失真）：
+
+- `cuCtxGetExecAffinity(CUexecAffinityParam*, CUexecAffinityType)`：第二个参数是整数枚举
+  （`CU_EXEC_AFFINITY_TYPE_SM_COUNT = 1`），不是元素个数指针；`argtypes` 用 `ctypes.c_int`。
+  `CUexecAffinityParam` 的 `type`/`numSms` 偏移由 C ABI 保证（0 / 4），联合体整体大小未核对，
+  需在结果中保留 `layout.union_total_size_verified = false`，不得据此宣称设备能力已验证。
+- `nvidia-cuda-mps-control` 的 `get_server_list` / `get_client_list` / `ps` / `quit` /
+  `start_server` 是 interactive control commands，必须写入 **stdin**；argv 只包含可执行文件路径。
+  全程禁用 `shell=True`，`CommandResult` 分别记录 `argv`、`stdin_command`、`returncode`、输出与超时。
+- `-d` 只拉起 control daemon；MPS server 由首个 CUDA client 按需启动。因此就绪判据是私有 pipe
+  目录中 `nvidia-cuda-mps-control.pid`（及其中 PID 存活），**不能**在启动阶段等待 server 出现。
+  顺序为：启动 controller → 等 PID 文件 → 启动客户端并保持 context → 查询 server/client →
+  客户端退出 → stdin 发送 `quit` → 验证 controller/server 消失 → 清理私有目录。
+- 清理必须 fail-closed：`quit` 只有在 `returncode == 0` 且未超时且无 OS 错误时才算成功，
+  `returncode=None` 一律视为失败；等待 controller 退出超时会抛 `MpsRuntimeError`，不会静默
+  置为成功；controller 未确认退出时**保留**私有 pipe/log 目录与 PID 供人工处理，只归档日志。
+- server 与 controller 观察状态必须**持久记录**在句柄上（`observed_server_identities` /
+  `controller_snapshot`，pid → starttime/executable），不能从单次 post-quit 证据推断。
+  **controller 退出之后不再调用 `get_server_list`**（前端可能重新拉起 control daemon），
+  controller 与 server 都改用退出前记录的进程身份核对是否仍存活。
+- `reached_quiescent=True` 必须同时满足：`controller_status` 为 `gone`/`reused`、所有 server 为
+  `gone`/`reused`、没有 unverifiable controller/server、没有查询错误。进程身份无法确认时
+  fail-closed 并保留私有目录与结构化原因；PID 被其他进程复用时（starttime/executable 不同）
+  判为 `reused`，不误判为残留。
+- `get_server_list` 超时 / OS 错误 / `returncode=None` / 非零返回码在 controller 仍在时写入
+  `last_server_query_error` 与 `post_quit_evidence.server_query_error`，并令
+  `reached_quiescent=False`；查询失败绝不能折叠成空列表。
+- 物理 SM 与 context 可见 SM 必须分开：不受控 CUDA 基线给出 `physical_total_sms`；
+  MPS 客户端的 `torch.cuda.get_device_properties(0).multi_processor_count` 只是
+  `context_visible_sm_count`（可能被 active-thread percentage 限制），
+  所有 `requested_sm_count` 都用基线物理总数计算，MPS 客户端属性不得覆盖物理总量。
+- Green Context 的 stream 符号是 `cuGreenCtxStreamCreate`（不存在 `cuStreamCreateWithGreenCtx`）；
+  `CUdevResource` 布局未核对，设备资源查询只能记为 `device_sm_count_unverified` 并保持
+  `UNSUPPORTED / layout_unverified`，不得崩溃也不得宣称支持。
+
 ### 接口与适配器
 
 | 路径 | 职责 |
@@ -190,6 +256,7 @@ GPU burst arrives
 | `experiments/phase_aware/` | Phase-Aware 三组实验 |
 | `experiments/overhead/` | 实现开销、综合实验和消融套件 |
 | `experiments/elastic_residency/` | 弹性驻留统一契约、物理核租约、资源与调度 jitter 采样及后续可行性实验 |
+| `experiments/elastic_residency/sm/` | GPU 计算份额（SM-A）子包：数据契约、MPS 生命周期、客户端探针、探针编排与 Green Context 只读探测 |
 | `experiment_results/` | 工作区运行产物和中间结果 |
 | `paper/experiment_data/01_paper_main/` | 新版正文聚合数据入口；当前尚未晋升数据 |
 | `paper/experiment_data/02_auxiliary/` | 新版辅助说明数据入口 |
@@ -277,6 +344,7 @@ GPU burst arrives
 | 弹性驻留 B2 | WSL2 `tts_component_offload_matrix.py` + `b2_tts_matrix_20260829_verified_v1` | 60 条 TTS 组件放置矩阵、分组统计与条件式 Pareto；不证明端到端无 underrun |
 | 弹性驻留 C1 | WSL2 `llm_residency_curve.py` + `c1_llm_residency_512_20260829_verified_v1` | K0/FULL 真实端点、精确 token/gap、阶段资源与 KV 保存恢复；不代替 C2 多轮曲线 |
 | KV 语义/容量 | `tests/elastic_residency/test_kv_measurement.py` + WSL2 `llm_kv_cache_calibration.py` | 字段语义、原生 position/`llm.n_tokens`、日志解析与缺字段失败；`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条正式容量矩阵，不作为性能计时证据 |
+| GPU 计算份额 SM-A | `tests/elastic_residency/test_sm_profiles.py`、`test_sm_capability.py`、`test_sm_probe_records.py`、`test_mps_commands.py`、`test_mps_runtime.py`、`test_mps_daemon.py`、`test_mps_daemon_cleanup.py`、`test_cuda_exec_affinity.py`、`test_green_context_probe.py`、`test_sm_wsl_gates.py`（硬门单测）+ WSL2 `sm_capability.py` | 数据契约、环境变量先于 CUDA 初始化、子进程失败/超时/JSON 损坏、控制命令走 stdin、controller 就绪不依赖 server、ABI 第二参数为整数枚举、MPS 受限属性不覆盖物理 SM；清理 fail-closed 覆盖 quit 超时/OS 错误/`returncode=None`/PID 持续存活/server 残留/server 查询超时/server 查询非零，且 server 观察状态持久记录；WSL GPU 集成入口 `test_sm_capability_wsl_gpu.py` 需 `EDGESCHED_RUN_WSL_GPU_TESTS=1`，硬门逻辑在 `sm_wsl_gates.py`：环境白名单以外的任何失败、缺失 `residual_artifacts`、缺失 `driver_query` 都判失败，未跑真实 probe 前只能写“实现完成，真实能力待验证” |
 | LLM+TTS 共置 | `tests/elastic_residency/test_llm_kv_colocated.py` + WSL2 `llm_tts_colocated.py` | `B_LLM`/`P_colocated`/残差公式与容量裁决（不重复叠加 KV）；最小 K0+T3 direct NVML 临时 smoke 已通过，正式 artifact 矩阵仍待运行 |
 | 恢复/持久化 | `tests/verify_state_backplane_recovery.py` | mmap 读写和恢复闭合 |
 | C++ 绑定 | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` | 扩展导入与 API 契约 |

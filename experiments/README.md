@@ -20,6 +20,7 @@
 | `scaling/` | Forge batch scaling 特性曲线 (T(b)/吞吐/加速比) |
 | `tts/` | Qwen3-TTS Base 独立 CPU/GPU smoke 与 10 块 prompt 复用验收 |
 | `elastic_residency/` | 弹性驻留实验契约、物理核租约、资源与调度 jitter 采样；后续承载 T0–T3、LLM 驻留和动态核心预算 |
+| `elastic_residency/sm/` | GPU 计算份额（SM-A）子包：数据契约、MPS 生命周期、客户端探针、探针编排与 Green Context 只读探测 |
 
 ## 推荐入口
 
@@ -193,6 +194,167 @@ python -m experiments.elastic_residency.audio_playback_probe \
 ```
 
 探针记录源/输出采样率、设备、host API、callback 数、状态、underflow 和最大 callback gap；不支持的 24 kHz 单声道会显式协商到设备格式。静音 smoke 只验证输出链路，正式 underrun 结论必须来自真实 TTS chunk 和并发工作流。
+
+### 13. 弹性驻留 SM-A：GPU 计算份额能力探针
+
+对应论文指南 P1-C / SM-A。当前状态：**实现完成，真实能力待验证**（尚未在 WSL2 运行真实 MPS probe）。
+
+```bash
+python -m experiments.elastic_residency.sm.sm_capability \
+  --run-id <new_run_id> \
+  --percentages 100 75 50 25 \
+  --output-root experiment_results/elastic_residency/sm_capability \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false --source-git-status-entry-count 0
+```
+
+模块位于 `experiments/elastic_residency/sm/`：
+
+| 模块 | 职责 |
+|---|---|
+| `sm_capability.py` | SM-A 探针入口与编排 |
+| `sm_profiles.py` / `sm_share_profile.py` / `sm_partition_rules.py` | 数据契约、profile 与独占 SM 预算规则 |
+| `mps_commands.py` | 控制命令原语：stdin 编码、`CommandSpec`/`CommandResult`、解析、PID 文件与存活 |
+| `mps_runtime.py` / `mps_daemon.py` / `mps_queries.py` / `mps_shutdown.py` / `mps_artifacts.py` | 启动、就绪判定、查询、关闭阶段身份核对、日志归档与清理 |
+| `sm_client_probe.py` / `cuda_exec_affinity.py` / `sm_client_workload.py` | 独立进程客户端、CUDA Driver 只读查询与短 CUDA workload |
+| `sm_client_process.py` / `sm_client_runner.py` | 子进程执行与逐 percentage 编排 |
+| `sm_probe_env.py` / `sm_probe_records.py` / `sm_probe_verdict.py` | 环境采集、记录构造与 Go/No-Go 判定 |
+| `green_context_types.py` / `green_context_probe.py` | Green Context 符号表/结构体自检与只读能力探测 |
+
+产物位于 `experiment_results/elastic_residency/sm_capability/<run_id>/`，包含 `run_config.json`、`manifest.json`、`iterations.jsonl`、`events.jsonl`、`summary.json`、`summary.csv`、`failures.jsonl`，以及 `client_stdio/`（每个客户端子进程的 stdout/stderr/JSON）与 `mps_logs/`（清理前归档的 daemon 日志）。
+
+执行顺序与口径（`nvidia-cuda-mps-control -d` 只拉起 control daemon，MPS server 由首个 CUDA client
+按需启动，因此**不能在启动阶段等待 server 出现**）：
+
+1. 普通 CUDA 不受控共享基线（显式移除 MPS 环境变量），得到 `physical_total_sms`；
+2. `nvidia-cuda-mps-control` 可用性检查；
+3. 每个 percentage：启动 control daemon → 等待私有 pipe 目录中的
+   `nvidia-cuda-mps-control.pid`（controller 就绪证据）→ 启动**全新客户端子进程**；
+4. 客户端保持 context 存活期间，父进程轮询 `get_client_list` / `get_server_list` 证明客户端真的连上 MPS；
+5. 客户端退出后经 **stdin** 发送 `quit`：
+   - controller 仍在时继续用控制协议确认 server 清空；
+   - controller PID/PID 文件消失后**不再调用 `get_server_list`**，改为核对退出前
+     记录的 server 进程身份（PID + starttime/executable）是否仍存活；
+   - 只有 controller 与所有已观察 server 都确认消失才 `reached_quiescent=True`；
+     进程身份无法确认时 fail-closed 并保留私有目录与结构化原因；
+6. 清理本次 run 的私有目录；
+7. 输出结构化 report 与 Go/No-Go 判定。
+
+控制协议必须走 interactive stdin：
+
+```text
+subprocess.run([mps_binary], input="get_server_list\n", ...)
+```
+
+不能执行 `nvidia-cuda-mps-control get_server_list`；仍然禁止 `shell=True`。
+`CommandResult` 分别记录 `argv`、`stdin_command`、`returncode`、stdout/stderr 与超时/错误。
+可选 `--mps-start-server` 会经 stdin 发送 `start_server -uid <当前 uid>`（默认由首个 client 按需拉起，
+保持同一用户语义）。
+
+必须遵守的边界：
+
+- 物理 SM 与 context 可见 SM 分开：基线给出 `physical_total_sms`，MPS 客户端的
+  `multi_processor_count` 只记为 `context_visible_sm_count`（可能被 active-thread percentage 限制），
+  所有 `requested_sm_count` 都用基线物理总数计算，MPS 客户端属性不得覆盖物理总量。
+- `effective_sm_count` 只接受客户端 CUDA context 通过 `cuCtxGetExecAffinity` 得到的实测值。
+  该 API 的真实签名是 `cuCtxGetExecAffinity(CUexecAffinityParam*, CUexecAffinityType)`，
+  第二个参数是整数枚举 `CU_EXEC_AFFINITY_TYPE_SM_COUNT = 1`，不是元素个数指针；
+  `CUexecAffinityParam` 的 `type`/`numSms` 偏移由 C ABI 保证，联合体整体大小未与 CUDA 头文件核对，
+  结果中保留 `layout.union_total_size_verified = false`。查询失败时保持 `None`，禁止用 0 或比例推算冒充。
+  返回的原始 return code 只是驱动响应证据，**不能**在没有 WSL 实测前写成环境能力结论。
+- 第一版使用 `CUDA_MPS_ACTIVE_THREAD_PERCENTAGE`，能力只能标记为 `MPS_CAP`（客户端执行资源上限），**不是**独占 SM 分区，不参与“SM 数之和 <= 物理 SM”的准入判断。
+- 只有 `MPS_STATIC` / `GREEN_CONTEXT` 且验证成功时才按空间分区处理；当前没有可用的静态分区后端。
+- 后端不存在、daemon 启动失败或份额无法验证时输出 `UNSUPPORTED`，绝不静默退回普通 CUDA；`summary.fallback_count` 必须为 0。
+- 显存限制与 SM 限制分别建模。MPS 下整卡 direct NVML 不是单个客户端的精确显存，客户端显存另记 PyTorch `allocated/reserved`。
+- 正式 GPU 遥测复用 `DirectNvmlProbe`，`manifest.gpu.gpu_cli_subprocess_used` 恒为 `false`，不启动 `nvidia-smi`。
+
+只读的 Green Context 能力探测单独提供入口（默认结论为 `UNSUPPORTED`，不创建任何 Green Context）：
+
+```bash
+python -m experiments.elastic_residency.sm.green_context_probe --output-json <path>
+```
+
+它校验的 stream 符号是 `cuGreenCtxStreamCreate`（不存在 `cuStreamCreateWithGreenCtx`）；
+`CUdevResource` 布局未与 CUDA 头文件核对，设备资源查询只记为
+`device_sm_count_unverified` 并保持 `UNSUPPORTED / layout_unverified`，不崩溃也不宣称支持。
+
+单元测试（不依赖 GPU）与 WSL GPU 集成入口分开：
+
+```bash
+python -m pytest tests/elastic_residency/test_sm_profiles.py \
+  tests/elastic_residency/test_sm_capability.py \
+  tests/elastic_residency/test_sm_probe_records.py \
+  tests/elastic_residency/test_mps_commands.py \
+  tests/elastic_residency/test_mps_runtime.py \
+  tests/elastic_residency/test_mps_daemon.py \
+  tests/elastic_residency/test_mps_daemon_cleanup.py \
+  tests/elastic_residency/test_cuda_exec_affinity.py \
+  tests/elastic_residency/test_green_context_probe.py -q
+
+# 仅在 WSL2 + CUDA + MPS 环境显式开启
+EDGESCHED_RUN_WSL_GPU_TESTS=1 python -m pytest \
+  tests/elastic_residency/test_sm_capability_wsl_gpu.py -q
+```
+
+WSL 集成测试不允许“实现自己造成的 No-Go”通过。MPS binary 存在时会同时检查：
+
+- `summary["unsupported_reasons"]`；
+- 每项 `summary["sm_evidence"][*]["failure"]`（**环境白名单以外的任何非空失败都判失败**，
+  不只匹配已知 marker）；
+- 每条受控记录的 `daemon.cleanup_succeeded`；
+- `daemon.post_quit_evidence.reached_quiescent`；
+- `daemon.residual_artifacts` 必须**显式存在**且严格等于 `[]`；
+- 受控客户端必须**显式包含** `sm_measurement.driver_query`，且
+  `requested_affinity_type == 1`、`cu_query_returncode` 为整数或 `None`。
+
+环境能力白名单（统一用于聚合原因与逐项 failure）：
+
+```text
+mps_binary_unavailable
+effective_sm_count_not_queryable_from_client_context
+effective_sm_count_not_verified_for_at_least_two_percentages
+cuCtxGetExecAffinity        # 驱动返回码证据本身
+```
+
+也就是说，合法的 `cuCtxGetExecAffinity` 不可用不会被误判成实现缺陷；
+而 `client_status`、客户端 PID 未观察到、JSON 解析错误、affinity 查询路径异常、
+清理未闭合、缺失 `residual_artifacts` / `driver_query` 都会让集成测试失败。
+
+硬门判定逻辑位于 `tests/elastic_residency/sm_wsl_gates.py`，并配有纯单元测试
+`tests/elastic_residency/test_sm_wsl_gates.py`，覆盖未知 failure、
+缺失 `driver_query`、缺失 `residual_artifacts`、清理未闭合等场景均会触发 `AssertionError`。
+若临时目录权限受限，给 pytest 指定仓库内可写的 `--basetemp`，不要把权限错误误报成测试失败。
+
+### 13.1 SM-A 的 provenance 与运行流程
+
+**`git archive HEAD` 不能表示 dirty 工作区**：它只打包已提交的 HEAD，不包含工作树里
+modified 与 untracked 的内容。用它当作 dirty 源码快照会得到错误的 provenance。
+
+状态项数量必须实时读取，不能硬编码：
+
+```powershell
+git -C D:\AI\xiaoyou-core\legacy\mvp_core status --porcelain
+(git -C D:\AI\xiaoyou-core\legacy\mvp_core status --porcelain | Measure-Object -Line).Lines
+```
+
+论文正式实验推荐流程：
+
+1. 完成修复与测试；
+2. Windows 侧形成一个干净 commit（本目录是独立仓库，提交/推送只在 Windows 侧进行）；
+3. 确认 `git status --porcelain` 输出为空（0 项）；
+4. 用 `scripts/sync_to_wsl2_safe.ps1 -SkipGit` 同步到 WSL2；
+5. 使用**真实完整的 HEAD** 与 `--source-git-dirty false --source-git-status-entry-count 0` 运行。
+
+如果坚持 dirty 探索运行，快照必须包含**实际工作树**的 modified 与 untracked 文件，例如：
+
+```powershell
+$repo = 'D:\AI\xiaoyou-core\legacy\mvp_core'
+git -C $repo diff HEAD --binary > D:\AI\edgesched_wip.patch
+git -C $repo ls-files --others --exclude-standard > D:\AI\edgesched_untracked.txt
+# 按 untracked 清单打包，再与 patch 一起复制进运行目录
+```
+
+该结果只能用于探索与排障，**不得直接晋升为论文正式证据**；正式证据必须在干净 commit 上重跑。
 
 ## 环境变量
 

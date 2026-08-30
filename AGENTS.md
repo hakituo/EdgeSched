@@ -36,6 +36,10 @@
 
 ## 修改与验证
 
+- **单文件规模上限**：Python 源文件（含注释与空行）不得超过 **300 行**。
+  - 接近上限时按职责拆分为多个模块，而不是继续追加函数或常量。
+  - 拆分后必须同步更新 `docs/PROJECT_INDEX.md`、`docs/PROJECT_CONTEXT.md` 与相关 README。
+  - 适用于新增和修改的文件；历史超标文件（例如 `experiments/elastic_residency/llm_residency_curve.py`、`llm_tts_colocated.py`）在触碰其逻辑时逐步整改，不要借机整仓重写。
 - 调度主路径：`services/task_scheduler.py`、`services/admission_controller.py`、`services/resource_manager.py`、`services/state_backplane.py`。
 - C++ 桥接：`services/cpp_scheduler_engine.py`、`services/cpp_scheduler_wrapper.py`、`cpp_scheduler/bindings/python_bindings.cpp`。
 - Phase-Aware：`services/phase_aware/` 与 `cpp_scheduler/core/phase_strategy.*`，Python/C++ 契约变更必须双向检查。
