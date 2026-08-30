@@ -1,0 +1,302 @@
+% EdgeSched: phase-aware elastic residency and joint resource scheduling.
+% This standalone note summarizes the mathematical model used by the design.
+
+\documentclass[10pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage{newtxtext,newtxmath}
+\usepackage[margin=0.72in]{geometry}
+\usepackage{amsmath,amsfonts}
+\usepackage{booktabs,array}
+\usepackage{xcolor}
+
+\newcommand{\CPU}{\textsc{cpu}}
+\newcommand{\GPU}{\textsc{gpu}}
+\newcommand{\Unmanaged}{\textsc{unmanaged}}
+
+\begin{document}
+
+\begin{center}
+{\LARGE\bfseries EdgeSched: Phase-Aware Elastic Residency\par}
+\vspace{2pt}
+{\Large\bfseries and Joint Resource Scheduling\par}
+\vspace{5pt}
+{\small Design formulation and current workload instantiation}
+\end{center}
+
+\section*{1. Phase Capability and Measured Profiles}
+
+EdgeSched schedules an executable \emph{phase}.  A phase may be an LLM prefill
+or decode, a TTS generator or codec, a diffusion job, or an auxiliary stage.
+Its static capability declaration is
+
+\begin{equation}
+\Phi_i = \left\langle
+    d_i,\rho_i,g_i,\chi_i,
+    \operatorname{role}_i,
+    \operatorname{preempt}_i,
+    \operatorname{queue}_i,
+    \operatorname{deps}_i
+\right\rangle .
+\end{equation}
+
+Here, $d_i$ is the device affinity; $\rho_i$ is fixed, whole-model migratable,
+or partitionable residency; and
+
+\begin{equation}
+g_i\in\{\mathrm{NONE},\mathrm{WHOLE},\mathrm{LAYER},
+             \mathrm{COMPONENT},\mathrm{STATE}\}
+\end{equation}
+
+records the validated reconfiguration granularity.  The value $\mathrm{NONE}$
+applies to a fixed phase and $\mathrm{WHOLE}$ to a phase that can only move as a
+complete instance.  GPU compute-share capability is
+
+\begin{equation}
+\chi_i\in\{\mathrm{UNMANAGED},\mathrm{CAP\_LIMITABLE},
+                 \mathrm{SM\_PARTITIONABLE}\}.
+\end{equation}
+
+The remaining fields define service semantics, preemption and queueing rules,
+and workflow dependencies.  A declared capability does not by itself create a
+scheduling option: only configurations supported by the backend and validated
+by profiling enter the finite candidate set $\mathcal U_i$.
+
+Let $u_i=(r_i,c_i,s_i,b_i)\in\mathcal U_i$ denote a residency profile, physical
+CPU-core budget, GPU compute-share setting, and batch/concurrency setting.  For
+an unmanaged GPU client, $s_i=\bot$ rather than a fictitious full-device
+reservation.  Offline profiling records
+
+\begin{equation}
+\Psi_i(u_i\mid z_i,h_t)=\left\langle
+    \widehat M_i^{G},\widehat M_i^{H},
+    \widehat T_i^{\mathrm{first}},\widehat T_i^{\mathrm{steady}},
+    \widehat Q_i
+\right\rangle ,
+\end{equation}
+
+where $z_i$ contains input size, context/KV size, model and runtime settings,
+and $h_t$ contains recent observations used to update the offline profile.
+$\widehat Q_i$ contains workload-specific predictions such as TTFT,
+sentence-ready latency, RTF, token gap, throughput, and slowdown.  Unsupported
+or unverified configurations are absent rather than assigned optimistic values.
+
+Transitions are profiled separately because they are edges between two
+residency configurations, not properties of one configuration:
+
+\begin{align}
+\Gamma_i(r_i\!\rightarrow r_i'\mid K_i,z_i)
+   &=\left\langle T_i^{\mathrm{load}},T_i^{\mathrm{save}},
+      T_i^{\mathrm{restore}},T_i^{\mathrm{cutover}},
+      T_i^{\mathrm{cleanup}}\right\rangle ,\\
+C_i^{\mathrm{tr}}(r_i\!\rightarrow r_i'\mid K_i,z_i)
+   &=T_i^{\mathrm{load}}+T_i^{\mathrm{save}}
+     +T_i^{\mathrm{restore}}+T_i^{\mathrm{cutover}}
+     +T_i^{\mathrm{cleanup}}.
+\end{align}
+
+\section*{2. Current Workload Instantiation}
+
+\begin{center}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{>{\raggedright\arraybackslash}p{0.10\linewidth}
+                >{\raggedright\arraybackslash}p{0.17\linewidth}
+                >{\raggedright\arraybackslash}p{0.25\linewidth}
+                >{\raggedright\arraybackslash}p{0.19\linewidth}
+                >{\raggedright\arraybackslash}p{0.20\linewidth}}
+\toprule
+Phase & Service semantics & Validated residency candidates
+      & GPU-control evidence & Scheduling obligation \\
+\midrule
+LLM & resident, stateful, interactive
+    & CPU, profiled layer-hybrid configurations, and full GPU
+    & unmanaged measured; controlled profiles pending platform validation
+    & remain reachable and preserve context across transitions \\
+TTS & burst or session-warm, deadline-sensitive
+    & CPU fallback, T0 full GPU, and T3 component-hybrid
+    & unmanaged measured; controlled profiles pending platform validation
+    & minimize sentence-ready delay and meet playback deadlines \\
+Diffusion & burst, queueable, GPU-required
+    & full GPU execution
+    & unmanaged measured; controlled profiles pending platform validation
+    & admit only when capacity-safe; do not interrupt an admitted job \\
+Auxiliary & short helper phases
+    & measured CPU-preferred configurations
+    & not required in the current plan
+    & avoid starving system, audio, and interactive threads \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The controlled GPU-sharing code path is implemented, but a controlled profile
+does not enter $\mathcal U_i$ until the target platform passes capability and
+performance validation.  The table is a workload instantiation of $\Phi_i$;
+the scheduler interface is not limited to these model names.
+
+\section*{3. Runtime State and Event-Driven Actions}
+
+At a scheduling event, EdgeSched observes
+
+\begin{equation}
+x_t=\left\langle
+\mathbf q_t,\mathbf K_t,
+{\bigl\{r_i^{\mathrm{cur}}\bigr\}}_{i\in\mathcal A_t},
+M_G,M_H,S_G,U_C,\mathbf d_t,v_t,h_t
+\right\rangle .
+\end{equation}
+
+$\mathbf q_t$ contains per-phase queues and running states; $\mathbf K_t$
+contains phase state sizes such as LLM context and KV; $\mathbf d_t$ contains
+deadlines; and $h_t$ contains recent durations, arrivals, interference, and
+transitions.  In the current workload, $\mathbf q_t$ includes the diffusion-job
+queue and TTS-chunk queue.  Decisions occur at arrivals, completions, queue or
+session changes, completed reconfigurations, resource-boundary violations, and
+backend failures---not after every token or utilization fluctuation.
+
+The current workload uses three event modes:
+
+\begin{align*}
+S_0 &: \text{no GPU-required burst is admitted: optimize the interactive pipeline},\\
+S_1 &: \text{a GPU-required burst is running: protect the job and interaction SLOs},\\
+S_2 &: \text{the burst queue is nonempty: avoid restore--evict oscillation}.
+\end{align*}
+
+Diffusion instantiates the GPU-required burst in the present experiments; the
+mode definitions also apply to another profiled burst phase with the same
+service obligations.
+
+The joint action is
+
+\begin{equation}
+a_t=\left({\bigl\{u_i=(r_i,c_i,s_i,b_i)\bigr\}}_{i\in\mathcal A_t},\mu_t\right),
+\end{equation}
+
+where $\mu_t$ is hold, urgent release, atomic restore, or reconfiguration.
+
+\section*{4. Hierarchical Feasibility}
+
+EdgeSched first filters residency and capacity, and only then considers compute
+sharing.  A candidate belongs to $\mathcal F_{\mathrm{cap}}(x_t)$ only if
+
+\begin{align}
+\sum_{i\in\mathcal A_t}
+  \widehat M_i^G(u_i\mid z_i,h_t)+G_{\mathrm{safe}}
+  &\le V_{\mathrm{GPU}},\\
+\sum_{i\in\mathcal A_t}
+  \widehat M_i^H(u_i\mid z_i,h_t)+H_{\mathrm{safe}}
+  &\le V_{\mathrm{host}},\\
+\sum_{i\in\mathcal C_t}c_i+R_{\mathrm{sys}}
+  &\le C_{\mathrm{physical}}.
+\end{align}
+
+$\mathcal C_t$ contains phases receiving physical CPU cores, while
+$R_{\mathrm{sys}}$ protects system, scheduler, sampling, and audio work.  For a
+backend that provides verified disjoint SM partitions,
+
+\begin{equation}
+\sum_{i\in\mathcal G_t}s_i\le S_{\mathrm{GPU}},
+\qquad s_i\in\mathcal S_i .
+\end{equation}
+
+For an MPS active-thread cap, $s_i$ is a verified client limit rather than an
+exclusive reservation, so the disjoint-partition interpretation is not used.
+For unmanaged execution $s_i=\bot$, and feasibility relies on measured
+co-running profiles rather than an invented SM allocation.
+
+Capacity feasibility is necessary but not sufficient.  The SLO-feasible set is
+
+\begin{equation}
+\mathcal F_{\mathrm{SLO}}(x_t)=
+\left\{a\in\mathcal F_{\mathrm{cap}}(x_t):
+g_k(a\mid x_t)\le 0,\ \forall k\in\mathcal D_t\right\},
+\end{equation}
+
+where $g_k$ represents a frozen interaction, playback, slowdown, correctness,
+or backend-validity constraint.  Thus VRAM-compatible co-residency does not
+imply execution-compatible co-scheduling.
+
+\section*{5. Cost-Aware Pareto Planning}
+
+For already-arrived work over decision horizon $H$, configuration-specific
+predictors estimate phase duration, queue completion, interference, and the
+critical path of the workflow.  EdgeSched does not wait for hypothetical future
+requests in order to create a batch.  Within $\mathcal F_{\mathrm{SLO}}(x_t)$,
+the running-performance vector is
+
+\begin{equation}
+\mathbf J_{\mathrm{run}}(a\mid x_t)=\left\langle
+\widehat T_{\mathrm{interactive}},
+\widehat T_{\mathrm{burst}},
+\widehat T_{\mathrm{workflow}},
+-\widehat\Theta_{\mathrm{interactive}},
+N_{\mathrm{reconfig}}
+\right\rangle .
+\end{equation}
+
+Only components relevant to the active workflow are instantiated.  The planner
+first constructs the non-dominated set
+
+\begin{equation}
+\mathcal P(x_t)=
+\operatorname*{ParetoMin}_{a\in\mathcal F_{\mathrm{SLO}}(x_t)}
+\mathbf J_{\mathrm{run}}(a\mid x_t),
+\end{equation}
+
+then applies a fixed, pre-declared lexicographic policy to select
+
+\begin{equation}
+a_t^{\mathrm{cand}}=
+\operatorname*{LexMin}_{a\in\mathcal P(x_t)}
+\mathbf J_{\mathrm{run}}(a\mid x_t).
+\end{equation}
+
+This avoids an opaque weighted sum of latency, throughput, and SLO penalties
+with incompatible units.  The priority order and all SLO thresholds are frozen
+before formal evaluation.
+
+For the current non-incremental TTS backend, the measured first-output metric is
+the time at which the complete first-sentence waveform becomes available:
+
+\begin{equation}
+T_{\mathrm{sentence\ ready}}=t_1^{\mathrm{ready}}-t_{\mathrm{request}}.
+\end{equation}
+
+When transition, LLM generation, and TTS execution are serialized, this equals
+their sum; when they overlap, EdgeSched measures the actual critical path rather
+than adding overlapping intervals.  Playback feasibility requires
+
+\begin{equation}
+t_{j+1}^{\mathrm{ready}}\le t_j^{\mathrm{playback\ end}},
+\qquad j\ge 1.
+\end{equation}
+
+The metric may be renamed first-audio latency only after an incremental audio
+backend exposes the first playable samples.
+
+\section*{6. Hysteresis and Safe Reconfiguration}
+
+Let $a_{\mathrm{cur}}$ be the current action and $a'$ the selected feasible
+candidate.  Define the predicted cumulative running-latency improvement over
+already-arrived work, excluding the one-time transition itself, as
+
+\begin{equation}
+\Delta_H(a_{\mathrm{cur}},a'\mid x_t)=
+\widehat L_H(a_{\mathrm{cur}}\mid x_t)
+-\widehat L_H(a'\mid x_t).
+\end{equation}
+
+EdgeSched switches only when
+
+\begin{equation}
+\Delta_H(a_{\mathrm{cur}},a'\mid x_t)
+> C^{\mathrm{tr}}(a_{\mathrm{cur}}\!\rightarrow a'\mid x_t)+\eta,
+\qquad t-t_{\mathrm{last\ switch}}\ge\tau_{\min},
+\end{equation}
+
+where $C^{\mathrm{tr}}$ sums the transition-edge costs of changed phases,
+$\eta$ is a hysteresis margin, and $\tau_{\min}$ is a minimum residency window.
+During a burst train, the known queue extends horizon $H$, allowing EdgeSched to
+retain a degraded or hybrid residency configuration until the queue drains
+instead of restoring after every job.
+
+\end{document}

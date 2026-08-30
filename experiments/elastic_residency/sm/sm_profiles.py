@@ -4,7 +4,7 @@
 ``GpuShareProfile`` 位于 ``sm_share_profile``，能力/探测记录位于
 ``sm_partition_rules``。
 
-语义边界必须与 ``paper/THESIS_EXPERIMENT_GUIDE_DRAFT.md`` 的 P1-C 一致：
+语义边界必须与 ``paper/thesis_experiment_guide/06_implementation_and_roadmap.md`` 的 P1-C 一致：
 
 - ``MPS_CAP`` 只是 ``CUDA_MPS_ACTIVE_THREAD_PERCENTAGE`` 客户端执行资源上限，
   不是独占 SM 分区；

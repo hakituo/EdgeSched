@@ -3,7 +3,7 @@
 > **重置日期**：2026-08-30
 > **状态**：尚未晋升新版正文数据。
 
-旧论文数据已完整保存在 `../archive/pre_rewrite_20260830/experiment_data/`。当前目录只接收按照 `THESIS_EXPERIMENT_GUIDE_DRAFT.md` 新口径完成、人工核对并明确晋升的数据。
+旧论文数据已完整保存在 `../archive/pre_rewrite_20260830/experiment_data/`。当前目录只接收按照 `../thesis_experiment_guide/README.md` 新口径完成、人工核对并明确晋升的数据。
 
 ```text
 experiment_data/

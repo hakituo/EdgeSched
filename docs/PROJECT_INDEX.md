@@ -1,7 +1,7 @@
 # EdgeSched / MVP Core 项目索引
 
 **用途**：给 Codex 和维护者提供低成本导航。  
-**最后核对**：2026-08-30（以当前目录实际文件为准）
+**最后核对**：2026-08-31（以当前目录实际文件为准）
 
 ## 先判断你要做什么
 
@@ -12,13 +12,13 @@
 | 准入/背压 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/admission_controller.py`, `presentation/websocket/handler.py` | `experiments/admission/`, `tests/test_chat_service.py` |
 | 显存迁移 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/resource_manager.py`, `services/cpp_scheduler_engine.py`（门面）+ `cpp_engine_migration.py` / `cpp_engine_llm.py` / `cpp_engine_image.py` / `cpp_engine_utils.py` | `experiments/migration/` |
 | 独立 TTS | [TTS_SUBSYSTEM.md](TTS_SUBSYSTEM.md)、[GPU 句长画像](TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md) | `services/tts/`, `data/adapters/qwen3_tts_adapter.py` | `tests/tts/`, `experiments/tts/` |
-| 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md)、[结果目录](ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md)、[论文实验总指南](../paper/THESIS_EXPERIMENT_GUIDE_DRAFT.md)、[B2 TTS 矩阵](TTS_COMPONENT_OFFLOAD_MATRIX_20260829.md) | `experiments/elastic_residency/`；C2/C3 direct NVML 240 条性能曲线与 KV 48 条容量矩阵已完成，T0/T3、Forge 同后端校准及真实共置待完成 | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，不得自动晋升正文 |
+| 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md)、[结果目录](ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md)、[论文实验指南索引](../paper/thesis_experiment_guide/README.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/`；C2/C3 direct NVML 240 条性能曲线与 KV 48 条容量矩阵已完成，T0/T3、Forge 同后端校准及真实共置待完成 | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，不得自动晋升正文 |
 | Phase-Aware | `.trae/skills/xiaoyou-mvp-core/SKILL.md` | `services/phase_aware/`, `cpp_scheduler/core/phase_strategy.*` | `tests/test_phase_aware_quick.py`, `experiments/phase_aware/` |
-| GPU 计算份额（SM-A） | [论文实验总指南](../paper/THESIS_EXPERIMENT_GUIDE_DRAFT.md) P1-C / SM-A、[实验 README](../experiments/README.md) 第 13 节 | `experiments/elastic_residency/sm/` 子包；入口 `sm/sm_capability.py` | WSL 正式记录 `sm_a_20260830_direct_nvml_v1`：基线成功、36 SM、0 failure/fallback/cleanup failure，但 MPS binary 不存在，结论 NO_GO；停止 SM-B/SM-C，不晋升正文性能结论 |
+| GPU 计算份额（SM-A） | [CPU/SM 分配方法](../paper/thesis_experiment_guide/05_cpu_and_gpu_allocation.md)、[实现路线](../paper/thesis_experiment_guide/06_implementation_and_roadmap.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/sm/` 子包；入口 `sm/sm_capability.py` | WSL 正式记录 `sm_a_20260830_direct_nvml_v1`：基线成功、36 SM、0 failure/fallback/cleanup failure，但 MPS binary 不存在，暂定 NO_GO；SM-B/C 暂停，等待原生 Linux 恢复验证 |
 | 崩溃恢复 | `docs/PROJECT_CONTEXT.md` | `services/state_backplane.py`, `services/task_scheduler.py` | `experiments/recovery/`, `experiments/semantic_validation/` |
 | C++ 调度器 | [cpp_scheduler/README.md](../cpp_scheduler/README.md) | `cpp_scheduler/core/`, `workers/`, `queue/`, `bindings/` | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` |
 | 跑实验 | [experiments/README.md](../experiments/README.md) | `experiments/run_*.py`, 各实验子目录 | `experiment_results/`, manifest |
-| 论文重写与图表 | [paper/README.md](../paper/README.md)、[新版骨架](../paper/rewrite/OUTLINE.md) | `paper/THESIS_EXPERIMENT_GUIDE_DRAFT.md`, `paper/rewrite/`；旧稿位于 `paper/archive/` | `paper/experiment_data/01_paper_main/`（当前尚未晋升新数据） |
+| 论文重写与图表 | [paper/README.md](../paper/README.md)、[实验指南索引](../paper/thesis_experiment_guide/README.md)、[新版骨架](../paper/rewrite/OUTLINE.md) | `paper/thesis_experiment_guide/`, `paper/rewrite/`；方法公式 `paper/edgesched_phase_aware_formulation.tex`；架构图 `paper/system_architecture.tex`；`paper/THESIS_EXPERIMENT_GUIDE_DRAFT.md` 仅为兼容入口 | `paper/experiment_data/01_paper_main/`（当前尚未晋升新数据） |
 | WSL2 同步/环境 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#7-环境与同步边界) | `scripts/sync_to_wsl2_safe.ps1`, `cpp_scheduler/build_wsl2.sh` | WSL2 实际运行日志 |
 
 ## 入口速查

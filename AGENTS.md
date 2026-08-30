@@ -8,6 +8,7 @@
 2. 涉及架构、实验口径或运行环境时，再读 `docs/PROJECT_CONTEXT.md`。
 3. 修改本模块前必须读 `.trae/skills/xiaoyou-mvp-core/SKILL.md`。
 4. 论文数据任务同时读 `paper/experiment_data/README.md`；C++ 任务同时读 `cpp_scheduler/README.md`。
+5. 论文路线或实验口径任务先读 `paper/thesis_experiment_guide/README.md` 与 `10_gates_and_current_status.md`，再按索引只加载相关主题模块；禁止默认一次性加载全部指南。
 
 ## 项目边界
 

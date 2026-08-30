@@ -36,7 +36,7 @@ ResourceIsolationScheduler (C++ execution plane)
 - `services/phase_aware/`：Phase-Aware workflow、GPU lease、代价决策和 backfill。
 - `experiments/run_all_experiments.py`：论文实验统一编排。
 - `services/tts/`：独立句子级流式 Qwen3-TTS Base 子系统。
-- `paper/THESIS_EXPERIMENT_GUIDE_DRAFT.md`：新版论文与实验路线真源。
+- `paper/thesis_experiment_guide/`：按任务拆分的新版论文与实验路线真源；旧路径仅保留兼容导航。
 - `paper/rewrite/`：新版正文工作区；旧英文稿已归档。
 
 当前目录分层：

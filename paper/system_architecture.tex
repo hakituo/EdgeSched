@@ -5,29 +5,32 @@
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,positioning,fit,calc,backgrounds}
 
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+
 \begin{document}
 \begin{tikzpicture}[
     >=Latex,
     font=\small,
-    workload/.style={
-        draw=gray!65,
+    phase/.style={
+        draw=gray!68,
         fill=gray!5,
-        rounded corners=4pt,
+        rounded corners=3pt,
         line width=0.9pt,
-        minimum width=118mm,
-        minimum height=15mm,
-        text width=112mm,
+        minimum width=29mm,
+        minimum height=10mm,
+        text width=26mm,
         align=center,
-        inner sep=6pt
+        inner sep=4pt
     },
-    profile/.style={
+    knowledge/.style={
         draw=orange!78!black,
         fill=orange!8,
         rounded corners=4pt,
         line width=1.1pt,
-        minimum width=118mm,
-        minimum height=29mm,
-        text width=112mm,
+        minimum width=142mm,
+        minimum height=21mm,
+        text width=135mm,
         align=center,
         inner sep=7pt
     },
@@ -35,32 +38,43 @@
         draw=teal!65!black,
         fill=teal!7,
         rounded corners=4pt,
-        line width=0.9pt,
-        minimum width=108mm,
-        minimum height=17mm,
-        text width=102mm,
+        line width=1.0pt,
+        minimum width=136mm,
+        minimum height=19mm,
+        text width=129mm,
         align=center,
         inner sep=6pt
     },
     decision/.style={
         draw=blue!72!black,
-        fill=blue!10,
+        fill=blue!9,
         rounded corners=5pt,
-        line width=1.2pt,
-        minimum width=52mm,
-        minimum height=24mm,
-        text width=47mm,
+        line width=1.15pt,
+        minimum width=63mm,
+        minimum height=25mm,
+        text width=57mm,
         align=center,
         inner sep=7pt
     },
-    action/.style={
+    selector/.style={
         draw=blue!72!black,
-        fill=blue!18,
+        fill=blue!12,
+        rounded corners=5pt,
+        line width=1.25pt,
+        minimum width=112mm,
+        minimum height=20mm,
+        text width=105mm,
+        align=center,
+        inner sep=7pt
+    },
+    plan/.style={
+        draw=blue!78!black,
+        fill=blue!19,
         rounded corners=5pt,
         line width=1.4pt,
-        minimum width=99mm,
-        minimum height=17mm,
-        text width=93mm,
+        minimum width=126mm,
+        minimum height=19mm,
+        text width=119mm,
         align=center,
         inner sep=7pt
     },
@@ -69,9 +83,9 @@
         fill=green!6,
         rounded corners=5pt,
         line width=1.0pt,
-        minimum width=55mm,
-        minimum height=38mm,
-        text width=49mm,
+        minimum width=64mm,
+        minimum height=35mm,
+        text width=57mm,
         align=center,
         inner sep=8pt
     },
@@ -80,15 +94,21 @@
         fill=red!5,
         rounded corners=5pt,
         line width=1.0pt,
-        minimum width=55mm,
-        minimum height=38mm,
-        text width=49mm,
+        minimum width=64mm,
+        minimum height=35mm,
+        text width=57mm,
         align=center,
         inner sep=8pt
     },
     dataflow/.style={
         ->,
-        draw=gray!72!black,
+        draw=gray!75!black,
+        line width=1.05pt
+    },
+    profileflow/.style={
+        ->,
+        draw=orange!78!black,
+        dash pattern=on 4pt off 2pt on 1pt off 2pt,
         line width=1.0pt
     },
     control/.style={
@@ -101,7 +121,7 @@
         ->,
         draw=teal!72!black,
         densely dotted,
-        line width=1.0pt
+        line width=1.1pt
     },
     migration/.style={
         <->,
@@ -118,69 +138,99 @@
 ]
 
 % ------------------------------------------------------------------
-% Workflows and phase abstraction
+% Application workflows and data flow
 % ------------------------------------------------------------------
-\node[workload] (workload) at (0,12.0) {
-    \textbf{Local Multimodal Workflows}\\[2pt]
-    {\small resident/stateful LLM $\mid$ elastic TTS burst or voice session $\mid$
-    GPU-required diffusion burst $\mid$ measured auxiliary stages}
-};
+\node[phase] (aux) at (-5.7,13.2) {ASR / RAG\\Auxiliary Phases};
+\node[phase] (llm) at (-1.9,13.2) {Streaming LLM\\Prefill / Decode};
+\node[phase] (tts) at (2.0,13.2) {TTS Chunk Queue\\and Worker};
+\node[phase] (playback) at (5.9,13.2) {Ordered Audio\\Playback};
+\node[phase] (diffusion) at (2.0,11.65) {Diffusion Queue\\and GPU Burst};
+
+\draw[dataflow] (aux) -- node[edgelabel,above] {context} (llm);
+\draw[dataflow] (llm) -- node[edgelabel,above] {sentences} (tts);
+\draw[dataflow] (tts) -- node[edgelabel,above] {audio chunks} (playback);
+\draw[dataflow] (llm.south) |- node[edgelabel,pos=0.72,above] {image request} (diffusion.west);
+
+\begin{pgfonlayer}{background}
+    \node[
+        draw=gray!45,
+        fill=gray!1,
+        rounded corners=6pt,
+        inner sep=9pt,
+        fit=(aux)(llm)(tts)(playback)(diffusion)
+    ] (workflowbg) {};
+\end{pgfonlayer}
 
 \node[font=\small\bfseries,text=gray!65!black,anchor=south west]
-    at ($(workload.north west)+(0,0.22)$) {Application and Workflow Layer};
+    at ($(workflowbg.north west)+(0,0.18)$) {Example Local-Assistant Workflow Instantiation};
 
-\node[profile] (profile) at (0,9.25) {
-    \textbf{Generic Phase Profile --- No Model-Name Routing}\\[3pt]
-    {\small \textbf{Service semantics}: \texttt{RESIDENT} $\mid$
-    \texttt{BURST} $\mid$ \texttt{SESSION\_WARM} $\mid$ \texttt{HELPER}}\\[2pt]
-    {\small \textbf{Placement capability}: CPU $\mid$ GPU $\mid$
-    validated hybrid placement (layer/component/state)}\\[2pt]
-    {\small \textbf{Execution controls}: queueability, preemption, batching,
-    dependencies, and SM controllability}\\[2pt]
-    {\scriptsize \textbf{Measured profiles}: DDR/VRAM, TTFT/TTFA/RTF,
-    SM scaling, interference, and transition costs}
+% ------------------------------------------------------------------
+% Capability registry and measured evidence
+% ------------------------------------------------------------------
+\node[knowledge] (profiles) at (0,9.45) {
+    \textbf{Phase Capability Registry and Measured Profile Store}\\[3pt]
+    {\small capabilities $\Phi_i$: device affinity, residency and split granularity,
+    service semantics, queueing, preemption, and GPU-control capability}\\[2pt]
+    {\small configuration profiles $\Psi_i$: DDR/VRAM, TTFT, sentence-ready latency,
+    RTF, throughput, slowdown, and interference}\\[2pt]
+    {\scriptsize transition edges $\Gamma_i(r_i\!\rightarrow r_i')$;
+    unsupported or unvalidated configurations are excluded from the candidate set}
 };
 
 % ------------------------------------------------------------------
-% Runtime state and hierarchical decisions
+% Runtime state and hierarchical planning
 % ------------------------------------------------------------------
-\node[state] (state) at (0,6.45) {
+\node[state] (state) at (0,6.85) {
     \textbf{Runtime State and Event Triggers}\\[2pt]
-    {\small $S_0$: no image job $\mid$ $S_1$: image running $\mid$
-    $S_2$: image queue nonempty}\\[1pt]
-    {\scriptsize queues, KV/context length, deadlines, CPU load, DDR/VRAM,
-    effective SM allocation, bandwidth pressure, and recent transitions}
+    {\small \textbf{Current workload modes:}
+    $S_0$: no GPU-required burst $\mid$
+    $S_1$: burst running $\mid$
+    $S_2$: burst queue nonempty}\\[1pt]
+    {\scriptsize per-phase queues, context/KV, deadlines, current residency,
+    CPU/DDR/VRAM pressure, GPU backend state, voice session, and recent history}
 };
 
-\node[decision] (capacity) at (-3.15,3.65) {
-    \textbf{1. Capacity and Residency Planner}\\[3pt]
-    {\small choose CPU/GPU/hybrid residency $r_i$}\\[2pt]
-    {\scriptsize enforce DDR/VRAM safety; keep the resident service reachable;
-    include load, migration, KV/state, and restoration costs}
+\node[decision] (capacity) at (-4.05,4.15) {
+    \textbf{1. Capacity and Residency Filter}\\[3pt]
+    {\small enumerate validated CPU, GPU, and hybrid profiles $r_i$}\\[2pt]
+    {\scriptsize enforce host memory, VRAM, physical-core, state-continuity,
+    and backend-validity constraints}
 };
 
-\node[decision] (compute) at (3.15,3.65) {
-    \textbf{2. Compute-Share Scheduler}\\[3pt]
-    {\small choose CPU cores $c_i$, effective SMs $s_i$, and batch $b_i$}\\[2pt]
-    {\scriptsize use only verified profiles; protect interaction/audio deadlines
-    while bounding diffusion slowdown}
+\node[decision] (predictor) at (4.05,4.15) {
+    \textbf{2. Cost and Duration Predictor}\\[3pt]
+    {\small estimate burst duration, workflow critical path, interference,
+    and transition payback}\\[2pt]
+    {\scriptsize condition on queue depth, input size, context/KV, deadlines,
+    co-runners, and recent observations}
 };
 
-\node[action] (action) at (0,0.75) {
-    \textbf{Event-Driven Joint Action}\\[2pt]
-    {$a_t=\bigl(\{(r_i,c_i,s_i,b_i)\}_{i\in\mathcal A_t},\mu\bigr)$}\\[1pt]
-    {\scriptsize $\mu$: hold $\mid$ urgent release $\mid$ atomic restore $\mid$
-    reconfigure; switch only when predicted gain exceeds transition cost and hysteresis}
+\node[selector] (selector) at (0,1.65) {
+    \textbf{3. SLO-Constrained Pareto Planner}\\[3pt]
+    {\small choose physical CPU cores $c_i$, validated GPU-share setting $s_i$,
+    batch $b_i$, and transition mode $\mu$ within capacity-safe placements}\\[2pt]
+    {\scriptsize filter hard safety and interaction constraints first;
+    then apply a frozen Pareto/lexicographic policy and hysteresis}
 };
 
-\draw[dataflow] (workload) --
-    node[edgelabel,right] {instantiate phases} (profile);
-\draw[dataflow] (profile) --
-    node[edgelabel,right] {capabilities + measured profiles} (state);
+\node[plan] (plan) at (0,-0.65) {
+    \textbf{PlacementPlan and Explainable Joint Action}\\[2pt]
+    {$a_t=\bigl(\{(r_i,c_i,s_i,b_i)\}_{i\in\mathcal A_t},\mu_t\bigr)$}\\[1pt]
+    {\scriptsize target placements, transitions, predicted resource peaks and latency,
+    fallback plan, decision reason, and minimum residency window}
+};
+
+\draw[profileflow] (workflowbg.south) --
+    node[edgelabel,right] {instantiate generic phases $i\in\mathcal A_t$} (profiles.north);
+\draw[control] (workflowbg.east) -- ++(0.42,0) |-
+    node[edgelabel,pos=0.48,right] {events} (state.north east);
+\draw[profileflow] (profiles) --
+    node[edgelabel,right] {validated capabilities and profiles} (state);
 \draw[control] (state) -- (capacity);
-\draw[control] (capacity) -- (compute);
-\draw[control] (capacity) -- (action);
-\draw[control] (compute) -- (action);
+\draw[control] (state) -- (predictor);
+\draw[control] (capacity) -- (selector);
+\draw[control] (predictor) -- (selector);
+\draw[control] (selector) -- (plan);
 
 \begin{pgfonlayer}{background}
     \node[
@@ -188,41 +238,44 @@
         fill=blue!1,
         rounded corners=6pt,
         inner sep=10pt,
-        fit=(state)(capacity)(compute)(action)
+        fit=(state)(capacity)(predictor)(selector)(plan)
     ] (controlbg) {};
 \end{pgfonlayer}
 
 % ------------------------------------------------------------------
 % Heterogeneous execution plane
 % ------------------------------------------------------------------
-\node[hostpool] (host) at (-3.45,-3.15) {
+\node[hostpool] (host) at (-4.05,-4.15) {
     \textbf{CPU and Host-Memory Plane}\\[4pt]
     {\small DDR-resident weights, components, and KV/state}\\[2pt]
-    {\small whole-model or hybrid CPU execution}\\[2pt]
-    {\scriptsize physical-core budgets $c_i$ plus protected system/audio reserve}
+    {\small whole-model or validated hybrid CPU execution}\\[2pt]
+    {\scriptsize physical-core budgets $c_i$ plus protected system,
+    scheduler, sampling, and audio reserve}
 };
 
-\node[gpupool] (gpu) at (3.45,-3.15) {
+\node[gpupool] (gpu) at (4.05,-4.15) {
     \textbf{Admission-Controlled GPU Plane}\\[4pt]
     {\small VRAM-resident full models or validated partitions}\\[2pt]
-    {\small serial fallback, verified MPS cap, or Green Context}\\[2pt]
-    {\scriptsize memory budget $m_i$, effective SM budget $s_i$, and batch $b_i$}
+    {\small unmanaged CUDA baseline, or controlled-share backend
+    enabled after platform validation}\\[2pt]
+    {\scriptsize measured memory peak $m_i$, $s_i=\bot$ when unmanaged,
+    validated effective SM setting when controlled, and batch $b_i$}
 };
 
-\coordinate (branch) at (0,-0.55);
-\draw[control] (action) -- (branch);
+\coordinate (branch) at (0,-2.05);
+\draw[control] (plan) -- (branch);
 \draw[control] (branch) -|
-    node[edgelabel,pos=0.72,left] {DDR residency and CPU cores} (host.north);
+    node[edgelabel,pos=0.70,left] {DDR residency and CPU cores} (host.north);
 \draw[control] (branch) -|
-    node[edgelabel,pos=0.72,right] {VRAM admission and GPU compute share} (gpu.north);
+    node[edgelabel,pos=0.70,right] {VRAM admission and GPU profile} (gpu.north);
 
-\draw[migration] ($(host.south)+(0,-0.45)$) --
+\draw[migration] ($(host.south)+(0,-0.42)$) --
     node[edgelabel,above,text=purple!78!black]
         {whole-model, layer, component, and KV/state transitions}
-    ($(gpu.south)+(0,-0.45)$);
+    ($(gpu.south)+(0,-0.42)$);
 
-\draw[feedback] (host.west) -- ++(-0.7,0) |- (state.west);
-\draw[feedback] (gpu.east) -- ++(0.7,0) |- (state.east);
+\draw[feedback] (host.west) -- ++(-0.72,0) |- (state.west);
+\draw[feedback] (gpu.east) -- ++(0.72,0) |- (state.east);
 
 \begin{pgfonlayer}{background}
     \node[
@@ -231,8 +284,21 @@
         rounded corners=6pt,
         inner sep=11pt,
         fit=(host)(gpu)
-    ] {};
+    ] (executionbg) {};
 \end{pgfonlayer}
+
+% ------------------------------------------------------------------
+% Flow legend
+% ------------------------------------------------------------------
+\coordinate (legendbase) at (0,-6.85);
+\draw[dataflow] ($(legendbase)+(-6.8,0)$) -- ++(0.8,0)
+    node[right,font=\scriptsize,text=black] {phase data};
+\draw[profileflow] ($(legendbase)+(-3.5,0)$) -- ++(0.8,0)
+    node[right,font=\scriptsize,text=black] {profile evidence};
+\draw[control] ($(legendbase)+(0.2,0)$) -- ++(0.8,0)
+    node[right,font=\scriptsize,text=black] {control decision};
+\draw[feedback] ($(legendbase)+(3.6,0)$) -- ++(0.8,0)
+    node[right,font=\scriptsize,text=black] {runtime feedback};
 
 \end{tikzpicture}
 \end{document}

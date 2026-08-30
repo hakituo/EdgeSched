@@ -9,6 +9,8 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[2]
 
+GUIDE_DOCS = tuple(sorted((ROOT / "paper" / "thesis_experiment_guide").glob("*.md")))
+
 DOCS_TO_CHECK = (
     ROOT / "AGENTS.md",
     ROOT / "README.md",
@@ -17,7 +19,7 @@ DOCS_TO_CHECK = (
     ROOT / "experiments" / "README.md",
     ROOT / "paper" / "README.md",
     ROOT / "cpp_scheduler" / "README.md",
-)
+) + GUIDE_DOCS
 
 REQUIRED_PATHS = (
     ROOT / ".trae" / "skills" / "xiaoyou-mvp-core" / "SKILL.md",
@@ -30,6 +32,7 @@ REQUIRED_PATHS = (
     ROOT / "experiments" / "run_all_experiments.py",
     ROOT / "experiments" / "run_no_forge_experiments.py",
     ROOT / "experiments" / "run_forge_experiments.py",
+    ROOT / "paper" / "thesis_experiment_guide" / "README.md",
     ROOT / "paper" / "experiment_data" / "01_paper_main",
 )
 
@@ -99,4 +102,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

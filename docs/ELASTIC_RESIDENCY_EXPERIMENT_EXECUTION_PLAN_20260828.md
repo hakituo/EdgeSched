@@ -377,17 +377,19 @@ experiment_results/elastic_residency/_archive/
 
 ## 6. 建议的逐步交付节奏
 
+**当前状态（2026-08-31）**：C2+C3 direct NVML 已完成 16 档（共 240 条）性能曲线，KV 校准 48/48 已完成；当前进入 C3 收尾第 1 步（T0/T3 direct NVML 隔离矩阵）。SM-A/B/C 不在本计划 A–E 阶段内，其暂定 NO_GO/暂停状态见 `paper/thesis_experiment_guide/10_gates_and_current_status.md`。正式运行前必须从当时的干净 Windows HEAD 读取完整 commit，不在长期文档中硬编码临时 HEAD 或短期测试计数。
+
 - [x] **A1**：GPU/jitter/CPU 首样本/provenance 硬门槛已通过。证据：`a1_smoke_20260829_verified_v7`；v6 仅作历史调试记录。
 - [x] **B1**：T0–T3 真实单文本 smoke 通过。证据：`b1_tts_components_20260829_verified_v2`。
 - [x] **B2**：完成 `4 配置 × 3 句长 × 5 轮`；Pareto 候选为 T0/T3，证据为 `b2_tts_matrix_20260829_verified_v1`。
 - [x] **C1**：K0/FULL 的 512-token 真实端点 smoke 已通过。证据：`c1_llm_residency_512_20260829_verified_v1`。
 - [x] **C2 direct NVML 重跑**：`c2_llm_residency_curve_20260829_direct_nvml_v2` 已完成 90/90 条并通过，干净 commit 为 `17c40d3495cb01237bdf2e7429f2635362e908cf`；旧 CLI 运行只保留为工程基线。
 - [x] **C3 工具**：Forge b=1 复测脚本、`G_safe`/`H_TTS`/`H_D` 筛选分析与临界补测建议已实现并通过静态测试；legacy 口径初步筛选见 `experiment_results/elastic_residency/c3_analysis/c3_h_screen_20260829_legacy_forge.json`。
-- [x] **C3 Forge 复测**：`forge_b1_reprofile_20260829_verified_v2` 通过全部门禁，`M_D = 5252 MiB`；复测后正式筛选见 `experiment_results/elastic_residency/c3_analysis/c3_h_reprofiled_20260829.json`（`H_TTS(T0)=16`、`H_TTS(T3)=32+FULL`、`H_D` 为 512:8 / 2048:0 / 4096:0）。
+- [x] **C3 Forge 旧后端复测**：`forge_b1_reprofile_20260829_verified_v2` 通过当时门禁，`M_D = 5252 MiB`；`c3_h_reprofiled_20260829.json` 只保留为候选筛选（`H_TTS(T0)=16`、`H_TTS(T3)=32+FULL`、`H_D` 为 512:8 / 2048:0 / 4096:0），不得当作 direct NVML 冻结值。
 - [x] **C3 临界补测**：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 已完成 150/150 条并通过；与 C2 direct v2 合并后覆盖 16 个 LLM 驻留档位。
 - [x] **C3 KV 正式校准**：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条并通过，0 failure；`n_ctx/KV tokens=640/2176/4224` 对应 KV buffer 总量 `24/72/136 MiB`，完整序列化状态 `70.263/118.292/182.331 MiB`。
-- [ ] **当前 C3 收尾**：
-  1. 用 direct NVML 对进入阈值计算的 T0/T3 隔离整卡增量和 Forge b=1 峰值做同后端校准；旧 PyTorch allocator 峰值仍可保留，但旧 CLI 整卡差值不得直接混入冻结值；
+- [ ] **当前 C3 收尾**（下一项正式实验为第 1 步）：
+  1. T0/T3 的 direct NVML 隔离整卡矩阵（30 条，下一 run id 为 `b2_tts_pareto_matrix_20260831_direct_nvml_v1`，固定 20/50/100 字 × 5 轮；精确命令与 provenance 见 `docs/ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md` §5）；随后对 Forge b=1 做同后端 direct NVML 校准（5 轮）。旧 PyTorch allocator 峰值仍可保留，但旧 CLI 整卡差值不得直接混入冻结值；
   2. 基于完整 16 档曲线重新筛选最小共置候选；
   3. 先跑 LLM+TTS 单组合 smoke，再对保留的 context/LLM/T0-T3 组合各跑 5 轮，得到 colocated 正残差；
   4. 重算 `G_safe`，冻结按 context 分组的 `H_TTS/H_D`，然后进入 D 阶段。
@@ -403,7 +405,7 @@ experiment_results/elastic_residency/_archive/
 **KV/共置测量实现记录（2026-08-30）**：新增 `kv_measurement.py`、`llm_kv_cache_calibration.py` 与 `llm_tts_colocated.py`。历史 `kv_state_bytes` 明确为 `save_state()` 完整序列化状态，不再表述为纯 GPU KV 显存；独立 KV 校准从 llama.cpp 初始化日志采集 GPU/CPU/CUDA_Host KV/compute buffer，并分别查询单序列状态、原生 position 边界和 `llm.n_tokens`。校准和共置入口都以 `n_ctx = context + generation`（正式默认 128）重建与 C2/C3 相同的推理后状态。共置入口在同一进程实测 `B_LLM`、TTS 窗口整卡峰值 `P_colocated`、PyTorch 分阶段峰值与正残差，正式矩阵支持每组合 5 轮。Windows 静态测试 94/94 通过；`kv_calibration_smoke_20260830_verified_v1` 在干净 commit `2dca3651d94978523e7cddd24826099321bd760b` 下保存了 1/1 条通过的 direct NVML K0 artifact（C64+8，KV token=72，0 failure），另有 K2 临时 smoke 识别到 CUDA0 KV/compute buffer；最小 K0+T3 共置临时 smoke 也通过 direct NVML、生成 1.2 s 非静音 WAV。这些 smoke 只证明真实链路可运行，不代替 48 条 KV 正式产物或共置正式矩阵。KV smoke 现位于 `_archive/debug_smoke/kv_calibration/`。
 
 **KV 正式校准完成记录（2026-08-30）**：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 基于干净 commit `820ee0fbcbbf671a791d31786bf171bf2a241d1a` 完成 `16 配置 × 3 上下文 × 1 轮 = 48/48` 条，`summary.passed=true`、0 failure、0 swap、0 GPU unavailable，模型哈希与 C2/C3 相同。`n_ctx/KV tokens=640/2176/4224` 时，预分配 KV buffer 总量为 `24/72/136 MiB`；FULL 的 GPU KV 部分同为 `24/72/136 MiB`；完整 `save_state()` 状态为 `70.263/118.292/182.331 MiB`。该 run 证明 KV 容量和完整序列化状态远小于旧稿误写的 1--2 GiB，但不单独冻结共置阈值。
-- [ ] **D1**：实现 JSON RAG 和 BGE 核心曲线；冻结辅助 SLA。
+- [ ] **D1（未到正式矩阵）**：物理核拓扑、affinity 与租约基础设施已完成；BGE 与 Faster-Whisper 仅单轮接口 smoke；正式入口 `auxiliary_core_budget.py` 尚未实现，因此 JSON RAG/BGE/ASR 的 1/2/4 核曲线与 `R_sys={0,1,2,4}` 均未跑；LLM/TTS 的 `{2,4,6,8,10,12,14,16}` 核扩展曲线也未跑。需先实现 `auxiliary_core_budget.py` 与 CPU 核数画像入口，再进入 D2/D3 正式矩阵。
 - [ ] **D2**：接入已验证的 Faster-Whisper，并在音频路由就绪后接入真实 underrun 探针。
 - [ ] **D3**：运行 `R_sys={0,1,2,4}` 正式验证。
 - [ ] **E1**：实现真实 LLM→TTS 重叠实验并做单轮 smoke。

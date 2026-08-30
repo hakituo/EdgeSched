@@ -1,6 +1,6 @@
 # 新版论文正文工作区
 
-这里承载按照 `../THESIS_EXPERIMENT_GUIDE_DRAFT.md` 重写的论文正文。当前处于实验定标阶段，尚未创建正式 LaTeX 主稿。
+这里承载按照 `../thesis_experiment_guide/README.md` 重写的论文正文。当前处于实验定标阶段，尚未创建正式 LaTeX 主稿。
 
 ## 开始写作的门槛
 

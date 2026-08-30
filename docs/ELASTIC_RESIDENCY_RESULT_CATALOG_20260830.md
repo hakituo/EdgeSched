@@ -82,11 +82,29 @@ experiment_results/elastic_residency/
 
 ## 5. 下一批产物
 
-下一批正式结果写入：
+下一批正式结果写入（即 C3 收尾第 1 步，下一项正式实验）：
 
 ```text
 experiment_results/elastic_residency/b2/
-  b2_tts_pareto_matrix_20260830_direct_nvml_v1/
+  b2_tts_pareto_matrix_20260831_direct_nvml_v1/
 ```
 
 它只测已由 B2 旧矩阵保留下来的 T0/T3，固定 20/50/100 字、每配置每句长 5 轮，共 30 条。完成并核验后，再进行 Forge direct NVML 校准和真实共置候选筛选。
+
+调用模板（WSL2，`mvp_core-cu128` venv；运行前将 `<clean_commit>` 替换为当时 Windows 干净 HEAD）：
+
+```bash
+cd /home/leslie/mvp_core
+
+/home/leslie/.venvs/mvp_core-cu128/bin/python \
+  experiments/elastic_residency/tts_component_offload_matrix.py \
+  --run-id b2_tts_pareto_matrix_20260831_direct_nvml_v1 \
+  --configs T0 T3 \
+  --rounds 5 \
+  --output-root experiment_results/elastic_residency/b2 \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false \
+  --source-git-status-entry-count 0
+```
+
+该批次只解决 C3 的同后端 TTS 容量口径；SM-A 的原生 Linux 恢复属于独立门禁，不混入本批次。

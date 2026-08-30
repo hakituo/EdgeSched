@@ -1,6 +1,6 @@
 # EdgeSched 新版论文骨架
 
-本骨架服从 `../THESIS_EXPERIMENT_GUIDE_DRAFT.md`，最终章节名可在证据冻结后调整。
+本骨架服从 `../thesis_experiment_guide/README.md` 及其主题模块，最终章节名可在证据冻结后调整。
 
 1. **Abstract**：问题、方法、真实系统边界和主要实测结果。
 2. **Introduction**：单机多模态助手中的显存与 CPU 竞争、现有二元迁移的不足、贡献。

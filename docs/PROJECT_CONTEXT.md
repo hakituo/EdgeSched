@@ -1,7 +1,7 @@
 # EdgeSched / MVP Core 项目上下文
 
 **文档版本**：1.0  
-**最后核对**：2026-08-29
+**最后核对**：2026-08-31
 **核对范围**：当前 Windows 工作副本中的源码、测试、实验入口、论文数据目录和 WSL2 脚本。
 
 ## 1. 项目定位
@@ -261,6 +261,7 @@ GPU burst arrives
 | `paper/experiment_data/01_paper_main/` | 新版正文聚合数据入口；当前尚未晋升数据 |
 | `paper/experiment_data/02_auxiliary/` | 新版辅助说明数据入口 |
 | `paper/experiment_data/03_raw_iterations/` | 新版原始迭代证据入口 |
+| `paper/thesis_experiment_guide/` | 按任务拆分的研究设计、实验协议、证据边界与当前门禁真源；新会话先读目录索引和第 10 模块 |
 | `paper/rewrite/` | 按新版总指南重写的正文工作区 |
 | `paper/archive/pre_rewrite_20260830/` | 重写前主稿、图表、工具和数据完整快照 |
 | `paper/archive/legacy_materials_before_rewrite/` | 更早的历史稿件和产物，只读追溯 |
@@ -344,7 +345,7 @@ GPU burst arrives
 | 弹性驻留 B2 | WSL2 `tts_component_offload_matrix.py` + `b2_tts_matrix_20260829_verified_v1` | 60 条 TTS 组件放置矩阵、分组统计与条件式 Pareto；不证明端到端无 underrun |
 | 弹性驻留 C1 | WSL2 `llm_residency_curve.py` + `c1_llm_residency_512_20260829_verified_v1` | K0/FULL 真实端点、精确 token/gap、阶段资源与 KV 保存恢复；不代替 C2 多轮曲线 |
 | KV 语义/容量 | `tests/elastic_residency/test_kv_measurement.py` + WSL2 `llm_kv_cache_calibration.py` | 字段语义、原生 position/`llm.n_tokens`、日志解析与缺字段失败；`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条正式容量矩阵，不作为性能计时证据 |
-| GPU 计算份额 SM-A | `tests/elastic_residency/test_sm_profiles.py`、`test_sm_capability.py`、`test_sm_probe_records.py`、`test_mps_commands.py`、`test_mps_runtime.py`、`test_mps_daemon*.py`、`test_cuda_exec_affinity.py`、`test_green_context_probe.py`、`test_sm_wsl_gates.py` + WSL2 `sm_capability.py` | Windows 259 passed；WSL 门控 1 passed/4 skipped。正式记录 `sm_a_20260830_direct_nvml_v1` 基于干净 `ca7a7ff`，真实 CUDA 基线、36 SM、direct NVML、0 failure/fallback/cleanup failure，但 `nvidia-cuda-mps-control` 不存在，SM-A=NO_GO；停止 SM-B/SM-C，不修改生产调度器 |
+| GPU 计算份额 SM-A | `tests/elastic_residency/test_sm_profiles.py`、`test_sm_capability.py`、`test_sm_probe_records.py`、`test_mps_commands.py`、`test_mps_runtime.py`、`test_mps_daemon*.py`、`test_cuda_exec_affinity.py`、`test_green_context_probe.py`、`test_sm_wsl_gates.py` + WSL2 `sm_capability.py` | Windows 静态测试与 WSL 门控均已执行。正式记录 `sm_a_20260830_direct_nvml_v1` 基于干净 `ca7a7ff`，真实 CUDA 基线、36 SM、direct NVML、0 failure/fallback/cleanup failure，但 `nvidia-cuda-mps-control` 不存在，WSL2 路径暂定 NO_GO；暂停 SM-B/SM-C，等待原生 Linux 重验，不修改生产调度器 |
 | LLM+TTS 共置 | `tests/elastic_residency/test_llm_kv_colocated.py` + WSL2 `llm_tts_colocated.py` | `B_LLM`/`P_colocated`/残差公式与容量裁决（不重复叠加 KV）；最小 K0+T3 direct NVML 临时 smoke 已通过，正式 artifact 矩阵仍待运行 |
 | 恢复/持久化 | `tests/verify_state_backplane_recovery.py` | mmap 读写和恢复闭合 |
 | C++ 绑定 | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` | 扩展导入与 API 契约 |
@@ -364,6 +365,7 @@ GPU burst arrives
 ## 11. 文档维护约定
 
 - 模块职责、入口或目录变化：更新 `PROJECT_INDEX.md` 和本文件第 3-4 节。
+- 论文实验路线变化：更新 `paper/thesis_experiment_guide/` 对应主题模块；短期状态只更新第 10 模块与结果目录，兼容入口不复制正文。
 - 数据流、状态机或迁移协议变化：更新第 5 节和对应实验。
 - 实验口径、正文数据目录或晋升流程变化：更新第 6 节、`experiments/README.md`、`paper/experiment_data/README.md`。
 - 环境、模型或同步方法变化：更新第 7-8 节和局部 `AGENTS.md`。
