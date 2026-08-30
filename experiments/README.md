@@ -215,14 +215,14 @@ experiment_results/                      当前工作区运行产物
 experiment_results/elastic_residency/    当前弹性驻留批次；历史批次位于 _archive/
 paper/experiment_data/03_raw_iterations/ 原始迭代
 paper/experiment_data/02_auxiliary/      辅助数据
-paper/experiment_data/01_paper_main/     当前论文正文聚合数据
-paper/figures/                            当前图表
-paper/tables/                             当前 LaTeX 表格
+paper/experiment_data/01_paper_main/     新版正文数据入口；当前尚未晋升数据
+paper/rewrite/                            新版正文工作区
+paper/archive/pre_rewrite_20260830/      旧论文、图表、工具和数据快照
 ```
 
 弹性驻留结果的当前/已替代/停止/debug 分类见 [运行结果目录](../docs/ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md)。`_archive` 只改变历史工作产物的位置，不删除原始时间线；分析和论文数据晋升不得自动扫描归档批次。
 
-正文数据晋升必须满足：真实后端未回退、参数冻结、多次迭代完整、manifest 存在、聚合口径一致、图表重建成功、正文引用可追溯。不要从 `paper/previous/` 或 `archive_legacy_*` 复制结果覆盖正文。
+正文数据晋升必须满足：真实后端未回退、参数冻结、多次迭代完整、manifest 存在、聚合口径一致、图表重建成功、正文引用可追溯。不要从 `paper/archive/` 复制旧数字覆盖新版正文。
 
 ## 快速验证
 

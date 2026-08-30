@@ -1,6 +1,6 @@
 # EdgeSched 论文与实验指南（弹性驻留重构版）
 
-> **版本**：v4.9
+> **版本**：v5.0
 > **最后更新**：2026-08-30
 > **状态**：研究设计与实验路线草案。本文档描述目标、口径和验收条件，不代表所有机制已经实现或已有真实实验支持。
 
@@ -22,7 +22,7 @@
 - Mock 结果只能验证调度语义和统计链路，不能证明真实模型性能。
 - `experiment_results/` 是探索性运行产物；只有人工核对后，结果才可晋升到 `paper/experiment_data/01_paper_main/`。
 - 换用新模型、修改调度策略或改变运行环境后，旧性能数字默认失效。
-- 本文档不再把历史设计报告、旧稿或 `paper/previous/` 当成当前实现真源。
+- 本文档是新版论文重写规划真源；历史设计报告、旧稿和旧数据统一位于 `paper/archive/`，不得当成当前实现或正文证据。
 - 论文只陈述已经由真实运行和可追溯证据支持的能力。
 
 - --
@@ -1172,7 +1172,7 @@ manifest 至少记录：
 
 ### 15.1 可以保留为历史或辅助证据
 
-- `paper/experiment_data/01_paper_main/migration/` 中的旧迁移结果；
+- `paper/archive/pre_rewrite_20260830/experiment_data/01_paper_main/migration/` 中的旧迁移结果；
 - Cold-Start vs Hot-Swap；
 - 崩溃恢复和状态背板；
 - 取消语义；
@@ -1188,7 +1188,7 @@ manifest 至少记录：
   - b=1、2、4、8；
   -只对 b=1 做了统一预热；
   -可用于设计下一轮实验，尚未晋升为正文证据。
-- `experiment_results/streaming_pipeline/smoke_tts_gpu.wav`
+- `experiment_results/_archive/pre_rewrite_20260830/legacy_paper_v1/streaming_pipeline/smoke_tts_gpu.wav`
   -只能证明一次 GPU TTS 输出存在；
   -没有对应可复现脚本和 manifest，不能引用性能。
 - `experiment_results/tts/profiling/gpu_sentence_length/gpu_sentence_length_xvector_r3_20260828/`

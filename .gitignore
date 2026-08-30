@@ -80,6 +80,8 @@ results_real/
 /TTS/
 /experiment_results/elastic_residency/
 /experiment_results/tts/
+/experiment_results/_archive/pre_rewrite_20260830/duplicate_root_TTS/
+/experiment_results/_archive/pre_rewrite_20260830/local_logs/
 
 # Debug and Test Scripts (exclude as requested)
 experiments/debug_*.py

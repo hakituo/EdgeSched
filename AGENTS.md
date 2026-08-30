@@ -29,10 +29,10 @@
 ## 实验与证据规则
 
 - 明确区分 Mock、仿真、真实模型、真实 Forge 和论文正文证据；Mock 通过只证明链路和统计口径，不证明生产性能。
-- `experiment_results/` 是运行产物；`paper/experiment_data/01_paper_main/` 才是当前论文正文数据源。
-- 更新正文数据前必须保留原始迭代、环境、参数、随机种子和 manifest；不得用单次运行、历史归档或 `paper/previous/` 覆盖正文证据。
+- `experiment_results/` 是运行产物；`paper/experiment_data/01_paper_main/` 是新版论文正文数据入口，2026-08-30 重置后当前没有已晋升数据。
+- 更新正文数据前必须保留原始迭代、环境、参数、随机种子和 manifest；不得用单次运行或 `paper/archive/` 中的历史材料覆盖正文证据。
 - 论文中的性能数字必须能反向定位到 JSON、生成脚本和运行环境。没有真实重跑证据时，只能写“设计目标”“模拟结果”或“待验证”。
-- `docs/CPP_SCHEDULER_EVALUATION_REPORT.md`、`docs/DIFFERENCE_ASSESSMENT_REPORT.md`、`docs/NVRAM_ARCHITECTURE_DESIGN.md` 是历史设计材料，不是当前实现真源。
+- `docs/archive/historical_design/` 中的 C++/NVRAM 评估材料是历史设计记录，不是当前实现真源。
 
 ## 修改与验证
 

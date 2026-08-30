@@ -26,7 +26,7 @@
 | 状态背板 | Python mmap 实现 + 恢复实验 | 固定槽位状态持久化和恢复语义 | 真实 PMEM/NVRAM 硬件性能 |
 | 资源迁移 | Python/C++ 桥接与实验脚本 | 迁移协议、降级/回迁路径可测试 | 任意模型/驱动环境都能无缝迁移 |
 | Phase-Aware | Python 和 C++ 两套策略实现 | 角色/亲和性/lease/cost/backfill 抽象 | 已成为所有主调度路径的默认生产策略 |
-| 论文数据 | `01_paper_main` + 原始迭代 + manifest | 当前稿件使用的既有数据和生成产物 | 代码修改后数据仍然有效 |
+| 论文数据 | 新版 `01_paper_main` 当前未晋升数据；旧链条已归档 | 明确隔离旧稿与新证据，防止误引用 | `experiment_results/` 中的探索结果已经成为正文证据 |
 
 历史文档曾使用“工业级”“零拷贝”“断电恢复”等强表述。除非当前代码、真实运行环境和实验数据共同支持，否则应降级为设计目标、软件模拟或历史设想。
 
@@ -191,10 +191,12 @@ GPU burst arrives
 | `experiments/overhead/` | 实现开销、综合实验和消融套件 |
 | `experiments/elastic_residency/` | 弹性驻留统一契约、物理核租约、资源与调度 jitter 采样及后续可行性实验 |
 | `experiment_results/` | 工作区运行产物和中间结果 |
-| `paper/experiment_data/01_paper_main/` | 当前正文聚合数据 |
-| `paper/experiment_data/02_auxiliary/` | 辅助说明数据 |
-| `paper/experiment_data/03_raw_iterations/` | 原始迭代证据 |
-| `paper/previous/` | 历史稿件和历史产物，只读追溯 |
+| `paper/experiment_data/01_paper_main/` | 新版正文聚合数据入口；当前尚未晋升数据 |
+| `paper/experiment_data/02_auxiliary/` | 新版辅助说明数据入口 |
+| `paper/experiment_data/03_raw_iterations/` | 新版原始迭代证据入口 |
+| `paper/rewrite/` | 按新版总指南重写的正文工作区 |
+| `paper/archive/pre_rewrite_20260830/` | 重写前主稿、图表、工具和数据完整快照 |
+| `paper/archive/legacy_materials_before_rewrite/` | 更早的历史稿件和产物，只读追溯 |
 
 弹性驻留工作产物采用“当前批次留在阶段目录、历史批次进入 `_archive/{superseded,stopped,debug_smoke}`”的布局。2026-08-30 的完整分类、移动后路径和禁止混用口径见 [弹性驻留运行结果目录](ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md)。归档只用于本地追溯，不改变 `paper/experiment_data/` 的人工晋升规则。
 
@@ -205,8 +207,8 @@ GPU burst arrives
 3. 按论文要求运行多次迭代，保留每次原始 JSON。
 4. 生成 manifest，记录随机种子、环境与配置哈希。
 5. 聚合到候选数据，检查缺失值、异常值和统计口径。
-6. 只有人工确认后，才替换 `01_paper_main/` 的正文数据并重新生成图表/表格。
-7. 对照 `paper/sections_en/06_evaluation.tex`，确认每个数字可追溯。
+6. 只有人工确认后，才向新版 `01_paper_main/` 晋升数据并重新生成图表/表格。
+7. 对照 `paper/rewrite/OUTLINE.md` 和后续新版 Evaluation 源文件，确认每个数字可追溯。
 
 ## 7. 环境与同步边界
 
@@ -287,7 +289,7 @@ GPU burst arrives
 - 父仓库 `.gitignore` 含 `/legacy/`，当前目录全部被父仓库 Git 忽略；需要版本管理时必须先决定独立仓库或调整父仓库策略，不能误以为文档已被提交。
 - `cpp_scheduler/build/` 约数百 MB，包含第三方源码和构建产物；搜索、统计和评审时必须排除。
 - `data/` 同时含源码适配器和本地 mmap/日志数据，修改时要精确到文件，不能整目录清理。
-- `TODO.md` 记录的是 2026-02 已完成事项与当时的重跑建议，不是当前唯一 backlog。
+- 重写前的旧需求说明已移至 `docs/archive/pre_rewrite_20260830/EDGE_SCHED_REQUIREMENTS_OLD.md`，不能代替当前论文总指南和执行计划。
 - `docs/` 下三份 NVRAM/C++ 评估文档包含历史设想和过强结论；当前任务不得直接引用为现状。
 - README 曾长期漂移。新增或移动入口后，应先更新本上下文与验证脚本，再更新目录 README。
 

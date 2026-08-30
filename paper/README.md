@@ -1,50 +1,34 @@
-# EdgeSched 论文工作区
+# EdgeSched 论文重写工作区
 
-当前论文以英文稿为主。正文、证据数据、图表和历史材料分层保存，避免把旧稿或单次实验误当成当前结论。
+当前论文准备按照 `THESIS_EXPERIMENT_GUIDE_DRAFT.md` 重新撰写。旧英文稿、旧章节、旧图表、旧正文数据和历史报告已经归档，不再把它们当成新版论文真源。
 
 ## 当前入口
 
 | 路径 | 作用 |
 |---|---|
-| `main_en.tex` | 英文论文主文件 |
-| `sections_en/` | 00 Abstract 到 07 Conclusion |
-| `references.bib` | 参考文献库 |
-| `figures/` | 当前论文图表（PDF/PNG） |
-| `tables/` | 当前论文表格（LaTeX） |
-| `experiment_data/01_paper_main/` | 正文聚合数据真源 |
-| `experiment_data/02_auxiliary/` | 辅助说明数据 |
-| `experiment_data/03_raw_iterations/` | 原始迭代结果 |
-| `scripts/generate_figures.py` | 从 JSON 重建图表/表格入口 |
-| `THESIS_EXPERIMENT_GUIDE_DRAFT.md` | 论文结构、实验设计和写作工作指南 |
-| `draft/` | Markdown 章节草稿 |
-| `previous/` | 历史稿件与产物，仅供追溯 |
+| `THESIS_EXPERIMENT_GUIDE_DRAFT.md` | 新版研究问题、实验顺序、证据口径和完成标准的规划真源 |
+| `rewrite/README.md` | 新正文工作区状态与写作门槛 |
+| `rewrite/OUTLINE.md` | 按新版研究路线整理的章节骨架 |
+| `references.bib` | 可复用参考文献库；正式写作前仍需逐条核验 |
+| `experiment_data/01_paper_main/` | 新版正文数据区；当前未晋升任何新数据 |
+| `experiment_data/02_auxiliary/` | 新版辅助数据区 |
+| `experiment_data/03_raw_iterations/` | 新版晋升后的原始迭代证据区 |
+| `archive/pre_rewrite_20260830/` | 重写前的论文、图表、工具与实验数据完整快照 |
+| `archive/legacy_materials_before_rewrite/` | 更早的历史报告和旧产物 |
 
-数据文件到论文图表的映射见 [experiment_data/README.md](experiment_data/README.md)。项目整体证据边界见 [项目上下文](../docs/PROJECT_CONTEXT.md#6-实验与论文证据链)。
+## 当前状态
 
-## 编译
+- 新版论文还没有可编译正文；旧 `main_en.tex` 及 `sections_en/` 已归档。
+- 新版 `01_paper_main/` 为空，不能把 `experiment_results/` 中的探索数据直接写进正文。
+- 当前优先完成 C3 收尾、D/E 阶段真实实验和 Go/No-Go 判断，再冻结 Evaluation 数据和论文主张。
+- 旧稿可以用于理解历史背景，不能复制旧性能数字冒充当前 Qwen3.5/Qwen3-TTS/Forge 结果。
 
-Windows：
+## 数据晋升
 
-```bat
-compile_en.bat
-```
+1. 在冻结的 WSL2 环境完成正式运行。
+2. 核对真实后端、manifest、模型哈希、Git provenance、原始记录数和失败文件。
+3. 保留完整原始轮次并重建聚合结果。
+4. 人工确认后才复制到 `experiment_data/`。
+5. 根据冻结数据编写新版正文、图表和表格。
 
-WSL/Linux 可使用 `latexmk_engine.sh`，或按本机 LaTeX 环境运行 `latexmk`。编译产生的 `.aux`、`.log`、`.out`、`.bbl`、`.blg`、`.pdf` 等是生成产物，不是论文内容真源。
-
-## 更新实验数字
-
-1. 从冻结的 WSL2 环境重跑对应实验，确认没有 Mock 回退。
-2. 保留 `03_raw_iterations/` 中每次原始结果和 manifest。
-3. 聚合后人工核对，再更新 `01_paper_main/`。
-4. 运行 `paper/scripts/generate_figures.py` 重建图表/表格。
-5. 运行 `paper/scripts/check_data.py`、`verify_all_iters.py` 或对应验证。
-6. 对照 `sections_en/06_evaluation.tex`，确认每个数字与图表可追溯。
-
-严禁用 `previous/`、`archive_legacy_*`、Mock 结果或单次结果直接覆盖当前正文数据。
-
-## 历史与辅助文件
-
-- `affinity_routing_formulas.tex` 是公式推导辅助稿，不是论文主入口。
-- `EdgeSched_draft.pdf`、`main_en.pdf` 是预览产物，内容以 `.tex` 源文件为准。
-- `previous/` 可能包含旧目录结构、旧实验口径和旧数字，不应作为当前代码说明。
-
+归档内容保持只读。若需要复用旧 LaTeX 模板或画图代码，应复制到新版工作区后重新核对，不要直接在归档目录继续编辑。

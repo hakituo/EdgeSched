@@ -36,7 +36,21 @@ ResourceIsolationScheduler (C++ execution plane)
 - `services/phase_aware/`：Phase-Aware workflow、GPU lease、代价决策和 backfill。
 - `experiments/run_all_experiments.py`：论文实验统一编排。
 - `services/tts/`：独立句子级流式 Qwen3-TTS Base 子系统。
-- `paper/main_en.tex`：当前英文论文主文件。
+- `paper/THESIS_EXPERIMENT_GUIDE_DRAFT.md`：新版论文与实验路线真源。
+- `paper/rewrite/`：新版正文工作区；旧英文稿已归档。
+
+当前目录分层：
+
+| 路径 | 当前语义 |
+|---|---|
+| `services/`, `domain/`, `data/adapters/` | Python 控制面和运行适配器 |
+| `cpp_scheduler/` | C++ 执行面；`build/` 是本地生成目录，不是源码 |
+| `experiments/` | 可复现实验入口 |
+| `experiment_results/` | 工作产物；旧论文结果集中在 `_archive/` |
+| `paper/rewrite/` | 新版论文正文工作区 |
+| `paper/experiment_data/` | 新版论文证据入口，当前尚未晋升数据 |
+| `paper/archive/` | 重写前论文链条和更早历史材料 |
+| `docs/archive/` | 被当前项目上下文和论文总指南取代的历史文档 |
 
 ## 运行环境
 
@@ -91,7 +105,7 @@ python experiments/tts/smoke_qwen3_tts_base.py --device cuda:0 --ref-text '准�
 
 TTS 的音色画像、x-vector 消融、CPU/GPU smoke 和证据边界见 [Qwen3-TTS Base 独立子系统](docs/TTS_SUBSYSTEM.md)。2026-08-28 的 [GPU 句长画像](docs/TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md) 显示 45/45 条真实样本 RTF 均大于 1，因此当前先研究真正音频流式或后端优化，不直接铺开 CPU 核心组合。
 
-`experiment_results/` 是运行产物；论文正文当前采用的数据位于 `paper/experiment_data/01_paper_main/`。新结果必须经过多次迭代、manifest、聚合检查和人工确认，不能自动覆盖正文数据。
+`experiment_results/` 是运行产物；`paper/experiment_data/01_paper_main/` 是新版正文数据入口，但 2026-08-30 重置后尚未晋升任何新数据。新结果必须经过多次迭代、manifest、聚合检查和人工确认，不能自动进入正文。
 
 ## 验证
 
@@ -111,7 +125,7 @@ C++ 绑定、真实 GGUF、迁移和 Forge 测试必须在对应 WSL2 环境单�
 
 ## 论文
 
-论文入口与数据映射见 [paper/README.md](paper/README.md) 和 [实验数据说明](paper/experiment_data/README.md)。历史稿件位于 `paper/previous/`，只用于追溯，不是当前实现或当前数据真源。
+论文入口见 [paper/README.md](paper/README.md)，新版骨架位于 [paper/rewrite/](paper/rewrite/README.md)，数据边界见 [实验数据说明](paper/experiment_data/README.md)。重写前稿件和数据位于 `paper/archive/pre_rewrite_20260830/`，只用于追溯。
 
 ## 版本管理提示
 

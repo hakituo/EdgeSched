@@ -1,7 +1,7 @@
 # EdgeSched / MVP Core 项目索引
 
 **用途**：给 Codex 和维护者提供低成本导航。  
-**最后核对**：2026-08-29（以当前目录实际文件为准）
+**最后核对**：2026-08-30（以当前目录实际文件为准）
 
 ## 先判断你要做什么
 
@@ -17,7 +17,7 @@
 | 崩溃恢复 | `docs/PROJECT_CONTEXT.md` | `services/state_backplane.py`, `services/task_scheduler.py` | `experiments/recovery/`, `experiments/semantic_validation/` |
 | C++ 调度器 | [cpp_scheduler/README.md](../cpp_scheduler/README.md) | `cpp_scheduler/core/`, `workers/`, `queue/`, `bindings/` | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` |
 | 跑实验 | [experiments/README.md](../experiments/README.md) | `experiments/run_*.py`, 各实验子目录 | `experiment_results/`, manifest |
-| 论文与图表 | [paper/README.md](../paper/README.md) | `paper/main_en.tex`, `paper/sections_en/`, `paper/scripts/` | `paper/experiment_data/01_paper_main/` |
+| 论文重写与图表 | [paper/README.md](../paper/README.md)、[新版骨架](../paper/rewrite/OUTLINE.md) | `paper/THESIS_EXPERIMENT_GUIDE_DRAFT.md`, `paper/rewrite/`；旧稿位于 `paper/archive/` | `paper/experiment_data/01_paper_main/`（当前尚未晋升新数据） |
 | WSL2 同步/环境 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#7-环境与同步边界) | `scripts/sync_to_wsl2_safe.ps1`, `cpp_scheduler/build_wsl2.sh` | WSL2 实际运行日志 |
 
 ## 入口速查
@@ -48,9 +48,9 @@
 
 1. 当前源码、测试断言和运行日志。
 2. 当前实验 JSON、manifest、生成脚本。
-3. `paper/experiment_data/README.md` 与 `01_paper_main/`。
+3. `paper/experiment_data/README.md` 与人工晋升后的 `01_paper_main/`。
 4. 本索引、`PROJECT_CONTEXT.md` 和各目录 README。
-5. `docs/` 中 2026-02 的历史评估材料与 `paper/previous/`，仅供追溯。
+5. `docs/archive/` 与 `paper/archive/` 中的历史评估、旧稿和旧数据，仅供追溯。
 
 ## 常见误区
 
