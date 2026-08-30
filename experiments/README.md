@@ -168,6 +168,8 @@ python -m experiments.elastic_residency.llm_kv_cache_calibration \
 
 入口复用 C2 的模型初始化参数，`n_ctx` 与填充状态均为 `context + generation`（默认 generation=128），对应 C2/C3 完成 128-token 生成后的状态；同时复用 CPU affinity、direct NVML 与 artifact contract。入口不做性能计时，KV 查询全部在 eval 之后。每条记录验证层数、状态 token 数、KV position、序列状态与完整状态大于 0、buffer 日志捕获、direct NVML、CLI=false、swap=0、资源归还与 Git provenance。
 
+正式记录 `c3_kv_cache_calibration_20260830_direct_nvml_v1` 基于干净 commit `820ee0fbcbbf671a791d31786bf171bf2a241d1a` 完成 48/48 条、0 failure。`n_ctx/KV tokens=640/2176/4224` 时，预分配 KV buffer 总量为 `24/72/136 MiB`，FULL 的 GPU KV 部分同为 `24/72/136 MiB`；完整序列化状态为 `70.263/118.292/182.331 MiB`。该结果只补齐容量语义，不把单轮确定性校准当作性能重复实验。
+
 ### 12. LLM+TTS 真实共置显存测量
 
 `experiments/elastic_residency/llm_tts_colocated.py` 在同一进程加载真实 GGUF LLM（填充 context 后记录整卡基线 `B_LLM`）与 Qwen3-TTS（T0/T3 放置，分阶段 `torch.cuda.synchronize()` + reset peak），TTS 执行窗口内由 direct NVML 时间线和阶段快照取整卡峰值 `P_colocated`，并计算 `tts_colocated_increment_mb = P_colocated - B_LLM` 与 `colocated_positive_residual_mb = max(0, colocated_increment - isolated_increment)`（隔离增量由 `--tts-isolated-increment-mb CONFIG=value` 注入，缺失时保持 None，禁止估计）。容量裁决只用实测峰值：`P_colocated + safety_margin <= gpu_total`；`M_L(k, context)` 已包含该 LLM 配置的 KV buffer，容量计算不得再叠加一次 KV。共置候选由 C2+C3 新曲线分析后确定，先 smoke 后小矩阵：

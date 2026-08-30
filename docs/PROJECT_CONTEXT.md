@@ -238,7 +238,7 @@ GPU burst arrives
 - C1 `c1_llm_residency_512_20260829_verified_v1` 基于干净 commit `234d2df`，用真实 32 层 Qwen3.5-9B GGUF 完成 K0/FULL 的 512-token 端点 smoke，两端均通过 19/19 项门禁并正确保存/恢复 640-token KV state。FULL 相对 K0 的 TTFT 为 0.326/10.659 s、decode 为 51.03/2.77 tok/s，GPU 增量估计为 5543/127 MiB，推理后 RSS 为 1.139/6.253 GiB。进程显存仍是整卡基线差值估计，KV 阶段存在单独 jitter 尖峰；本轮单次端点结果没有晋升论文正文，C2 仍须完成全部档位、上下文和重复轮次。
 - 2026-08-29 复核发现旧弹性驻留 GPU 时间线由 `nvidia-smi` CLI 子进程轮询，长矩阵中探针耗时会接近或超过采样周期。正式后端已改为 ctypes direct NVML；C2 direct v2（90 条）与 C3 direct v2（150 条）已形成同后端完整驻留曲线，旧 C2/C3 只保留为工程基线。B2/Forge 的旧整卡差值仍须在 direct NVML 下校准后才能冻结 `H_TTS/H_D`；TTS 的 PyTorch allocator 峰值仍是独立的框架内证据。
 - direct NVML C2 首轮在 4096-token/K24 暴露 512 ms 驱动查询长尾；旧固定网格会在查询完成后额外等待，把样本间隔放大到 756 ms。GPU sampler 现改为越过下一 tick 后立即补采，显存查询放在辅助 NVML 指标之后，并记录 `gpu_deadline_recovery_count`；750 ms 新鲜度硬门保持不变。修复前的 64 条不得续跑或与新曲线合并。
-- 2026-08-30 KV 口径补强：`kv_state_bytes`（= `llm.save_state().llama_state_size`）是含 logits、embedding 与 KV memory 的完整序列化迁移负载，不是纯 GPU KV 显存。新共享模块 `experiments/elastic_residency/kv_measurement.py` 显式拆分五个概念（GPU 预分配 KV buffer / 已用 token 范围 / 单序列序列化状态 / 完整 `save_state()` 负载 / 整卡显存增量），`llm_residency_curve.py` v3 起在计时窗口外增补 `full_state_serialized_bytes`、`kv_sequence_state_bytes`、`kv_position_min/max`、`kv_tokens_used`、`kv_gpu_buffer_mb` 等字段（缺字段保持 None，禁止填 0）。历史 C2/C3 的 240 条 direct NVML 曲线不含这些字段但整卡增量和性能计时口径不受影响，无需全量重跑；KV buffer 容量由独立入口 `llm_kv_cache_calibration.py`（16 configs × 3 contexts × 1 run = 48 条确定性数据）补齐。论文草稿已删除无独立证据的 1–2 GiB 数值，正文具体数字待校准数据实证。
+- 2026-08-30 KV 口径补强已完成正式校准：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 基于干净 commit `820ee0f` 完成 48/48 条、0 failure，模型哈希与 C2/C3 相同。`kv_state_bytes` 是含 logits、embedding 与 KV memory 的完整序列化迁移负载，不是纯 GPU KV 显存；`n_ctx/KV tokens=640/2176/4224` 时，KV buffer 总量为 `24/72/136 MiB`，完整序列化状态为 `70.263/118.292/182.331 MiB`。历史 C2/C3 的 240 条 direct NVML 曲线无需重跑；论文旧稿的 1–2 GiB 数值已证伪并删除。阈值仍等待 T0/T3、Forge 同后端校准及真实共置残差后冻结。
 
 该快照只确认当前依赖和绑定加载链路。模型加载、CUDA offload、真实推理、迁移以及 Forge 仍须用对应验证单独证明。
 
@@ -272,7 +272,7 @@ GPU burst arrives
 | 弹性驻留 B1 | WSL2 `tts_component_offload.py` + `b1_tts_components_20260829_verified_v2` | T0–T3 组件发现、实际设备、code 传输、分段时间、显存证据和非静音单文本 WAV；不证明 Pareto |
 | 弹性驻留 B2 | WSL2 `tts_component_offload_matrix.py` + `b2_tts_matrix_20260829_verified_v1` | 60 条 TTS 组件放置矩阵、分组统计与条件式 Pareto；不证明端到端无 underrun |
 | 弹性驻留 C1 | WSL2 `llm_residency_curve.py` + `c1_llm_residency_512_20260829_verified_v1` | K0/FULL 真实端点、精确 token/gap、阶段资源与 KV 保存恢复；不代替 C2 多轮曲线 |
-| KV 语义/容量 | `tests/elastic_residency/test_kv_measurement.py` + WSL2 `llm_kv_cache_calibration.py` | 字段语义、原生 position/`llm.n_tokens`、日志解析、缺字段失败与 48 条确定性 KV buffer 容量；`kv_calibration_smoke_20260830_verified_v1` 已通过 1/1 条，仍不证明正式矩阵或性能 |
+| KV 语义/容量 | `tests/elastic_residency/test_kv_measurement.py` + WSL2 `llm_kv_cache_calibration.py` | 字段语义、原生 position/`llm.n_tokens`、日志解析与缺字段失败；`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条正式容量矩阵，不作为性能计时证据 |
 | LLM+TTS 共置 | `tests/elastic_residency/test_llm_kv_colocated.py` + WSL2 `llm_tts_colocated.py` | `B_LLM`/`P_colocated`/残差公式与容量裁决（不重复叠加 KV）；最小 K0+T3 direct NVML 临时 smoke 已通过，正式 artifact 矩阵仍待运行 |
 | 恢复/持久化 | `tests/verify_state_backplane_recovery.py` | mmap 读写和恢复闭合 |
 | C++ 绑定 | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` | 扩展导入与 API 契约 |

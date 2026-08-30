@@ -12,7 +12,7 @@
 | 准入/背压 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/admission_controller.py`, `presentation/websocket/handler.py` | `experiments/admission/`, `tests/test_chat_service.py` |
 | 显存迁移 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/resource_manager.py`, `services/cpp_scheduler_engine.py`（门面）+ `cpp_engine_migration.py` / `cpp_engine_llm.py` / `cpp_engine_image.py` / `cpp_engine_utils.py` | `experiments/migration/` |
 | 独立 TTS | [TTS_SUBSYSTEM.md](TTS_SUBSYSTEM.md)、[GPU 句长画像](TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md) | `services/tts/`, `data/adapters/qwen3_tts_adapter.py` | `tests/tts/`, `experiments/tts/` |
-| 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md)、[B2 TTS 矩阵](TTS_COMPONENT_OFFLOAD_MATRIX_20260829.md)、[C1 LLM smoke](LLM_RESIDENCY_C1_20260829.md) | `experiments/elastic_residency/`；历史 A1/B1/B2/C1/C2 链路已跑通，论文显存曲线改用 direct NVML 后待统一重跑 | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，不得自动晋升正文 |
+| 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md)、[论文实验总指南](../paper/THESIS_EXPERIMENT_GUIDE_DRAFT.md)、[B2 TTS 矩阵](TTS_COMPONENT_OFFLOAD_MATRIX_20260829.md) | `experiments/elastic_residency/`；C2/C3 direct NVML 240 条性能曲线与 KV 48 条容量矩阵已完成，T0/T3、Forge 同后端校准及真实共置待完成 | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，不得自动晋升正文 |
 | Phase-Aware | `.trae/skills/xiaoyou-mvp-core/SKILL.md` | `services/phase_aware/`, `cpp_scheduler/core/phase_strategy.*` | `tests/test_phase_aware_quick.py`, `experiments/phase_aware/` |
 | 崩溃恢复 | `docs/PROJECT_CONTEXT.md` | `services/state_backplane.py`, `services/task_scheduler.py` | `experiments/recovery/`, `experiments/semantic_validation/` |
 | C++ 调度器 | [cpp_scheduler/README.md](../cpp_scheduler/README.md) | `cpp_scheduler/core/`, `workers/`, `queue/`, `bindings/` | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` |
@@ -36,7 +36,7 @@
 | `experiments/elastic_residency/tts_component_offload_matrix.py` | B2 TTS 正式矩阵 | 20/50/100 字 × 5 轮、逐配置预热、原始 WAV/哈希、分组统计与 Pareto；v1 已通过 |
 | `experiments/elastic_residency/llm_residency_curve.py` | C1/C2 LLM 驻留 profiler | 真实层数、精确 prompt/decode、阶段资源和 KV；C2 支持多上下文轮转、严格续跑、checkpoint 与 fail-fast；v3 起新增 `full_state_serialized_bytes`/`kv_sequence_state_bytes`/`kv_position_*`/`kv_gpu_buffer_mb` 等字段（见 `kv_measurement.py`），历史 C2/C3 数据不含这些字段且仍然有效 |
 | `experiments/elastic_residency/kv_measurement.py` | KV 测量语义与采集共享模块 | 显式拆分 GPU 预分配 KV buffer / 已用 token 范围 / 单序列序列化状态 / `save_state()` 完整负载 / 整卡增量五个概念；`LlamaInitLogCapture` 解析 llama.cpp 初始化日志，缺字段保持 None 禁止填 0 |
-| `experiments/elastic_residency/llm_kv_cache_calibration.py` | KV 容量与语义校准（独立入口） | 16 configs × 3 contexts × 1 run = 48 条确定性容量数据；以 `n_ctx=context+128` 匹配 C2/C3 推理后状态，复用 artifact contract，不做性能计时，不影响 C2/C3 曲线 |
+| `experiments/elastic_residency/llm_kv_cache_calibration.py` | KV 容量与语义校准（独立入口） | `c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 16 configs × 3 contexts × 1 run = 48/48 条；以 `n_ctx=context+128` 匹配 C2/C3 推理后状态，不做性能计时 |
 | `experiments/elastic_residency/llm_tts_colocated.py` | LLM+TTS 真实共置显存测量 | direct NVML 整卡时间线、`B_LLM` 基线、TTS 分阶段 torch peak、`P_colocated` 峰值、`colocated_positive_residual_mb` 残差与容量裁决；容量公式不重复叠加 KV，正式组合支持 5 轮重复 |
 | `experiments/elastic_residency/gpu_telemetry.py` | 论文 GPU 遥测 | 通过 ctypes 直接调用 NVML；正式路径禁止 CLI 子进程，显存末位查询保证时间戳语义，并记录设备级显存及 per-process unavailable 语义 |
 | `experiments/elastic_residency/forge_b1_reprofile.py` | Forge b=1 同日复测（C 阶段收尾） | 依赖已启动的 Forge HTTP API；产出空闲高水位、常驻基线、逐轮峰值与 `m_d_incremental_estimate_mb`，供 H_D 冻结 |

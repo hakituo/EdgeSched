@@ -1,7 +1,7 @@
 # EdgeSched 论文与实验指南（弹性驻留重构版）
 
-> **版本**：v4.8
-> **最后更新**：2026-08-29
+> **版本**：v4.9
+> **最后更新**：2026-08-30
 > **状态**：研究设计与实验路线草案。本文档描述目标、口径和验收条件，不代表所有机制已经实现或已有真实实验支持。
 
 ## 0. 使用原则
@@ -1196,10 +1196,20 @@ manifest 至少记录：
   -包含 45 条原始迭代、manifest、汇总、拟合和图表；
   -45/45 条成功且顺序正确，但 45/45 条 RTF 都大于 1；
   -只证明当前后端的探索性句长画像，尚未证明 LLM→TTS 重叠或真实音频播放无 underrun。
-- `experiment_results/elastic_residency/c2/c2_llm_residency_curve_20260829_verified_v3/`
-  - 真实 llama.cpp/Qwen3.5-9B 完整驻留曲线，`6 配置 × 3 上下文 × 5 轮 = 90/90` 条全部通过，0 failure、0 fallback，干净 commit；
-  - K32 与 FULL 整卡增量仅差约 140 MiB 但 decode 相差约 53%，层级驻留收益非线性（K24→K32 跳变）；
-  - 尚未完成 Forge 同日复测、`G_safe` 校准、临界补测与真实共置验证，`H_TTS`/`H_D` 尚未冻结，不作为论文性能结论。
+- `experiment_results/elastic_residency/c2/c2_llm_residency_curve_20260829_direct_nvml_v2/`
+  - 真实 llama.cpp/Qwen3.5-9B 粗驻留曲线，`6 配置 × 3 上下文 × 5 轮 = 90/90` 条全部通过，0 failure、0 fallback；
+  - 干净 commit `17c40d3495cb01237bdf2e7429f2635362e908cf`，GPU 后端为 direct NVML，未启动 `nvidia-smi` CLI；
+  - 与 C3 direct v2 合并后构成 16 档完整驻留曲线，旧 `verified_v3` 仅保留为 CLI 工程基线。
+- `experiment_results/elastic_residency/c3/c3_llm_critical_refinement_20260829_direct_nvml_v2/`
+  - 真实临界细化曲线，`10 配置 × 3 上下文 × 5 轮 = 150/150` 条全部通过，0 failure；
+  - 与 C2 使用同一模型哈希、commit、direct NVML 和 `context+128` 状态口径；
+  - K32 与 FULL 整卡增量只差约 140 MiB但 decode 差异明显，驻留收益不能按层数线性插值。
+- `experiment_results/elastic_residency/kv_calibration/c3_kv_cache_calibration_20260830_direct_nvml_v1/`
+  - 独立 KV 容量校准，`16 配置 × 3 上下文 × 1 轮 = 48/48` 条全部通过，0 failure；
+  - 干净 commit `820ee0fbcbbf671a791d31786bf171bf2a241d1a`，模型哈希与 C2/C3 一致，全部使用 direct NVML；
+  - `n_ctx/KV tokens=640/2176/4224` 时，预分配 KV buffer 总量为 `24/72/136 MiB`；FULL 的 GPU KV 部分分别为 `24/72/136 MiB`；
+  - 完整 `save_state()` 序列化状态为 `70.263/118.292/182.331 MiB`，不是纯 GPU KV 显存，也不是此前误写的 1--2 GiB；
+  - 该数据补齐容量语义，不改变 C2/C3 的性能计时结果；正式阈值仍须等待 TTS/Forge 同后端校准与真实共置残差。
 - `experiment_results/elastic_residency/c3_analysis/c3_h_screen_20260829_legacy_forge.json`
   - 基于 C2 v3 + B2 v1 + 旧 Forge 峰值的 `G_safe`/`H_TTS`/`H_D` 容量筛选（`analyze_results.py` 产物）；
   - `G_safe=501.3 MiB`（allocator slack 主导，colocated 残差 pending）；`H_TTS(T0)=16`、`H_TTS(T3)=32 且 FULL 可行`、`H_D=0`（三上下文一致）；
@@ -1221,10 +1231,9 @@ manifest 至少记录：
 换用 Qwen3.5-9B-Q4_K_M 后，下列性能需在冻结环境重跑：
 
 - 完整迁出与恢复；
-- KV 长度敏感性；
-- LLM CPU/GPU TTFT 和吞吐；
 - 真实工作流；
-- 所有弹性驻留和 TTS 相关结果。
+- T0/T3 与 Forge 参与容量阈值的整卡数据（统一为 direct NVML）；
+- 真实共置残差、无图像 LLM→TTS 重叠和后续正式弹性策略评测。
 
 - --
 
@@ -1409,9 +1418,14 @@ No-Go：
 - [x] B1：`b1_tts_components_20260829_verified_v2` 已在真实 Qwen3-TTS/CUDA 后端完成 T0–T3 组件发现与单文本 smoke，4/4 配置通过；该冷态单轮数据不用于性能结论
 - [x] B2：`b2_tts_matrix_20260829_verified_v1` 已完成 60/60 条；T0/T3 为条件式 Pareto，T1/T2 被支配，且 60 条 RTF 全部大于 1
 - [x] C1：`c1_llm_residency_512_20260829_verified_v1` 已完成 K0/FULL 的 512-token 真实端点 smoke，两端均通过 19/19 项门禁；它是单轮基础设施证据，不作为正式性能曲线
-- [x] C2：`c2_llm_residency_curve_20260829_verified_v3` 已完成 90/90 条完整驻留曲线（`k={0,8,16,24,32,FULL}` × 3 上下文 × 5 轮，0 failure、0 fallback）；v1/v2 为停止/调试记录
-- [x] C3 Forge 复测：`forge_b1_reprofile_20260829_verified_v2` 全门禁通过，`M_D=5252 MiB`；复测后筛选 `H_TTS(T0)=16`、`H_TTS(T3)=32+FULL`、`H_D` 为 512:8 / 2048:0 / 4096:0（`c3_analysis/c3_h_reprofiled_20260829.json`）
-- [ ] **当前 C3 收尾**：按 `k={2,4,6,10,12,14,18,20,28,30}` 临界补测、与 T0/T3 的真实共置验证、colocated 残差校准后冻结 `H_TTS/H_D`
+- [x] C2 direct NVML：`c2_llm_residency_curve_20260829_direct_nvml_v2` 已完成 90/90 条粗驻留曲线，0 failure；旧 CLI 曲线只保留为工程基线
+- [x] C3 direct NVML 临界补测：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 已完成 150/150 条；与 C2 合并后覆盖 16 个驻留档位
+- [x] C3 KV 校准：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条，冻结 GPU/宿主 KV buffer 与完整序列化状态的独立语义
+- [ ] **当前 C3 收尾（还剩 4 个动作）**：
+  1. T0/T3 的 direct NVML 隔离矩阵（30 条）；
+  2. Forge b=1 的 direct NVML 同后端校准；
+  3. 用完整 16 档曲线重新筛选最小共置候选；
+  4. 共置 smoke + 每候选 5 轮，加入 colocated 残差后冻结 `G_safe/H_TTS/H_D`
 - [ ] JSON RAG/BGE/Faster-Whisper 核心预算；音频路由就绪后补真实播放探针
 - [ ] `R_sys={0,1,2,4}` 正式辅助任务验证
 - [ ] S0 无图像真实重叠静态放置实验
@@ -1419,7 +1433,7 @@ No-Go：
 - [ ] Go 后才实现 `PlacementPlan` 与新代价模型，再开展 S1 和正式策略评测
 - [ ] 同步论文、图表和必要的 C++ 契约
 
-B1/B2 已确认 T0/T3 是条件式 Pareto；C2 曲线显示 K32 与 FULL 仅差约 140 MiB 但 decode 相差约 53%，且 K24→K32 存在非线性跳变。T3 能否释放足够显存增加有效 LLM 层仍由同日复测后的 `H_TTS/H_D` 冻结与真实共置验证裁决；在此之前不据此修改在线规划器或论文性能结论。
+B1/B2 已确认 T0/T3 是条件式 Pareto；C2+C3 direct NVML 已完成 16 档性能曲线，独立 KV 校准也已完成。当前只剩 T0/T3、Forge 的同后端整卡校准和真实共置残差，才能冻结 `G_safe/H_TTS/H_D`；在此之前不据此修改在线规划器或论文性能结论。
 
 - --
 
