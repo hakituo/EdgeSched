@@ -148,7 +148,7 @@ tests/elastic_residency/
 
 验收：Windows 静态/Mock 测试通过；WSL2 preflight 能确认真实模型、真实后端、affinity、采样器和时钟一致性。任何真实脚本默认禁止 fallback。
 
-**A1 历史记录（2026-08-28）**：`a1_smoke_20260828_verified_v6` 在 WSL2 真实 OS/NVIDIA 探针下采到了正常原始数据，但旧版 `passed` 没有强制 GPU 成功和 jitter 门槛，dirty 源码也只有状态项数量，因此仅保留为基础设施调试记录，不再作为当前 A1 门禁证据。
+**A1 历史记录（2026-08-28）**：`a1_smoke_20260828_verified_v6` 在 WSL2 真实 OS/NVIDIA 探针下采到了正常原始数据，但旧版 `passed` 没有强制 GPU 成功和 jitter 门槛，dirty 源码也只有状态项数量，因此仅保留为基础设施调试记录，不再作为当前 A1 门禁证据。该批次现位于 `_archive/superseded/a1/`。
 
 **A1 当前硬门槛（2026-08-29）**：`passed` 必须同时满足首个成功 GPU 样本先于资源时间线、时间线无 GPU unavailable 点、GPU 数据最大年龄不超过 500 ms、资源采样 jitter p95/max 不超过 5/10 ms、事件循环 jitter p95/max 不超过 5/10 ms、无 swap、工作/采样/GPU 线程 affinity 与租约一致、全部物理核归还，并且源码 provenance 完整。首个 CPU 利用率样本保留在原始时间线但标记 `cpu_sample_valid=false`，所有聚合明确排除它。正式运行优先使用 `dirty=false + status_entry_count=0` 的干净 commit；若必须使用 dirty 源码，则必须用 `--source-git-snapshot` 将可还原快照复制进运行目录并校验 SHA-256。门槛更新后的 WSL2 重跑结果必须使用新的不可覆盖 run id。
 
@@ -234,13 +234,13 @@ H_D   = max k: M_L(k) + M_D + G_safe <= V_GPU
 4. C1 的 jitter 是基础设施硬门；C2 中同一阈值是被测性能目标，正式矩阵使用 `--jitter-gate-mode observe`。超标轮次必须保留为 `performance_target_passed=false`，进入系统尖峰/Go-No-Go 结论，但不能阻止其余驻留档位的数据收集。GPU 探针可用性、新鲜度、affinity、token/KV 完整性、swap 和核心归还仍是硬门。KV save/restore 尖峰按阶段单列，不混入推理目标，但必须进入切换成本讨论。
 5. `by_context_config` 才是正式统计分组；跨上下文的 `by_config` 只用于总览，不用于比较 TTFT/prefill。
 
-**C2 v1 停止记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v1` 在第 22/90 条（512-token、K0、第 4 轮）按旧语义 fail-fast。该轮 18 项其他检查通过，jitter p95 为 0.866 ms，但出现一次 39.490 ms 最大迟到，超过 30 ms 目标。v1 证明性能目标确有尾部失败，也暴露了“性能不达标会阻止收集 No-Go 证据”的口径错误；它只作为停止/调试记录，不续跑、不作为完整 C2 曲线。后续新 run id 保留 30 ms 目标但使用 `observe`，同时报告有效性 `passed` 与性能目标 `performance_target_passed`。
+**C2 v1 停止记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v1` 在第 22/90 条（512-token、K0、第 4 轮）按旧语义 fail-fast。该轮 18 项其他检查通过，jitter p95 为 0.866 ms，但出现一次 39.490 ms 最大迟到，超过 30 ms 目标。v1 证明性能目标确有尾部失败，也暴露了“性能不达标会阻止收集 No-Go 证据”的口径错误；它只作为停止/调试记录，不续跑、不作为完整 C2 曲线。后续新 run id 保留 30 ms 目标但使用 `observe`，同时报告有效性 `passed` 与性能目标 `performance_target_passed`。该批次现位于 `_archive/stopped/c2/`。
 
-**C2 v2 停止记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v2` 完成 512-token 全部 30 条后，在第 31/90 条（2048-token、K0、首轮）因 GPU 数据最大年龄 856.023 ms 超过 750 ms 有效性门而停止。探针始终可用，根因是旧 GPU sampler 在一次 `nvidia-smi` 探针耗时 624.415 ms 后又固定等待 250 ms，使实际采样间隔叠加到 874.730 ms。修复将 GPU sampler 改为固定 deadline：慢探针只跳过已经错过的 tick，不再在完成后额外等待整个周期；750 ms 门槛不放宽。v2 只作为停止/调试记录，不续跑、不作为完整 C2 曲线。
+**C2 v2 停止记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v2` 完成 512-token 全部 30 条后，在第 31/90 条（2048-token、K0、首轮）因 GPU 数据最大年龄 856.023 ms 超过 750 ms 有效性门而停止。探针始终可用，根因是旧 GPU sampler 在一次 `nvidia-smi` 探针耗时 624.415 ms 后又固定等待 250 ms，使实际采样间隔叠加到 874.730 ms。修复将 GPU sampler 改为固定 deadline：慢探针只跳过已经错过的 tick，不再在完成后额外等待整个周期；750 ms 门槛不放宽。v2 只作为停止/调试记录，不续跑、不作为完整 C2 曲线。该批次现位于 `_archive/stopped/c2/`。
 
-**C2 direct NVML v1 停止记录（2026-08-29）**：`c2_llm_residency_curve_20260829_direct_nvml_v1` 在第 64/90 条（4096-token、K24、首轮）遇到一次 512.231 ms 的 direct NVML 长尾；旧固定网格推进又等待到下一个 250 ms tick，把有效样本间隔放大到 756.209 ms，推理阶段最大样本年龄 751.457 ms，因而按 750 ms 硬门正确停止。主资源线程同阶段最大 jitter 仅 0.775 ms，排除 CPU sampler 饥饿；运行时后端为 `direct_nvml` 且 `gpu_cli_subprocess_used=false`。修复改为越过下一 tick 后立即补采，并把显存查询放到辅助 NVML 查询之后以保证时间戳贴近显存读数。该 64 条运行冻结为停止/调试证据，不得续跑或与修复后曲线合并。
+**C2 direct NVML v1 停止记录（2026-08-29）**：`c2_llm_residency_curve_20260829_direct_nvml_v1` 在第 64/90 条（4096-token、K24、首轮）遇到一次 512.231 ms 的 direct NVML 长尾；旧固定网格推进又等待到下一个 250 ms tick，把有效样本间隔放大到 756.209 ms，推理阶段最大样本年龄 751.457 ms，因而按 750 ms 硬门正确停止。主资源线程同阶段最大 jitter 仅 0.775 ms，排除 CPU sampler 饥饿；运行时后端为 `direct_nvml` 且 `gpu_cli_subprocess_used=false`。修复改为越过下一 tick 后立即补采，并把显存查询放到辅助 NVML 查询之后以保证时间戳贴近显存读数。该 64 条运行冻结为停止/调试证据，不得续跑或与修复后曲线合并，现位于 `_archive/stopped/c2/`。
 
-**C2 完成记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v3` 基于干净 commit `63e75baecd8895fc7fa1c6fc74cb351cb9c1db02` 完成 `6 配置 × 3 上下文 × 5 轮 = 90/90` 条真实 llama.cpp/Qwen3.5-9B 迭代，`failures.jsonl` 为空，0 fallback；每条记录的 17 项有效性门全部通过，`performance_target_passed` 为 90/90（30 ms jitter 目标在 observe 模式下全部满足）。所有 `gpu_delta_mb` 为相对空闲整卡的增量估计（WSL 驱动对 compute process 显存返回 N/A）。
+**C2 旧 CLI 完成记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v3` 基于干净 commit `63e75baecd8895fc7fa1c6fc74cb351cb9c1db02` 完成 `6 配置 × 3 上下文 × 5 轮 = 90/90` 条真实 llama.cpp/Qwen3.5-9B 迭代，`failures.jsonl` 为空，0 fallback；每条记录的 17 项有效性门全部通过，`performance_target_passed` 为 90/90（30 ms jitter 目标在 observe 模式下全部满足）。所有 `gpu_delta_mb` 为相对空闲整卡的增量估计（WSL 驱动对 compute process 显存返回 N/A）。该批次已被 direct NVML v2 替代，现位于 `_archive/superseded/c2/`。
 
 整卡增量估计（MiB）：
 
@@ -280,7 +280,7 @@ C 阶段收尾前仍必须完成：Forge b=1 同日复测、按 3.3 节校准 `G
 
 **C3 初步筛选（2026-08-29，legacy Forge 口径）**：`experiment_results/elastic_residency/c3_analysis/c3_h_screen_20260829_legacy_forge.json` 使用 C2 v3 + B2 v1 + 旧 Forge 峰值 5904 MiB（idle 314 MiB）计算：`G_safe = 501.3 MiB`（由 B2 T0 的 allocator slack 主导，colocated 残差 pending）；三个上下文结论一致：`H_TTS(T0) = 16`（K24 差约 17 MiB 不可行）、`H_TTS(T3) = 32` 且 FULL 可行、`H_D = 0`（K0–K8 临界）。该筛选值不得用于冻结，Forge 复测后必须重算；T0 下 K24 的临界贴边也说明补测 `k={20,22}` 有实际价值。
 
-**Forge 复测 v1 停止记录（2026-08-29）**：`forge_b1_reprofile_20260829_verified_v1` 采集数据全部正常（idle 高水位 185 MiB、Forge 常驻基线 409 MiB、5 轮峰值 max/mean 5669/5668.6 MiB、`M_D` 增量估计 5484 MiB），但 `swap_unused` 门禁失败：时间线中 WSL2/Forge 带来 780 KB 级系统性 swap 噪声，而 v1 沿用了 A1/C2 的 `swap==0` 口径。A1/C2 当时无 Forge 服务常驻，该口径对 Forge 复测不可达。修复将 Forge 复测的 swap 门禁改为"增长容忍"（`swap_growth_within_tolerance`，默认 4 MiB，实测噪声远低于此值；真实换页压力为数百 MB 量级仍会被拒绝），并在 summary 中保留 start/max/growth 全量数值。v1 保留为口径调试记录；口径修复后使用新 run id 重跑，其数据不得直接作为 `M_D` 证据。
+**Forge 复测 v1 停止记录（2026-08-29）**：`forge_b1_reprofile_20260829_verified_v1` 采集数据全部正常（idle 高水位 185 MiB、Forge 常驻基线 409 MiB、5 轮峰值 max/mean 5669/5668.6 MiB、`M_D` 增量估计 5484 MiB），但 `swap_unused` 门禁失败：时间线中 WSL2/Forge 带来 780 KB 级系统性 swap 噪声，而 v1 沿用了 A1/C2 的 `swap==0` 口径。A1/C2 当时无 Forge 服务常驻，该口径对 Forge 复测不可达。修复将 Forge 复测的 swap 门禁改为"增长容忍"（`swap_growth_within_tolerance`，默认 4 MiB，实测噪声远低于此值；真实换页压力为数百 MB 量级仍会被拒绝），并在 summary 中保留 start/max/growth 全量数值。v1 保留为口径调试记录；口径修复后使用新 run id 重跑，其数据不得直接作为 `M_D` 证据。该批次现位于 `_archive/stopped/forge/`。
 
 **Forge 复测 v2 完成记录（2026-08-29）**：`forge_b1_reprofile_20260829_verified_v2` 基于干净 commit `50d2362adf00fa86fb2c28a9c1b1261af15fc563` 通过全部 10 项门禁（0 failure、swap 增长 0 字节、16 物理核归还、采样/GPU 线程 affinity `[28,29,30,31]`）。空闲整卡高水位 415 MiB（v1 已触发 Forge 模型加载后的稳态），Forge 常驻基线 419 MiB；5 轮 b=1 txt2img 延迟 mean/p95 为 4.844/4.932 s（低于 2026-08-28 旧口径的 5.44 s），逐轮峰值稳定在 5667 MiB（每轮 96–100 个 GPU 样本）。**`M_D(b=1) = 5252 MiB`**（peak − idle 高水位口径），比旧估算 5590 MiB 低约 338 MiB。该值与 C2/B2 的 `max_card_delta_mb` 同为相对空闲整卡的增量口径。
 
@@ -348,7 +348,7 @@ R_sys = 0, 1, 2, 4
 ## 5. 结果目录与完成判据
 
 ```text
-experiment_results/elastic_residency/<run_id>/
+experiment_results/elastic_residency/<stage>/<run_id>/
   run_config.json
   manifest.json
   iterations.jsonl
@@ -357,7 +357,14 @@ experiment_results/elastic_residency/<run_id>/
   summary.json
   summary.csv
   failures.jsonl
+
+experiment_results/elastic_residency/_archive/
+  superseded/<stage>/<run_id>/
+  stopped/<stage>/<run_id>/
+  debug_smoke/<stage>/<run_id>/
 ```
+
+当前批次和全部归档映射见 `docs/ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md`。分析脚本不得自动扫描 `_archive`。
 
 每个阶段完成必须同时满足：
 
@@ -385,7 +392,7 @@ experiment_results/elastic_residency/<run_id>/
   3. 先跑 LLM+TTS 单组合 smoke，再对保留的 context/LLM/T0-T3 组合各跑 5 轮，得到 colocated 正残差；
   4. 重算 `G_safe`，冻结按 context 分组的 `H_TTS/H_D`，然后进入 D 阶段。
 
-**C3 临界补测 v2 停止记录（2026-08-29）**：`c3_llm_critical_refinement_20260829_verified_v2` 完成 94/150 条后，在 C2048/K20/r5 因推理期 GPU 样本最大年龄 772.875 ms 超过 750 ms 有效性硬门而停止；其余有效性检查及该轮 jitter 性能目标均通过。94 条中所有记录的最大样本年龄均超过 500 ms，10 条超过 700 ms，第 91 条已达 749.570 ms。根因是周期 sampler 每次先查询整卡指标、再查询 WSL 驱动无法数值化返回的 compute-process 显存，后者不贡献正式曲线证据却显著拉长探针周期。修复仅在 LLM 周期 sampler 中关闭无效的进程显存查询；阶段性显存快照与整卡基线差值估算保持不变，750 ms 门槛不放宽。v2 保留为停止记录，不续跑、不用于完整曲线。
+**C3 临界补测 v2 停止记录（2026-08-29）**：`c3_llm_critical_refinement_20260829_verified_v2` 完成 94/150 条后，在 C2048/K20/r5 因推理期 GPU 样本最大年龄 772.875 ms 超过 750 ms 有效性硬门而停止；其余有效性检查及该轮 jitter 性能目标均通过。94 条中所有记录的最大样本年龄均超过 500 ms，10 条超过 700 ms，第 91 条已达 749.570 ms。根因是周期 sampler 每次先查询整卡指标、再查询 WSL 驱动无法数值化返回的 compute-process 显存，后者不贡献正式曲线证据却显著拉长探针周期。修复仅在 LLM 周期 sampler 中关闭无效的进程显存查询；阶段性显存快照与整卡基线差值估算保持不变，750 ms 门槛不放宽。v2 保留为停止记录，不续跑、不用于完整曲线，现位于 `_archive/stopped/c3/`。
 
 **direct NVML 口径修订（2026-08-29）**：对 v2 的第一次修复只减少了 CLI 查询次数，仍未消除子进程采样对论文实验的扰动，因此 `e446e33` 下的 card-only smoke 也只保留为调试记录。正式 GPU 遥测改为 ctypes direct NVML，CLI 不允许静默 fallback；本机空闲校准中 direct NVML 完整设备指标查询约为毫秒级，且 manifest/summary/acceptance 显式锁定后端。由于测量后端变化，C2 粗测、C3 细化及用于安全余量的 B2/Forge 整卡指标均须在新后端下重跑或校准，旧结果不得与新结果拼接冻结阈值。
 
@@ -393,7 +400,7 @@ experiment_results/elastic_residency/<run_id>/
 
 **C3 direct NVML 完成记录（2026-08-29）**：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 使用同一干净 commit 完成 `10 配置 × 3 上下文 × 5 轮 = 150/150` 条，`summary.passed=true`、0 failure。全部轮次使用 `direct_nvml` 且未启动 GPU CLI；推理期最大 GPU 样本年龄为 630.711 ms，最大单次探针耗时为 425.154 ms，deadline recovery 合计 11 次。该 run 与 C2 direct v2 共同构成当前 16 档完整驻留曲线；旧的 94 条停止记录不参与合并。
 
-**KV/共置测量实现记录（2026-08-30）**：新增 `kv_measurement.py`、`llm_kv_cache_calibration.py` 与 `llm_tts_colocated.py`。历史 `kv_state_bytes` 明确为 `save_state()` 完整序列化状态，不再表述为纯 GPU KV 显存；独立 KV 校准从 llama.cpp 初始化日志采集 GPU/CPU/CUDA_Host KV/compute buffer，并分别查询单序列状态、原生 position 边界和 `llm.n_tokens`。校准和共置入口都以 `n_ctx = context + generation`（正式默认 128）重建与 C2/C3 相同的推理后状态。共置入口在同一进程实测 `B_LLM`、TTS 窗口整卡峰值 `P_colocated`、PyTorch 分阶段峰值与正残差，正式矩阵支持每组合 5 轮。Windows 静态测试 94/94 通过；`kv_calibration_smoke_20260830_verified_v1` 在干净 commit `2dca3651d94978523e7cddd24826099321bd760b` 下保存了 1/1 条通过的 direct NVML K0 artifact（C64+8，KV token=72，0 failure），另有 K2 临时 smoke 识别到 CUDA0 KV/compute buffer；最小 K0+T3 共置临时 smoke 也通过 direct NVML、生成 1.2 s 非静音 WAV。这些 smoke 只证明真实链路可运行，不代替 48 条 KV 正式产物或共置正式矩阵。
+**KV/共置测量实现记录（2026-08-30）**：新增 `kv_measurement.py`、`llm_kv_cache_calibration.py` 与 `llm_tts_colocated.py`。历史 `kv_state_bytes` 明确为 `save_state()` 完整序列化状态，不再表述为纯 GPU KV 显存；独立 KV 校准从 llama.cpp 初始化日志采集 GPU/CPU/CUDA_Host KV/compute buffer，并分别查询单序列状态、原生 position 边界和 `llm.n_tokens`。校准和共置入口都以 `n_ctx = context + generation`（正式默认 128）重建与 C2/C3 相同的推理后状态。共置入口在同一进程实测 `B_LLM`、TTS 窗口整卡峰值 `P_colocated`、PyTorch 分阶段峰值与正残差，正式矩阵支持每组合 5 轮。Windows 静态测试 94/94 通过；`kv_calibration_smoke_20260830_verified_v1` 在干净 commit `2dca3651d94978523e7cddd24826099321bd760b` 下保存了 1/1 条通过的 direct NVML K0 artifact（C64+8，KV token=72，0 failure），另有 K2 临时 smoke 识别到 CUDA0 KV/compute buffer；最小 K0+T3 共置临时 smoke 也通过 direct NVML、生成 1.2 s 非静音 WAV。这些 smoke 只证明真实链路可运行，不代替 48 条 KV 正式产物或共置正式矩阵。KV smoke 现位于 `_archive/debug_smoke/kv_calibration/`。
 
 **KV 正式校准完成记录（2026-08-30）**：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 基于干净 commit `820ee0fbcbbf671a791d31786bf171bf2a241d1a` 完成 `16 配置 × 3 上下文 × 1 轮 = 48/48` 条，`summary.passed=true`、0 failure、0 swap、0 GPU unavailable，模型哈希与 C2/C3 相同。`n_ctx/KV tokens=640/2176/4224` 时，预分配 KV buffer 总量为 `24/72/136 MiB`；FULL 的 GPU KV 部分同为 `24/72/136 MiB`；完整 `save_state()` 状态为 `70.263/118.292/182.331 MiB`。该 run 证明 KV 容量和完整序列化状态远小于旧稿误写的 1--2 GiB，但不单独冻结共置阈值。
 - [ ] **D1**：实现 JSON RAG 和 BGE 核心曲线；冻结辅助 SLA。

@@ -196,6 +196,8 @@ GPU burst arrives
 | `paper/experiment_data/03_raw_iterations/` | 原始迭代证据 |
 | `paper/previous/` | 历史稿件和历史产物，只读追溯 |
 
+弹性驻留工作产物采用“当前批次留在阶段目录、历史批次进入 `_archive/{superseded,stopped,debug_smoke}`”的布局。2026-08-30 的完整分类、移动后路径和禁止混用口径见 [弹性驻留运行结果目录](ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md)。归档只用于本地追溯，不改变 `paper/experiment_data/` 的人工晋升规则。
+
 ### 数据晋升流程
 
 1. 在 WSL2 冻结代码、模型、环境变量和实验参数。

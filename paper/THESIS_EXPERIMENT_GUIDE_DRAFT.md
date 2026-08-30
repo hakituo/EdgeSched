@@ -793,7 +793,7 @@ H_D=\max k:\ M_L(k)+M_D(b=1)+G_{safe}\le V_{GPU}.
 
 已有 Forge batch=1 的约 5904 MiB 峰值只能用于预估。计算正式 \(H_D\) 前必须在同一代码、驱动、采样器和空闲基线下复测 Forge，不能把历史整卡峰值与新的进程显存口径直接相加。
 
-**C2 完成记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v3` 基于干净 commit `63e75ba` 完成 `6 配置 × 3 上下文 × 5 轮 = 90/90` 条真实驻留曲线，0 failure、0 fallback，有效性门与 30 ms 性能目标全部通过。K32 与 FULL 的整卡增量仅差约 140 MiB，但 decode 从 36.2 升至 55.5 tok/s（约 +53%）；decode 吞吐在 K24→K32 之间存在非线性跳变（10.5 → 36.2 tok/s），K0→K24 段平缓。完整数据表与关键观察见 `docs/ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md` 的 C2 完成记录。Forge b=1 同日复测、`G_safe` 校准、临界补测与真实共置验证尚未执行，\(H_{TTS}\)/\(H_D\) 尚未冻结。
+**C2 旧 CLI 完成记录（2026-08-29）**：`c2_llm_residency_curve_20260829_verified_v3` 基于干净 commit `63e75ba` 完成 `6 配置 × 3 上下文 × 5 轮 = 90/90` 条真实驻留曲线，0 failure、0 fallback，有效性门与 30 ms 性能目标全部通过。该批次现位于 `_archive/superseded/c2/`，只作工程基线；当前性能真源是 C2/C3 direct NVML v2。完整目录映射见 `docs/ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md`。
 
 ### P2：静态共存可行性
 
@@ -1411,7 +1411,7 @@ No-Go：
 
 ## 20. 当前任务顺序
 
-真实 TTS worker 和基础 smoke 已经完成，但其运行结果仍处于 `experiment_results/` 的探索阶段。近期可执行步骤以 `docs/ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md` 为准：
+真实 TTS worker 和基础 smoke 已经完成，但其运行结果仍处于 `experiment_results/` 的探索阶段。当前与归档批次的边界见 `docs/ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md`，近期可执行步骤以 `docs/ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md` 为准：
 
 - [x] 真实 Qwen3-TTS-0.6B-Base worker 与基础可复现 smoke
 - [x] A1：`a1_smoke_20260829_verified_v7` 已在干净 commit `ae68608` 上通过 GPU/jitter/CPU 首样本/provenance 全部 17 项硬门槛；v6 仅保留为旧门槛调试记录

@@ -4,6 +4,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Assert-NativeCommandSucceeded {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Step
+    )
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Step failed with exit code $LASTEXITCODE."
+    }
+}
+
 $SourceWinPath = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $DriveLetter = $SourceWinPath.Substring(0, 1).ToLower()
 $PathRemainder = $SourceWinPath.Substring(2) -replace "\\", "/"
@@ -37,6 +48,7 @@ rsync -a --info=stats2 \
 "@
 
 wsl -e bash -lc $RsyncCmd
+Assert-NativeCommandSucceeded -Step "WSL2 rsync"
 
 if ($SkipGit) {
     Write-Host ""
@@ -52,11 +64,16 @@ Write-Host "Step 2: auto-commit & push to GitHub (EdgeSched)..."
 Push-Location $SourceWinPath
 try {
     git add -A
-    $HasChanges = (git status --porcelain | Measure-Object -Line).Lines
+    Assert-NativeCommandSucceeded -Step "git add"
+    $StatusLines = @(git status --porcelain)
+    Assert-NativeCommandSucceeded -Step "git status"
+    $HasChanges = $StatusLines.Count
     if ($HasChanges -gt 0) {
         $Stamp = [DateTime]::Now.ToString("yyyy-MM-dd HH:mm")
         git -c user.name=hakituo -c user.email=hakituo@users.noreply.github.com commit -m "auto: 同步后自动提交（$Stamp）"
+        Assert-NativeCommandSucceeded -Step "git commit"
         git push origin main
+        Assert-NativeCommandSucceeded -Step "git push"
         Write-Host "Auto-commit & push OK."
     } else {
         Write-Host "No changes to commit, skip push."
