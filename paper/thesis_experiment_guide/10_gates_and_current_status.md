@@ -68,7 +68,7 @@ No-Go：
 - [x] C3 direct NVML 临界补测：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 已完成 150/150 条；与 C2 合并后覆盖 16 个驻留档位
 - [x] C3 KV 校准：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条，冻结 GPU/宿主 KV buffer 与完整序列化状态的独立语义
 - [ ] **当前 C3 收尾（还剩 4 个动作）**：
-  1. T0/T3 的 direct NVML 隔离矩阵（30 条）；
+  1. T0/T3 的 direct NVML 隔离矩阵（30 条）：v1 已完成 30/30、0 failure/fallback，但缺运行期 swap/同步查询新鲜度字段且全树 provenance 不干净，只保留为工程校准；新增证据门禁后以新干净 commit 跑 v2，v2 通过才完成本项；
   2. Forge b=1 的 direct NVML 同后端校准；
   3. 用完整 16 档曲线重新筛选最小共置候选；
   4. 共置 smoke + 每候选 5 轮，加入 colocated 残差后冻结 `G_safe/H_TTS/H_D`
@@ -81,9 +81,10 @@ No-Go：
 - [ ] S0 无图像真实重叠静态放置实验
 - [ ] 根据真实结果判断弹性驻留 Go / No-Go
 - [ ] Go 后才实现 `PlacementPlan` 与新代价模型，再开展 S1 和正式策略评测
+- [ ] **队列视界 predictor/planner（GATED）**：C3 校准、真实共置 smoke/矩阵、colocated 残差和 S0 Go/No-Go 完成前不实现。Go 后先用 calibration split 建立“画像插值 + 有界 EWMA 残差”，再冻结 queue horizon、转换安全余量与 minimum residency window；正式 evaluation 比较 Pareto-only、仅转换成本、queue-horizon-aware EdgeSched 与 oracle
 - [ ] 同步论文、图表和必要的 C++ 契约
 
-B1/B2 已确认 T0/T3 是条件式 Pareto；C2+C3 direct NVML 已完成 16 档（共 240 条）性能曲线，独立 KV 校准 48/48 也已完成。SM-A 已在真实 WSL2 中因 MPS binary 不存在判定**暂定 NO_GO**——这是环境门禁导致的暂停而非永久取消，待原生 Ubuntu 恢复 SM-A 后再决定是否进入 SM-B/C/D/E；当前不修改在线规划器、不伪造受控 SM 曲线。当前继续完成 C3 收尾的 4 项（T0/T3 同后端校准 → Forge b=1 校准 → 用 16 档曲线重新筛选共置候选 → LLM+TTS 共置 smoke＋正式矩阵冻结 `G_safe/H_TTS/H_D`）；其后实现 CPU 核数画像入口，再跑辅助任务 1/2/4 核曲线与 `R_sys={0,1,2,4}`，必要时补 LLM/TTS 核数扩展曲线，最后在原生 Ubuntu 恢复 SM-A，形成 CPU＋显存驻留＋SM 联合调度。
+B1/B2 已确认 T0/T3 是条件式 Pareto；C2+C3 direct NVML 已完成 16 档（共 240 条）性能曲线，独立 KV 校准 48/48 也已完成。SM-A 已在真实 WSL2 中因 MPS binary 不存在判定**暂定 NO_GO**——这是环境门禁导致的暂停而非永久取消，待原生 Ubuntu 恢复 SM-A 后再决定是否进入 SM-B/C/D/E；当前不修改在线规划器、不伪造受控 SM 曲线。当前继续完成 C3 收尾的 4 项（T0/T3 同后端校准 → Forge b=1 校准 → 用 16 档曲线重新筛选共置候选 → LLM+TTS 共置 smoke＋正式矩阵冻结 `G_safe/H_TTS/H_D`）；其后实现 CPU 核数画像入口，再跑辅助任务 1/2/4 核曲线与 `R_sys={0,1,2,4}`，必要时补 LLM/TTS 核数扩展曲线，最后在原生 Ubuntu 恢复 SM-A，形成 CPU＋显存驻留＋SM 联合调度。只有上述真实性和可行性门禁形成 Go 结论后，才实现 predictor 与 queue-horizon-aware transition planner；Pareto 过滤保留为目标配置选择规则，不单独作为算法创新点。
 
 ---
 

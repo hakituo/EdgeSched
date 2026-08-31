@@ -3,6 +3,7 @@ from experiments.elastic_residency.tts_component_offload_matrix import (
     TEXTS,
     _pareto_configs,
     _validate_texts,
+    build_parser,
 )
 
 
@@ -30,3 +31,10 @@ def test_pareto_filter_removes_strictly_dominated_config() -> None:
         },
     }
     assert _pareto_configs(summaries) == ["T0", "T1"]
+
+
+def test_b2_runtime_evidence_defaults_are_strict() -> None:
+    args = build_parser().parse_args([])
+    assert args.max_gpu_sample_freshness_ms == 750.0
+    assert args.swap_sample_interval == 0.05
+    assert args.max_swap_growth_mb == 0.0

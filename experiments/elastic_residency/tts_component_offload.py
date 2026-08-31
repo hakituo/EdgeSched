@@ -32,9 +32,11 @@ from experiments.elastic_residency.contracts import (  # noqa: E402
     FailureRecord,
 )
 from experiments.elastic_residency.gpu_telemetry import (  # noqa: E402
-    DirectNvmlProbe,
     NvmlUnavailableError,
     get_direct_nvml_probe,
+)
+from experiments.elastic_residency.tts_gpu_snapshot import (  # noqa: E402
+    nvidia_memory_snapshot as _nvidia_memory_snapshot,
 )
 from experiments.tts.profiling_utils import (  # noqa: E402
     model_tree_hash,
@@ -124,51 +126,6 @@ def _synchronize() -> None:
 
     if torch.cuda.is_available():
         torch.cuda.synchronize()
-
-
-def _nvidia_memory_snapshot(
-    pid: int,
-    *,
-    probe: DirectNvmlProbe | None = None,
-) -> dict[str, Any]:
-    """兼容旧调用名；正式显存快照直接来自 NVML，不调用 CLI。"""
-
-    try:
-        active_probe = probe or get_direct_nvml_probe(include_process_memory=True)
-        sampled = active_probe.sample(pid)
-    except NvmlUnavailableError as exc:
-        sampled = {
-            "available": False,
-            "backend": "direct_nvml",
-            "unavailable_reason": f"direct_nvml_init_failed: {exc}",
-        }
-    if not sampled.get("available", False):
-        return {
-            "gpu_card_available": False,
-            "gpu_card_used_mb": None,
-            "gpu_card_total_mb": None,
-            "gpu_process_total_mb": None,
-            "gpu_process_total_available": False,
-            "gpu_process_total_unavailable_reason": sampled.get(
-                "unavailable_reason",
-                "direct_nvml_query_failed",
-            ),
-            "gpu_telemetry_backend": "direct_nvml",
-            "gpu_cli_subprocess_used": False,
-        }
-    process_used_mb = sampled.get("process_used_mb")
-    return {
-        "gpu_card_available": True,
-        "gpu_card_used_mb": sampled["card_used_mb"],
-        "gpu_card_total_mb": sampled["card_total_mb"],
-        "gpu_process_total_mb": process_used_mb,
-        "gpu_process_total_available": process_used_mb is not None,
-        "gpu_process_total_unavailable_reason": sampled.get(
-            "process_memory_unavailable_reason"
-        ),
-        "gpu_telemetry_backend": sampled.get("backend", "direct_nvml"),
-        "gpu_cli_subprocess_used": False,
-    }
 
 
 def _wait_for_gpu_probe(timeout_s: float) -> bool:

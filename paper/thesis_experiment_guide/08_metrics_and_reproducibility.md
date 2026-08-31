@@ -39,6 +39,7 @@
 - GPU 物理 SM 总数、请求比例、实际有效 SM 数与分区后端；
 - GPU utilization、功耗、温度，以及可获得时的显存带宽压力代理；
 - 峰值 RSS 和 WSL 可用内存；
+- 运行期 swap start/max/end/growth 与原始采样时间线；
 - CPU 利用率和亲和配置；
 - 迁移次数、方向和时间；
 - 驻留档位变化；
@@ -103,5 +104,9 @@ manifest 至少记录：
 - 运行参数与随机种子；
 - 代码提交哈希；
 - 是否发生 fallback。
+
+TTS 的阶段性显存点若采用同步 direct NVML 查询，不套用后台缓存的 sample-age 定义；必须记录
+查询开始/结束 monotonic timestamp、查询耗时，并把查询耗时作为样本新鲜度保守上界。
+原始 child artifact 同时保留全子进程 swap 时间线，iteration/summary 必须携带相同门禁结果。
 
 ---

@@ -113,12 +113,16 @@ python -m experiments.elastic_residency.tts_component_offload \
 
 ```bash
 python -m experiments.elastic_residency.tts_component_offload_matrix \
-  --run-id <new_run_id> --configs T0 T1 T2 T3 --rounds 5 \
+  --run-id <new_run_id> --configs T0 T3 --rounds 5 \
+  --max-gpu-sample-freshness-ms 750 \
+  --swap-sample-interval 0.05 --max-swap-growth-mb 0 \
   --source-git-commit <clean_commit> \
   --source-git-dirty false --source-git-status-entry-count 0
 ```
 
-B2 固定使用恰好 20/50/100 字文本，每配置独立加载和预热一次，然后运行 15 个测量请求。当前通过记录为 `b2_tts_matrix_20260829_verified_v1`，共 60/60 条，条件式 Pareto 为 T0/T3；详细结果见 [B2 TTS 组件卸载矩阵](../docs/TTS_COMPONENT_OFFLOAD_MATRIX_20260829.md)。全部 RTF 均大于 1，因此该结果不能证明无 underrun。
+B2 固定使用恰好 20/50/100 字文本，每配置独立加载和预热一次，然后运行 15 个测量请求。`tts_runtime_evidence.py` 在整个配置子进程生命周期内按固定 deadline 保存 swap 原始时间线；每个显存点记录同步 direct NVML 查询的开始、结束与耗时，并以查询耗时作为样本新鲜度保守上界。任一 swap 增长、查询上界超过 750 ms、CLI/fallback 或原有 waveform/device 门禁失败，都会使 iteration、child 和 summary 同时失败并写入 `failures.jsonl`。
+
+旧 60 条 `b2_tts_matrix_20260829_verified_v1` 只保留 T0/T3 候选关系。T0/T3 direct NVML v1 `b2_tts_pareto_matrix_20260831_direct_nvml_v1` 已完成 30/30，但缺上述运行期 swap/查询耗时字段，且全树 provenance 不干净，只作为工程校准；正式冻结前必须以新干净 commit 和新 run id 跑 v2。全部既有 B2 记录的 RTF 均大于 1，因此不能证明无 underrun。
 
 ### 10. 弹性驻留 C1/C2 LLM 驻留曲线
 

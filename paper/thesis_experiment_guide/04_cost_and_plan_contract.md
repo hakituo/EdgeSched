@@ -54,7 +54,124 @@ T_{load}+T_{KVsave}+T_{KVrestore}+T_{swap}+P_{service}.
 - 队列清空或会话状态改变时重新评估目标配置；
 - 任何迟滞不能给普通单图请求增加主动聚批等待。
 
-### 7.4 规划结果
+### 7.4 算法主线：队列视界内的转换摊销
+
+仅执行“枚举 SLO-feasible 配置 → Pareto 过滤 → 固定字典序选择”不足以构成
+EdgeSched 的主要算法贡献。Pareto 规则负责在不同单位的 latency、throughput 与
+reconfiguration 指标之间避免任意加权，但它只回答**目标配置选哪个**；核心调度问题还必须回答：
+
+- 当前是否值得改变 residency；
+- 为已知的下一阶段临时牺牲哪一阶段的 residency；
+- 采用完整迁移、分层驻留还是保持当前配置；
+- burst train 结束后何时恢复，且不在相邻任务间反复 evict/restore。
+
+因此算法主线定义为 **phase-aware + transition-cost-aware +
+queue-horizon-aware elastic residency scheduling**。在时刻 $t$，规划器只从已经到达的
+任务、正在执行的 phase 及其已知后继阶段构造有界视界 $\mathcal H_t$。视界在未知分支、
+队列尾或预设上限处停止；它不预测尚未到达的请求，也不为了扩大视界主动等待聚批。
+
+对当前配置 $a_{cur}$ 和候选配置 $a'$，先在两者均满足硬 SLO 与容量约束的前提下，计算
+视界内已知工作的累计关键路径收益：
+
+\[
+\Delta_{\mathcal H_t}(a_{cur},a')=
+\sum_{i\in\mathcal H_t}
+\left[\hat T_i(a_{cur})-\hat T_i(a')\right].
+\]
+
+吞吐收益必须先按视界内已知 token、chunk 或 image 数转换为预计完成时间，不能与秒、
+百分比或 SLO penalty 做任意 weighted sum。只有同时满足以下条件才允许转换：
+
+\[
+\Delta_{\mathcal H_t}(a_{cur},a')
+>
+C_{tr}(a_{cur}\rightarrow a')+\eta,
+\]
+
+\[
+t-t_{last\_transition}\ge \tau_{min}.
+\]
+
+其中 $C_{tr}$ 包含加载、KV 保存/恢复、同步、缓存重建和转换期间的服务损失，
+$\eta$ 是预测误差与测量噪声的安全余量，$\tau_{min}$ 是最小驻留窗口。
+容量不安全、后端失败或硬 SLO 即将失守时可以触发 fail-safe override，但必须记录原因，
+不能把普通收益波动伪装成紧急切换。
+
+这个视界定义自然区分单个 burst 与 burst train：单个 diffusion job 的收益可能不足以摊销
+一次 LLM 迁出和恢复；已经排队的连续 burst 会延长 $\mathcal H_t$，累计收益超过转换代价后
+才迁移，并在队列清空后重新评估恢复。Pareto/lexicographic policy 仍保留为候选目标的
+确定性选择规则，但不能单独作为算法创新点。
+
+### 7.5 可实现的预测器基线
+
+预测器不能只作为架构图中的黑盒。首个可实现版本采用“离线画像插值 + 在线残差修正”，
+而不是先引入难以解释的机器学习模型：
+
+\[
+\hat T_i(u_i,z_i,a,t)=
+\operatorname{Interp}\!\left(P_i;u_i,z_i,a\right)
+\cdot \alpha_{i,a}(t),
+\]
+
+\[
+\alpha_{i,a}(t+1)=
+\operatorname{clip}\left(
+(1-\beta)\alpha_{i,a}(t)
++\beta\frac{T_i^{obs}}{T_i^{offline}},
+\alpha_{min},\alpha_{max}
+\right).
+\]
+
+- $P_i$ 来自 calibration 数据中的配置级画像表；
+- $u_i$ 表示 input tokens、output budget、文本/chunk 长度、分辨率、steps、batch 等输入规模；
+- $z_i$ 表示 context/KV、queue depth、co-runner、冷热状态和当前 residency；
+- $\alpha_{i,a}$ 是按 phase/config 维护的有界 EWMA 乘性修正；
+- 冷加载、稳态执行、转换和共置干扰分别建模，不能用一个系数混在一起；
+- 超出画像覆盖范围、样本不足或置信度过低时保持当前安全配置，或使用保守上界，禁止激进外推。
+
+转换判断应使用保守收益：由收益下界与转换成本上界比较，而不是只比较点预测。
+至少记录预测值、实际值、残差、画像桶、在线修正系数和置信边界，使一次错误迁移可以完整回放。
+
+预测器验收不只报告平均误差，还必须包含：
+
+- 按 phase/config/input bucket 的 MAPE、绝对误差 p95 和覆盖率；
+- 相对离线 oracle 的 decision regret；
+- 已执行转换中真正完成 payback 的比例；
+- 预测误差为 10%/20%/30% 时的 SLO、迁移次数和 thrashing 敏感性；
+- 去掉在线修正、queue horizon、transition cost 或 minimum residency window 的消融。
+
+### 7.6 当前实现顺序与停止条件
+
+上述算法是 **C3 真实性与可行性门禁通过后的实现路线**，不是当前立即编码的功能。
+在 T0/T3 与 Forge 的 direct NVML 校准、16 档候选重筛、LLM+TTS 单组合 smoke、正式共置矩阵
+和 colocated 正残差完成前，不实现在线 predictor，不冻结转换阈值，也不把 Pareto planner
+描述为已验证的核心算法。
+
+当前阶段只要求实验产物保留未来建模所需的原始事实：输入规模、context/KV、当前/候选配置、
+phase、queue depth、co-runner、冷热状态、实测执行时间、转换时间、显存峰值、SLO 结果与失败原因。
+在 `G_safe/H_TTS/H_D` 冻结且真实共置 smoke 通过后，才能：
+
+1. 用 calibration split 拟合画像插值与 EWMA 初值；
+2. 冻结候选配置、$\eta$、$\tau_{min}$ 和视界上限；
+3. 用独立 evaluation trace 比较 Pareto-only、instantaneous、transition-aware、
+   queue-horizon-aware 与 oracle；
+4. 若真实共置或转换收益无法覆盖成本，主动收缩算法与论文主张，不用复杂 predictor 包装 No-Go。
+
+### 7.7 泛化验证边界
+
+Phase abstraction 不能只靠接口命名证明泛化。主链路稳定后，evaluation 至少应沿以下维度中
+选择两个工作负载变化，并尽量包含一个替代模型或后端实例：
+
+- LLM 模型规模或 context/KV（例如 7B/9B、4K/16K/32K）；
+- TTS backend、文本长度或 chunk 数；
+- diffusion 之外的 GPU-required burst，或不同分辨率/steps；
+- 单 burst、burst train、不同 queue depth 与 arrival pattern；
+- 不同 co-runner 和冷热状态。
+
+扩展实验应复用同一个 phase/profile/PlacementPlan 接口，不为新模型硬编码新的调度分支。
+优先先完成一条可信主链路，再做少量有解释力的变化；不要在真实性门禁之前扩成模型组合穷举。
+
+### 7.8 规划结果
 
 准入控制不应只返回 CPU/GPU 和一个 `requires_offload` 布尔值，而应返回：
 

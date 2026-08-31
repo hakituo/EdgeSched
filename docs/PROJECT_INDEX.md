@@ -34,7 +34,9 @@
 | `experiments/tts/profile_qwen3_tts_gpu_sentence_lengths.py` | GPU 短/中/长句正式 profiling | 预热后 5 文本 × 3 档 × 3 轮，生成原始记录、汇总、拟合与图表 |
 | `experiments/elastic_residency/smoke_a1.py` | A1 实验基础设施硬门禁 | GPU 预热/新鲜度、jitter、CPU 首样本、swap、affinity、核心归还与 Git provenance |
 | `experiments/elastic_residency/tts_component_offload.py` | B1 TTS T0–T3 单文本 smoke | 独立子进程、实际组件设备、code 传输、非静音 WAV 与分阶段 CUDA 峰值；v2 已通过 |
-| `experiments/elastic_residency/tts_component_offload_matrix.py` | B2 TTS 正式矩阵 | 20/50/100 字 × 5 轮、逐配置预热、原始 WAV/哈希、分组统计与 Pareto；v1 已通过 |
+| `experiments/elastic_residency/tts_component_offload_matrix.py` | B2 TTS 正式矩阵 | 20/50/100 字 × 5 轮、逐配置预热、原始 WAV/哈希、分组统计与 Pareto；direct NVML v1 已完成 30/30，但缺运行期 swap/新鲜度与干净全树 provenance，v2 待重跑 |
+| `experiments/elastic_residency/tts_gpu_snapshot.py` | TTS 同步 GPU 快照 | direct NVML 整卡/进程 unavailable 语义，并记录查询时间与新鲜度保守上界；禁止 CLI fallback |
+| `experiments/elastic_residency/tts_runtime_evidence.py` | TTS 矩阵运行期证据 | 固定 deadline 采集 swap 原始时间线；校验同步 direct NVML 查询耗时上界，并把门禁写回 iteration/child/summary |
 | `experiments/elastic_residency/llm_residency_curve.py` | C1/C2 LLM 驻留 profiler | 真实层数、精确 prompt/decode、阶段资源和 KV；C2 支持多上下文轮转、严格续跑、checkpoint 与 fail-fast；v3 起新增 `full_state_serialized_bytes`/`kv_sequence_state_bytes`/`kv_position_*`/`kv_gpu_buffer_mb` 等字段（见 `kv_measurement.py`），历史 C2/C3 数据不含这些字段且仍然有效 |
 | `experiments/elastic_residency/kv_measurement.py` | KV 测量语义与采集共享模块 | 显式拆分 GPU 预分配 KV buffer / 已用 token 范围 / 单序列序列化状态 / `save_state()` 完整负载 / 整卡增量五个概念；`LlamaInitLogCapture` 解析 llama.cpp 初始化日志，缺字段保持 None 禁止填 0 |
 | `experiments/elastic_residency/llm_kv_cache_calibration.py` | KV 容量与语义校准（独立入口） | `c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 16 configs × 3 contexts × 1 run = 48/48 条；以 `n_ctx=context+128` 匹配 C2/C3 推理后状态，不做性能计时 |

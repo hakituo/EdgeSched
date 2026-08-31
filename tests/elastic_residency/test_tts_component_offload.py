@@ -68,3 +68,15 @@ def test_wsl_non_numeric_process_memory_is_not_reported_as_zero() -> None:
     )
     assert snapshot["gpu_telemetry_backend"] == "direct_nvml"
     assert snapshot["gpu_cli_subprocess_used"] is False
+    assert snapshot["gpu_probe_completed_monotonic_ns"] >= snapshot[
+        "gpu_probe_started_monotonic_ns"
+    ]
+    assert snapshot["gpu_probe_duration_ms"] >= 0
+    assert (
+        snapshot["gpu_sample_freshness_bound_ms"]
+        == snapshot["gpu_probe_duration_ms"]
+    )
+    assert (
+        snapshot["gpu_sample_freshness_semantics"]
+        == "synchronous_direct_nvml_query_duration_upper_bound"
+    )

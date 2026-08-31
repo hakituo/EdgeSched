@@ -20,7 +20,7 @@
 | [01 研究定位、工作流与任务抽象](01_research_scope_and_workloads.md) | 改研究问题、术语或贡献边界 | 目标场景、语音/图像工作流、设备亲和性、驻留与 GPU 计算份额能力 |
 | [02 系统状态与运行模式](02_state_and_runtime_modes.md) | 改状态机或决策动作 | 调度状态、候选驻留档位、S0/S1/S2 |
 | [03 画像与资源约束](03_profiles_and_constraints.md) | 改 profiler、容量公式或回退约束 | LLM/TTS/Diffusion 画像、显存/CPU/SM 约束、分层目标 |
-| [04 代价与规划契约](04_cost_and_plan_contract.md) | 改代价模型或 PlacementPlan | 预测对象、转换代价、迟滞、规划输出 |
+| [04 代价与规划契约](04_cost_and_plan_contract.md) | 改代价模型、转换算法、预测器或 PlacementPlan | 队列视界、转换摊销、画像插值与在线残差、迟滞、泛化边界、规划输出 |
 | [05 CPU 与 GPU 分配方法](05_cpu_and_gpu_allocation.md) | 做核数或 SM 实验 | CPU 扩展曲线、最低核心预算、拓扑消融、SM/流水线平衡 |
 | [06 实现差距与路线](06_implementation_and_roadmap.md) | 判断代码是否已实现 | 当前实现审计、P0–P5 路线、SM-A 能力探针 |
 | [07 实验阶段与矩阵](07_experiment_stages_and_matrix.md) | 设计或审查正式实验 | 探索/冻结/正式阶段、E0–E9 |

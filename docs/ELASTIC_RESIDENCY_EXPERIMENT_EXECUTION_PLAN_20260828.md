@@ -377,7 +377,7 @@ experiment_results/elastic_residency/_archive/
 
 ## 6. 建议的逐步交付节奏
 
-**当前状态（2026-08-31）**：C2+C3 direct NVML 已完成 16 档（共 240 条）性能曲线，KV 校准 48/48 已完成；当前进入 C3 收尾第 1 步（T0/T3 direct NVML 隔离矩阵）。SM-A/B/C 不在本计划 A–E 阶段内，其暂定 NO_GO/暂停状态见 `paper/thesis_experiment_guide/10_gates_and_current_status.md`。正式运行前必须从当时的干净 Windows HEAD 读取完整 commit，不在长期文档中硬编码临时 HEAD 或短期测试计数。
+**当前状态（2026-08-31）**：C2+C3 direct NVML 已完成 16 档（共 240 条）性能曲线，KV 校准 48/48 已完成；C3 收尾第 1 步的 T0/T3 direct NVML v1 已完成 30/30，但审计发现运行期 swap/同步查询耗时字段和干净全树 provenance 不完整，正在以新增证据门禁准备 v2。SM-A/B/C 不在本计划 A–E 阶段内，其暂定 NO_GO/暂停状态见 `paper/thesis_experiment_guide/10_gates_and_current_status.md`。正式运行前必须从当时的干净 Windows HEAD 读取完整 commit，不在长期文档中硬编码临时 HEAD 或短期测试计数。
 
 - [x] **A1**：GPU/jitter/CPU 首样本/provenance 硬门槛已通过。证据：`a1_smoke_20260829_verified_v7`；v6 仅作历史调试记录。
 - [x] **B1**：T0–T3 真实单文本 smoke 通过。证据：`b1_tts_components_20260829_verified_v2`。
@@ -389,7 +389,7 @@ experiment_results/elastic_residency/_archive/
 - [x] **C3 临界补测**：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 已完成 150/150 条并通过；与 C2 direct v2 合并后覆盖 16 个 LLM 驻留档位。
 - [x] **C3 KV 正式校准**：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条并通过，0 failure；`n_ctx/KV tokens=640/2176/4224` 对应 KV buffer 总量 `24/72/136 MiB`，完整序列化状态 `70.263/118.292/182.331 MiB`。
 - [ ] **当前 C3 收尾**（下一项正式实验为第 1 步）：
-  1. T0/T3 的 direct NVML 隔离整卡矩阵（30 条，下一 run id 为 `b2_tts_pareto_matrix_20260831_direct_nvml_v1`，固定 20/50/100 字 × 5 轮；精确命令与 provenance 见 `docs/ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md` §5）；随后对 Forge b=1 做同后端 direct NVML 校准（5 轮）。旧 PyTorch allocator 峰值仍可保留，但旧 CLI 整卡差值不得直接混入冻结值；
+  1. T0/T3 的 direct NVML 隔离整卡矩阵（30 条）：v1 已完成但仅作工程校准；新增全子进程 swap 时间线、同步 direct NVML 查询耗时/新鲜度上界与逐层 acceptance 后，下一 run id 为 `b2_tts_pareto_matrix_20260831_direct_nvml_v2`，仍固定 20/50/100 字 × 5 轮（精确命令与 provenance 见结果目录 §5）。v2 通过后再对 Forge b=1 做同后端 direct NVML 校准（5 轮）。旧 PyTorch allocator 峰值仍可保留，但旧 CLI 整卡差值不得直接混入冻结值；
   2. 基于完整 16 档曲线重新筛选最小共置候选；
   3. 先跑 LLM+TTS 单组合 smoke，再对保留的 context/LLM/T0-T3 组合各跑 5 轮，得到 colocated 正残差；
   4. 重算 `G_safe`，冻结按 context 分组的 `H_TTS/H_D`，然后进入 D 阶段。

@@ -29,6 +29,7 @@ experiment_results/elastic_residency/
 | Audio | `audio_compat/audio_compat_20260829*/` | WSLg/Windows 播放兼容性记录 |
 | B1 | `b1/b1_tts_components_20260829_verified_v2/` | T0--T3 单文本组件放置 smoke |
 | B2 | `b2/b2_tts_matrix_20260829_verified_v1/` | 旧后端 60/60 TTS 基线；只保留 T0/T3 候选关系，等待 direct NVML 校准 |
+| B2 direct v1 | `b2/b2_tts_pareto_matrix_20260831_direct_nvml_v1/` | T0/T3 已完成 30/30、0 failure/fallback、WAV/hash 完整；缺运行期 swap/同步查询耗时且全树 provenance 不干净，仅作工程校准，等待 v2 |
 | C1 | `c1/c1_llm_residency_512_20260829_verified_v1/` | K0/FULL 端点 smoke |
 | C2 | `c2/c2_llm_residency_curve_20260829_direct_nvml_v2/` | 当前 90/90 粗驻留曲线 |
 | C3 | `c3/c3_llm_critical_refinement_20260829_direct_nvml_v2/` | 当前 150/150 临界细化曲线 |
@@ -82,14 +83,14 @@ experiment_results/elastic_residency/
 
 ## 5. 下一批产物
 
-下一批正式结果写入（即 C3 收尾第 1 步，下一项正式实验）：
+下一批正式结果写入（即 C3 收尾第 1 步的证据修复重跑）：
 
 ```text
 experiment_results/elastic_residency/b2/
-  b2_tts_pareto_matrix_20260831_direct_nvml_v1/
+  b2_tts_pareto_matrix_20260831_direct_nvml_v2/
 ```
 
-它只测已由 B2 旧矩阵保留下来的 T0/T3，固定 20/50/100 字、每配置每句长 5 轮，共 30 条。完成并核验后，再进行 Forge direct NVML 校准和真实共置候选筛选。
+v1 已按相同 30 条矩阵跑完并证明真实链路可用，但审计发现它只保存同步 direct NVML 结果，未保存查询耗时上界与运行期 swap 时间线；同时运行前 WSL 已同步未提交文档，不能把声明的 `dirty=false` 当作干净全树 provenance。v1 不删除、不拼接、不冻结阈值。v2 仍只测已由 B2 旧矩阵保留下来的 T0/T3，固定 20/50/100 字、每配置每句长 5 轮，共 30 条；通过新增证据门禁后，再进行 Forge direct NVML 校准和真实共置候选筛选。
 
 调用模板（WSL2，`mvp_core-cu128` venv；运行前将 `<clean_commit>` 替换为当时 Windows 干净 HEAD）：
 
@@ -98,13 +99,16 @@ cd /home/leslie/mvp_core
 
 /home/leslie/.venvs/mvp_core-cu128/bin/python \
   experiments/elastic_residency/tts_component_offload_matrix.py \
-  --run-id b2_tts_pareto_matrix_20260831_direct_nvml_v1 \
+  --run-id b2_tts_pareto_matrix_20260831_direct_nvml_v2 \
   --configs T0 T3 \
   --rounds 5 \
+  --max-gpu-sample-freshness-ms 750 \
+  --swap-sample-interval 0.05 \
+  --max-swap-growth-mb 0 \
   --output-root experiment_results/elastic_residency/b2 \
   --source-git-commit <clean_commit> \
   --source-git-dirty false \
   --source-git-status-entry-count 0
 ```
 
-该批次只解决 C3 的同后端 TTS 容量口径；SM-A 的原生 Linux 恢复属于独立门禁，不混入本批次。
+该批次只解决 C3 的同后端 TTS 容量与运行期证据口径；SM-A 的原生 Linux 恢复属于独立门禁，不混入本批次。

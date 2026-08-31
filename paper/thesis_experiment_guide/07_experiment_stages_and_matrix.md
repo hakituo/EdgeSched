@@ -159,7 +159,9 @@ Implementation \rightarrow Calibration \rightarrow Freeze
 | Static Best | 使用校准阶段得到的固定最优配置 |
 | Uncontrolled GPU Co-run | 显存允许时直接并发，不限制 SM |
 | Static SM Split | 使用离线标定得到的固定 SM 份额 |
-| Cost-Aware Joint Planner | 联合选择驻留、CPU 核、SM、batch 和转换方式 |
+| Pareto-Only Instantaneous | 枚举当前 SLO-feasible 配置，Pareto 过滤后按固定字典序选择；不看转换成本或队列视界 |
+| Transition-Cost-Aware | 只对当前 phase 比较收益与转换成本，不累计已经到达的后继工作 |
+| Queue-Horizon-Aware EdgeSched | 在已经到达的 phase/queue 视界内累计收益，联合选择驻留、CPU 核、SM、batch 和转换方式，并受最小驻留窗口约束 |
 | Oracle | 使用真实未来执行时长进行事后最优选择 |
 
 迁移机制基线可保留：
@@ -168,7 +170,9 @@ Implementation \rightarrow Calibration \rightarrow Freeze
 - Symmetric Migration；
 - Urgent Down + Atomic Hot-Swap Up。
 
-这些基线回答的是状态转换机制问题，不能替代新版在线规划策略基线。
+这些基线回答的是状态转换机制问题，不能替代新版在线规划策略基线。正式比较必须分别报告
+SLO、端到端完成时间、吞吐、转换次数、真正完成 payback 的转换比例，以及相对 oracle 的
+decision regret。Pareto-only 是可解释的决策基线，不单独作为 EdgeSched 的算法贡献。
 
 ### E6：图片队列与多候选图
 
@@ -195,6 +199,10 @@ ASR/RAG 可以轻量，但必须是真实执行。Mock N-phase 实验保留为�
 消融：
 
 - 无时长预测；
+- 无在线 EWMA 残差修正，只使用离线画像插值；
+- 无 queue horizon，只看当前 phase；
+- 无 transition cost，退化为 Pareto-only instantaneous；
+- 无 minimum residency window；
 - 禁用 `PARTITIONABLE`，将相关阶段退化为完整设备配置；
 - 无CPU核心隔离；
 - 无 SM 分配，退化为默认 CUDA 不受控共享；
@@ -210,9 +218,15 @@ ASR/RAG 可以轻量，但必须是真实执行。Mock N-phase 实验保留为�
 - Diffusion 时长；
 - 图像队列深度；
 - 预测误差；
+- predictor 的画像覆盖率、MAPE、绝对误差 p95 与 decision regret；
 - 显存安全余量。
 - SM 分区粒度与 TTS 最小有效 SM 数；
 - GPU utilization 或带宽压力预测误差。
+
+泛化不能只由 phase 接口的抽象命名证明。主链路通过后，正式 evaluation 至少覆盖两个变化轴，
+并尽量包含一个替代模型或后端实例：LLM 规模/context、TTS backend/chunk 数、GPU burst 类型或
+Diffusion 参数、queue depth/burst arrival pattern、co-runner/冷热状态。所有变化必须复用相同的
+phase/profile/PlacementPlan 接口，不能为新模型增加专用调度分支。
 
 ### E9：控制面与可靠性补充
 

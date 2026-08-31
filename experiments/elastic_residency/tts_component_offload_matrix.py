@@ -44,6 +44,11 @@ from experiments.elastic_residency.tts_component_offload import (  # noqa: E402
     _wait_for_gpu_probe,
     placement_for,
 )
+from experiments.elastic_residency.tts_runtime_evidence import (  # noqa: E402
+    SwapUsageSampler,
+    compact_runtime_evidence,
+    finalize_child_runtime_evidence,
+)
 from experiments.tts.profiling_utils import (  # noqa: E402
     model_tree_hash,
     percentile,
@@ -184,7 +189,7 @@ def _synthesize_once(
     return metrics, waveform, int(sample_rate)
 
 
-def run_child(args: argparse.Namespace) -> dict[str, Any]:
+def _run_child_workload(args: argparse.Namespace) -> dict[str, Any]:
     import soundfile as sf
     import torch
     from qwen_tts import Qwen3TTSModel
@@ -364,6 +369,25 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def run_child(args: argparse.Namespace) -> dict[str, Any]:
+    """执行真实 TTS 工作负载，并补齐全子进程 swap/GPU 新鲜度门禁。"""
+
+    swap_sampler = SwapUsageSampler(
+        interval_s=args.swap_sample_interval,
+        tolerance_bytes=int(args.max_swap_growth_mb * 1024 * 1024),
+    )
+    swap_sampler.start()
+    try:
+        child = _run_child_workload(args)
+    finally:
+        swap_report = swap_sampler.stop()
+    return finalize_child_runtime_evidence(
+        child,
+        swap_report=swap_report,
+        max_gpu_freshness_ms=args.max_gpu_sample_freshness_ms,
+    )
+
+
 def _metric_summary(records: list[dict[str, Any]], name: str) -> dict[str, float]:
     values = [float(record[name]) for record in records]
     return {
@@ -506,6 +530,12 @@ def run_parent(args: argparse.Namespace) -> Path:
             "ttfa_semantics": "complete_sentence_audio_ready_in_memory",
             "gpu_telemetry_backend": "direct_nvml",
             "gpu_cli_subprocess_allowed": False,
+            "gpu_sample_freshness_semantics": (
+                "synchronous_direct_nvml_query_duration_upper_bound"
+            ),
+            "max_gpu_sample_freshness_ms": args.max_gpu_sample_freshness_ms,
+            "swap_sample_interval_s": args.swap_sample_interval,
+            "max_swap_growth_mb": args.max_swap_growth_mb,
         },
     )
     writer.initialize(
@@ -553,6 +583,12 @@ def run_parent(args: argparse.Namespace) -> Path:
             str(args.seed),
             "--gpu-probe-timeout",
             str(args.gpu_probe_timeout),
+            "--max-gpu-sample-freshness-ms",
+            str(args.max_gpu_sample_freshness_ms),
+            "--swap-sample-interval",
+            str(args.swap_sample_interval),
+            "--max-swap-growth-mb",
+            str(args.max_swap_growth_mb),
         ]
         completed = subprocess.run(
             command,
@@ -579,6 +615,22 @@ def run_parent(args: argparse.Namespace) -> Path:
             continue
         child = json.loads(child_json.read_text(encoding="utf-8"))
         child_results.append(child)
+        if not child.get("passed", False):
+            writer.append_failure(
+                FailureRecord(
+                    stage=config_name,
+                    error_type="ChildAcceptanceFailure",
+                    message="TTS child 运行完成但证据门禁未全部通过",
+                    monotonic_ns=time.monotonic_ns(),
+                    attributes={
+                        "runtime_evidence": compact_runtime_evidence(child),
+                        "failed_record_count": sum(
+                            record.get("passed") is not True
+                            for record in child.get("records", [])
+                        ),
+                    },
+                )
+            )
         for record in child["records"]:
             writer.append_iteration(record)
             all_records.append(record)
@@ -630,6 +682,7 @@ def run_parent(args: argparse.Namespace) -> Path:
                 "load_s": child.get("load_s"),
                 "placement_s": child.get("placement_s"),
                 "prompt_build_s": child.get("prompt_build_s"),
+                "runtime_evidence": compact_runtime_evidence(child),
             }
             for child in child_results
         ],
@@ -705,6 +758,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repetition-penalty", type=float, default=1.05)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--gpu-probe-timeout", type=float, default=5.0)
+    parser.add_argument("--max-gpu-sample-freshness-ms", type=float, default=750.0)
+    parser.add_argument("--swap-sample-interval", type=float, default=0.05)
+    parser.add_argument("--max-swap-growth-mb", type=float, default=0.0)
     parser.add_argument("--child-timeout", type=float, default=3600.0)
     parser.add_argument(
         "--output-root",
@@ -731,6 +787,12 @@ def main() -> None:
     args = build_parser().parse_args()
     if args.rounds < 1:
         raise ValueError("--rounds 必须大于 0")
+    if args.max_gpu_sample_freshness_ms <= 0:
+        raise ValueError("--max-gpu-sample-freshness-ms 必须大于 0")
+    if args.swap_sample_interval <= 0:
+        raise ValueError("--swap-sample-interval 必须大于 0")
+    if args.max_swap_growth_mb < 0:
+        raise ValueError("--max-swap-growth-mb 不能为负数")
     if args.child_config:
         try:
             result = run_child(args)
