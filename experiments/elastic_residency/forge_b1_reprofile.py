@@ -16,7 +16,8 @@ docs/ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md 阶段 C）。
 用法（WSL2，Forge 服务需先在 forge-cu128 环境启动）：
   /home/leslie/.venvs/mvp_core-cu128/bin/python \\
       experiments/elastic_residency/forge_b1_reprofile.py \\
-      --run-id forge_b1_reprofile_20260829_verified_v1 \\
+      --run-id forge_b1_reprofile_20260831_direct_nvml_v1 \\
+      --iterations 5 --warmup 1 --max-gpu-sample-age-ms 750 \\
       --source-git-commit <当前 commit> --source-git-dirty false \\
       --source-git-status-entry-count 0
 
