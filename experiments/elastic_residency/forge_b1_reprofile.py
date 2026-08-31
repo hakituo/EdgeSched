@@ -44,6 +44,10 @@ from experiments.elastic_residency.contracts import (  # noqa: E402
     BackendEvidence,
     ExperimentRunConfig,
 )
+from experiments.elastic_residency.forge_runtime_evidence import (  # noqa: E402
+    evaluate_gpu_sample_freshness,
+    evaluate_swap_growth,
+)
 from experiments.tts.profiling_utils import percentile  # noqa: E402
 
 
@@ -124,36 +128,6 @@ def summarize_gpu_series(series: Sequence[float]) -> Mapping[str, float | int]:
     }
 
 
-def evaluate_swap_growth(
-    swap_values: Sequence[int],
-    tolerance_bytes: int,
-) -> Mapping[str, Any]:
-    """评估时间线 swap 增长是否在容忍范围内。
-
-    Forge 复测必须与 Forge 服务同机运行，WSL2/Forge 带来数百 KB 级的
-    系统性 swap 噪声属于正常现象；这里只拒绝实验期间的真实换页增长
-    （超过 tolerance_bytes），口径与 A1/C2 的 ``swap==0`` 不同，需在
-    manifest 与 summary 中保留完整数值供人工复核。
-    """
-
-    if not swap_values:
-        return {
-            "start_bytes": None,
-            "max_bytes": None,
-            "growth_bytes": None,
-            "within_tolerance": True,
-        }
-    start = int(swap_values[0])
-    maximum = int(max(swap_values))
-    growth = max(0, maximum - start)
-    return {
-        "start_bytes": start,
-        "max_bytes": maximum,
-        "growth_bytes": growth,
-        "within_tolerance": growth <= int(tolerance_bytes),
-    }
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True)
@@ -179,6 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sample-interval", type=float, default=0.05)
     parser.add_argument("--gpu-sample-interval", type=float, default=0.25)
     parser.add_argument("--gpu-warmup-timeout", type=float, default=5.0)
+    parser.add_argument("--max-gpu-sample-age-ms", type=float, default=750.0)
     parser.add_argument("--system-cores", type=int, default=2)
     parser.add_argument(
         "--max-swap-growth-mb",
@@ -214,6 +189,8 @@ def main() -> None:
         raise SystemExit("--iterations 必须为正")
     if args.warmup < 0:
         raise SystemExit("--warmup 不能为负")
+    if args.max_gpu_sample_age_ms <= 0:
+        raise SystemExit("--max-gpu-sample-age-ms 必须为正")
 
     writer = ExperimentArtifactWriter(args.output_root, args.run_id)
     source_git, git_complete = _git_source(args, writer.layout.root)
@@ -246,6 +223,7 @@ def main() -> None:
             "system_physical_cores": args.system_cores,
             "gpu_telemetry_backend": "direct_nvml",
             "gpu_cli_subprocess_allowed": False,
+            "max_gpu_sample_age_ms": args.max_gpu_sample_age_ms,
         },
     )
 
@@ -330,6 +308,12 @@ def main() -> None:
             sampler.samples, idle_window_start_ns, idle_window_end_ns
         )
         idle_summary = summarize_gpu_series(idle_series)
+        idle_freshness = evaluate_gpu_sample_freshness(
+            sampler.samples,
+            start_ns=idle_window_start_ns,
+            end_ns=idle_window_end_ns,
+            max_sample_age_ms=args.max_gpu_sample_age_ms,
+        )
         _event("idle_window_measured", "baseline", dict(idle_summary))
 
         txt2img_url = args.forge_url.rstrip("/") + "/sdapi/v1/txt2img"
@@ -356,6 +340,12 @@ def main() -> None:
             sampler.samples, cooldown_window_start_ns, cooldown_window_end_ns
         )
         resident_summary = summarize_gpu_series(cooldown_series)
+        resident_freshness = evaluate_gpu_sample_freshness(
+            sampler.samples,
+            start_ns=cooldown_window_start_ns,
+            end_ns=cooldown_window_end_ns,
+            max_sample_age_ms=args.max_gpu_sample_age_ms,
+        )
         _event("resident_baseline_measured", "baseline", dict(resident_summary))
 
         # 5. 正式测量轮。
@@ -379,6 +369,12 @@ def main() -> None:
             images = response.get("images", [])
             peak_series = extract_gpu_used_series(sampler.samples, started_ns, finished_ns)
             peak = summarize_gpu_series(peak_series)
+            peak_freshness = evaluate_gpu_sample_freshness(
+                sampler.samples,
+                start_ns=started_ns,
+                end_ns=finished_ns,
+                max_sample_age_ms=args.max_gpu_sample_age_ms,
+            )
             iteration_peaks.append(peak["high_water_mb"])  # type: ignore[arg-type]
             record = {
                 "run_index": run_index,
@@ -388,6 +384,7 @@ def main() -> None:
                 "window_end_monotonic_ns": finished_ns,
                 "gpu_peak_high_water_mb": peak["high_water_mb"],
                 "gpu_peak_sample_count": peak["sample_count"],
+                "gpu_sample_freshness": peak_freshness,
             }
             iteration_records.append(record)
             writer.append_iteration(record)
@@ -420,6 +417,14 @@ def main() -> None:
             sampler_stats["gpu_telemetry_backend"] == "direct_nvml"
             and not sampler_stats["gpu_cli_subprocess_used"]
         ),
+        "gpu_sample_age_within_limit": (
+            idle_freshness["within_limit"] is True
+            and resident_freshness["within_limit"] is True
+            and all(
+                record["gpu_sample_freshness"]["within_limit"] is True
+                for record in iteration_records
+            )
+        ),
         "idle_baseline_samples_sufficient": (
             idle_summary["sample_count"] >= args.min_baseline_gpu_samples
         ),
@@ -445,11 +450,18 @@ def main() -> None:
     m_d_estimate = (
         peak_max - idle_high if peak_max is not None and idle_high is not None else None
     )
+    failed_checks = [name for name, passed in checks.items() if not passed]
+    for check_name in failed_checks:
+        _failure(
+            "acceptance",
+            f"acceptance check failed: {check_name}",
+            fatal=False,
+        )
 
     summary = {
         "run_id": args.run_id,
         "passed": all(checks.values()),
-        "failure_count": 0,
+        "failure_count": len(failed_checks),
         "acceptance_checks": checks,
         "global_idle_high_water_mb": idle_high,
         "forge_resident_baseline_mb": resident_high,
@@ -459,6 +471,14 @@ def main() -> None:
         },
         "m_d_incremental_estimate_mb": m_d_estimate,
         "m_d_estimate_method": "peak_max_minus_global_idle_high_water",
+        "gpu_sample_freshness": {
+            "limit_ms": args.max_gpu_sample_age_ms,
+            "idle_baseline": idle_freshness,
+            "resident_baseline": resident_freshness,
+            "measurement_windows": [
+                record["gpu_sample_freshness"] for record in iteration_records
+            ],
+        },
         "iterations": {
             "expected": args.iterations,
             "actual": len(iteration_records),

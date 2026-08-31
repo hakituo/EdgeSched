@@ -12,6 +12,9 @@ from experiments.elastic_residency.forge_b1_reprofile import (
     extract_gpu_used_series,
     summarize_gpu_series,
 )
+from experiments.elastic_residency.forge_runtime_evidence import (
+    evaluate_gpu_sample_freshness,
+)
 
 
 def _sample(
@@ -19,11 +22,13 @@ def _sample(
     gpu_used_mb: float,
     *,
     gpu_available: bool = True,
+    gpu_sample_age_ms: float = 10.0,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         monotonic_ns=monotonic_ns,
         gpu_available=gpu_available,
         gpu_card_used_mb=gpu_used_mb,
+        gpu_sample_age_ms=gpu_sample_age_ms,
     )
 
 
@@ -83,6 +88,7 @@ def test_parser_defaults_match_frozen_c2_baseline() -> None:
     assert args.sampler == "Euler"
     assert args.sample_interval == 0.05
     assert args.gpu_sample_interval == 0.25
+    assert args.max_gpu_sample_age_ms == 750.0
     assert args.system_cores == 2
     assert args.min_baseline_gpu_samples == 8
     assert args.max_swap_growth_mb == 4.0
@@ -104,3 +110,34 @@ def test_evaluate_swap_growth_tolerates_system_noise() -> None:
     assert dropped["growth_bytes"] == 0
     assert dropped["within_tolerance"] is True
     assert evaluate_swap_growth([], 1024)["within_tolerance"] is True
+
+
+def test_gpu_freshness_rejects_stale_or_empty_evidence_window() -> None:
+    samples = [
+        _sample(100, 300.0, gpu_sample_age_ms=250.0),
+        _sample(200, 5900.0, gpu_sample_age_ms=751.0),
+        _sample(300, 5700.0, gpu_available=False),
+    ]
+    fresh = evaluate_gpu_sample_freshness(
+        samples,
+        start_ns=50,
+        end_ns=150,
+        max_sample_age_ms=750.0,
+    )
+    stale = evaluate_gpu_sample_freshness(
+        samples,
+        start_ns=150,
+        end_ns=250,
+        max_sample_age_ms=750.0,
+    )
+    empty = evaluate_gpu_sample_freshness(
+        samples,
+        start_ns=250,
+        end_ns=350,
+        max_sample_age_ms=750.0,
+    )
+    assert fresh["within_limit"] is True
+    assert fresh["max_sample_age_ms"] == 250.0
+    assert stale["within_limit"] is False
+    assert stale["max_sample_age_ms"] == 751.0
+    assert empty["within_limit"] is False

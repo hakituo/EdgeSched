@@ -34,7 +34,7 @@
 | `experiments/tts/profile_qwen3_tts_gpu_sentence_lengths.py` | GPU 短/中/长句正式 profiling | 预热后 5 文本 × 3 档 × 3 轮，生成原始记录、汇总、拟合与图表 |
 | `experiments/elastic_residency/smoke_a1.py` | A1 实验基础设施硬门禁 | GPU 预热/新鲜度、jitter、CPU 首样本、swap、affinity、核心归还与 Git provenance |
 | `experiments/elastic_residency/tts_component_offload.py` | B1 TTS T0–T3 单文本 smoke | 独立子进程、实际组件设备、code 传输、非静音 WAV 与分阶段 CUDA 峰值；v2 已通过 |
-| `experiments/elastic_residency/tts_component_offload_matrix.py` | B2 TTS 正式矩阵 | 20/50/100 字 × 5 轮、逐配置预热、原始 WAV/哈希、分组统计与 Pareto；direct NVML v1 已完成 30/30，但缺运行期 swap/新鲜度与干净全树 provenance，v2 待重跑 |
+| `experiments/elastic_residency/tts_component_offload_matrix.py` | B2 TTS 正式矩阵 | 20/50/100 字 × 5 轮、逐配置预热、原始 WAV/哈希、分组统计与 Pareto；direct NVML v2 已完成并通过 30/30 条技术核验，尚未晋升论文正文数据 |
 | `experiments/elastic_residency/tts_gpu_snapshot.py` | TTS 同步 GPU 快照 | direct NVML 整卡/进程 unavailable 语义，并记录查询时间与新鲜度保守上界；禁止 CLI fallback |
 | `experiments/elastic_residency/tts_runtime_evidence.py` | TTS 矩阵运行期证据 | 固定 deadline 采集 swap 原始时间线；校验同步 direct NVML 查询耗时上界，并把门禁写回 iteration/child/summary |
 | `experiments/elastic_residency/llm_residency_curve.py` | C1/C2 LLM 驻留 profiler | 真实层数、精确 prompt/decode、阶段资源和 KV；C2 支持多上下文轮转、严格续跑、checkpoint 与 fail-fast；v3 起新增 `full_state_serialized_bytes`/`kv_sequence_state_bytes`/`kv_position_*`/`kv_gpu_buffer_mb` 等字段（见 `kv_measurement.py`），历史 C2/C3 数据不含这些字段且仍然有效 |
@@ -43,6 +43,7 @@
 | `experiments/elastic_residency/llm_tts_colocated.py` | LLM+TTS 真实共置显存测量 | direct NVML 整卡时间线、`B_LLM` 基线、TTS 分阶段 torch peak、`P_colocated` 峰值、`colocated_positive_residual_mb` 残差与容量裁决；容量公式不重复叠加 KV，正式组合支持 5 轮重复 |
 | `experiments/elastic_residency/gpu_telemetry.py` | 论文 GPU 遥测 | 通过 ctypes 直接调用 NVML；正式路径禁止 CLI 子进程，显存末位查询保证时间戳语义，并记录设备级显存及 per-process unavailable 语义 |
 | `experiments/elastic_residency/forge_b1_reprofile.py` | Forge b=1 同日复测（C 阶段收尾） | 依赖已启动的 Forge HTTP API；产出空闲高水位、常驻基线、逐轮峰值与 `m_d_incremental_estimate_mb`，供 H_D 冻结 |
+| `experiments/elastic_residency/forge_runtime_evidence.py` | Forge 运行期有效性门禁 | 对所有参与容量计算的 idle/resident/measurement 窗口逐窗校验周期 GPU 样本年龄，并保留 Forge/WSL2 swap 增长容忍语义 |
 | `experiments/elastic_residency/analyze_results.py` | C 阶段 G_safe/H_TTS/H_D 筛选分析 | 纯标准库；读 C2/B2/Forge summary，输出 G_safe 分量、逐上下文 H 与 k±2/k±4 临界补测建议；只做容量筛选不做共置结论 |
 | `experiments/elastic_residency/sm/sm_capability.py` | SM-A GPU 计算份额能力探针 | 独立实验基础设施，不改生产调度器；WSL 正式 probe 已因 `mps_binary_unavailable` 判定 NO_GO，当前只能保留普通 CUDA 不受控共享语义 |
 | `paper/compile_en.bat` | Windows 英文论文编译 | LaTeX 产物属于生成文件 |

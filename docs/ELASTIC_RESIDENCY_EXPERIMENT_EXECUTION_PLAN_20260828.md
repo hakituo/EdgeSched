@@ -275,7 +275,7 @@ C 阶段收尾前仍必须完成：Forge b=1 同日复测、按 3.3 节校准 `G
 
 **C 阶段收尾工具（2026-08-29）**：新增 `experiments/elastic_residency/forge_b1_reprofile.py` 与 `experiments/elastic_residency/analyze_results.py`，配套 13 项纯逻辑测试（`tests/elastic_residency/test_forge_b1_reprofile.py`、`test_analyze_results.py`，Windows 侧 pytest 与 Ruff 均通过）。
 
-- `forge_b1_reprofile.py`：Forge b=1 同日复测。通过 Forge HTTP API（服务需先在 `forge-cu128` 启动）执行 warmup + 5 轮 b=1 txt2img（口径与 `batch_scaling_experiment.py` 一致），产出 `global_idle_high_water_mb`、`forge_resident_baseline_mb`（冷却窗口口径）、逐轮峰值与 `m_d_incremental_estimate_mb = peak_max - idle_high_water`，写入统一证据契约产物目录。
+- `forge_b1_reprofile.py`：Forge b=1 同日复测。通过 Forge HTTP API（服务需先在 `forge-cu128` 启动）执行 warmup + 5 轮 b=1 txt2img（口径与 `batch_scaling_experiment.py` 一致），产出 `global_idle_high_water_mb`、`forge_resident_baseline_mb`（冷却窗口口径）、逐轮峰值与 `m_d_incremental_estimate_mb = peak_max - idle_high_water`，写入统一证据契约产物目录。`forge_runtime_evidence.py` 对参与上述差值的 idle/resident/每轮 measurement 窗口逐窗执行 750 ms GPU 样本年龄硬门；超限或无有效年龄样本会写 failure 并使整批失败。
 - `analyze_results.py`：按 3.3 节公式计算 `G_safe`（idle 高水位、`reserved-allocated` allocator slack、重复运行漂移、colocated 正残差四个分量，后者在真实共置验证前保持 pending）与逐上下文 `H_TTS`/`H_D`（mean 基准推荐 + max 基准保守双口径），并生成 `k±2`/`k±4` 临界补测建议。
 
 **C3 初步筛选（2026-08-29，legacy Forge 口径）**：`experiment_results/elastic_residency/c3_analysis/c3_h_screen_20260829_legacy_forge.json` 使用 C2 v3 + B2 v1 + 旧 Forge 峰值 5904 MiB（idle 314 MiB）计算：`G_safe = 501.3 MiB`（由 B2 T0 的 allocator slack 主导，colocated 残差 pending）；三个上下文结论一致：`H_TTS(T0) = 16`（K24 差约 17 MiB 不可行）、`H_TTS(T3) = 32` 且 FULL 可行、`H_D = 0`（K0–K8 临界）。该筛选值不得用于冻结，Forge 复测后必须重算；T0 下 K24 的临界贴边也说明补测 `k={20,22}` 有实际价值。
@@ -381,16 +381,16 @@ experiment_results/elastic_residency/_archive/
 
 - [x] **A1**：GPU/jitter/CPU 首样本/provenance 硬门槛已通过。证据：`a1_smoke_20260829_verified_v7`；v6 仅作历史调试记录。
 - [x] **B1**：T0–T3 真实单文本 smoke 通过。证据：`b1_tts_components_20260829_verified_v2`。
-- [x] **B2**：完成 `4 配置 × 3 句长 × 5 轮`；Pareto 候选为 T0/T3，证据为 `b2_tts_matrix_20260829_verified_v1`。
+- [x] **B2**：旧 60 条矩阵筛出 T0/T3；当前 direct NVML v2 `b2_tts_pareto_matrix_20260831_direct_nvml_v2` 基于干净 `0261e4da` 完成 30/30 技术核验，0 failure/fallback，运行期 swap 与同步查询新鲜度证据完整，尚未晋升论文正文数据。
 - [x] **C1**：K0/FULL 的 512-token 真实端点 smoke 已通过。证据：`c1_llm_residency_512_20260829_verified_v1`。
 - [x] **C2 direct NVML 重跑**：`c2_llm_residency_curve_20260829_direct_nvml_v2` 已完成 90/90 条并通过，干净 commit 为 `17c40d3495cb01237bdf2e7429f2635362e908cf`；旧 CLI 运行只保留为工程基线。
 - [x] **C3 工具**：Forge b=1 复测脚本、`G_safe`/`H_TTS`/`H_D` 筛选分析与临界补测建议已实现并通过静态测试；legacy 口径初步筛选见 `experiment_results/elastic_residency/c3_analysis/c3_h_screen_20260829_legacy_forge.json`。
 - [x] **C3 Forge 旧后端复测**：`forge_b1_reprofile_20260829_verified_v2` 通过当时门禁，`M_D = 5252 MiB`；`c3_h_reprofiled_20260829.json` 只保留为候选筛选（`H_TTS(T0)=16`、`H_TTS(T3)=32+FULL`、`H_D` 为 512:8 / 2048:0 / 4096:0），不得当作 direct NVML 冻结值。
 - [x] **C3 临界补测**：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 已完成 150/150 条并通过；与 C2 direct v2 合并后覆盖 16 个 LLM 驻留档位。
 - [x] **C3 KV 正式校准**：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条并通过，0 failure；`n_ctx/KV tokens=640/2176/4224` 对应 KV buffer 总量 `24/72/136 MiB`，完整序列化状态 `70.263/118.292/182.331 MiB`。
-- [ ] **当前 C3 收尾**（下一项正式实验为第 1 步）：
-  1. T0/T3 的 direct NVML 隔离整卡矩阵（30 条）：v1 已完成但仅作工程校准；新增全子进程 swap 时间线、同步 direct NVML 查询耗时/新鲜度上界与逐层 acceptance 后，下一 run id 为 `b2_tts_pareto_matrix_20260831_direct_nvml_v2`，仍固定 20/50/100 字 × 5 轮（精确命令与 provenance 见结果目录 §5）。v2 通过后再对 Forge b=1 做同后端 direct NVML 校准（5 轮）。旧 PyTorch allocator 峰值仍可保留，但旧 CLI 整卡差值不得直接混入冻结值；
-  2. 基于完整 16 档曲线重新筛选最小共置候选；
+- [ ] **当前 C3 收尾**（下一项正式实验为 Forge direct NVML 校准）：
+  1. 运行 `forge_b1_reprofile_20260831_direct_nvml_v1`：真实 Forge b=1、warmup 1 次、正式 5 轮；direct NVML、逐窗 750 ms 样本年龄、swap 增长与核心归还均为硬门；
+  2. 基于完整 16 档 LLM 曲线、B2 direct v2 与 Forge 新结果重新筛选最小共置候选；
   3. 先跑 LLM+TTS 单组合 smoke，再对保留的 context/LLM/T0-T3 组合各跑 5 轮，得到 colocated 正残差；
   4. 重算 `G_safe`，冻结按 context 分组的 `H_TTS/H_D`，然后进入 D 阶段。
 

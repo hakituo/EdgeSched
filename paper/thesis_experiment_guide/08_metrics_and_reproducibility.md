@@ -109,4 +109,9 @@ TTS 的阶段性显存点若采用同步 direct NVML 查询，不套用后台缓
 查询开始/结束 monotonic timestamp、查询耗时，并把查询耗时作为样本新鲜度保守上界。
 原始 child artifact 同时保留全子进程 swap 时间线，iteration/summary 必须携带相同门禁结果。
 
+Forge 的 b=1 容量校准使用周期 direct NVML 时间线，因为 `M_D` 依赖完整生成窗口的整卡高水位。
+因此必须对实际参与差值计算的 idle baseline、resident baseline 与每个 measurement 窗口逐窗保存
+最大样本年龄；任一窗口无有效年龄样本或超过 750 ms，即使后端名和样本总数正确也必须拒绝整批结果，
+并在 `failures.jsonl` 保留失败门禁名称。
+
 ---

@@ -30,6 +30,7 @@ experiment_results/elastic_residency/
 | B1 | `b1/b1_tts_components_20260829_verified_v2/` | T0--T3 单文本组件放置 smoke |
 | B2 | `b2/b2_tts_matrix_20260829_verified_v1/` | 旧后端 60/60 TTS 基线；只保留 T0/T3 候选关系，等待 direct NVML 校准 |
 | B2 direct v1 | `b2/b2_tts_pareto_matrix_20260831_direct_nvml_v1/` | T0/T3 已完成 30/30、0 failure/fallback、WAV/hash 完整；缺运行期 swap/同步查询耗时且全树 provenance 不干净，仅作工程校准，等待 v2 |
+| B2 direct v2 | `b2/b2_tts_pareto_matrix_20260831_direct_nvml_v2/` | 基于干净 `0261e4da` 完成 30/30 技术核验；100 个 child 生命周期 GPU 快照均 direct NVML/无 CLI，最大新鲜度上界 17.582 ms，运行期 swap 0；尚未晋升论文正文数据 |
 | C1 | `c1/c1_llm_residency_512_20260829_verified_v1/` | K0/FULL 端点 smoke |
 | C2 | `c2/c2_llm_residency_curve_20260829_direct_nvml_v2/` | 当前 90/90 粗驻留曲线 |
 | C3 | `c3/c3_llm_critical_refinement_20260829_direct_nvml_v2/` | 当前 150/150 临界细化曲线 |
@@ -77,20 +78,20 @@ experiment_results/elastic_residency/
 
 1. C2/C3 最终性能曲线只使用 `direct_nvml_v2` 两个批次。
 2. KV 容量只使用 `c3_kv_cache_calibration_20260830_direct_nvml_v1`。
-3. B2 v1 和 Forge v2 当前只作为旧后端基线；冻结 `G_safe/H_TTS/H_D` 前必须完成 direct NVML 同后端校准。
+3. B2 direct v2 是当前 TTS 隔离校准；B2 v1 与 Forge v2 只作旧口径基线。冻结 `G_safe/H_TTS/H_D` 前仍须完成 Forge direct NVML 校准和真实共置残差。
 4. `_archive/stopped` 中的部分记录即使单轮 `passed=true`，整个矩阵仍不完整，禁止拼接。
 5. `timeline.jsonl` 和 `*_child.json` 是原始可追溯证据；清理磁盘前应整体压缩归档，不能只保留 summary 后删除原始轮次。
 
 ## 5. 下一批产物
 
-下一批正式结果写入（即 C3 收尾第 1 步的证据修复重跑）：
+下一批正式结果写入（C3 收尾当前第 1 步）：
 
 ```text
-experiment_results/elastic_residency/b2/
-  b2_tts_pareto_matrix_20260831_direct_nvml_v2/
+experiment_results/elastic_residency/forge/
+  forge_b1_reprofile_20260831_direct_nvml_v1/
 ```
 
-v1 已按相同 30 条矩阵跑完并证明真实链路可用，但审计发现它只保存同步 direct NVML 结果，未保存查询耗时上界与运行期 swap 时间线；同时运行前 WSL 已同步未提交文档，不能把声明的 `dirty=false` 当作干净全树 provenance。v1 不删除、不拼接、不冻结阈值。v2 仍只测已由 B2 旧矩阵保留下来的 T0/T3，固定 20/50/100 字、每配置每句长 5 轮，共 30 条；通过新增证据门禁后，再进行 Forge direct NVML 校准和真实共置候选筛选。
+B2 direct v2 已完成技术核验，因此下一批转为 Forge b=1 direct NVML 同后端校准。旧 `forge_b1_reprofile_20260829_verified_v2` 保留为工程基线，不与新批次拼接；新入口对 idle baseline、resident baseline 和每个正式 measurement 窗口逐窗执行 750 ms GPU 样本年龄硬门，并保留 swap 增长、GPU 探针统计和核心归还证据。
 
 调用模板（WSL2，`mvp_core-cu128` venv；运行前将 `<clean_commit>` 替换为当时 Windows 干净 HEAD）：
 
@@ -98,17 +99,16 @@ v1 已按相同 30 条矩阵跑完并证明真实链路可用，但审计发现�
 cd /home/leslie/mvp_core
 
 /home/leslie/.venvs/mvp_core-cu128/bin/python \
-  experiments/elastic_residency/tts_component_offload_matrix.py \
-  --run-id b2_tts_pareto_matrix_20260831_direct_nvml_v2 \
-  --configs T0 T3 \
-  --rounds 5 \
-  --max-gpu-sample-freshness-ms 750 \
-  --swap-sample-interval 0.05 \
-  --max-swap-growth-mb 0 \
-  --output-root experiment_results/elastic_residency/b2 \
+  experiments/elastic_residency/forge_b1_reprofile.py \
+  --run-id forge_b1_reprofile_20260831_direct_nvml_v1 \
+  --iterations 5 \
+  --warmup 1 \
+  --max-gpu-sample-age-ms 750 \
+  --max-swap-growth-mb 4 \
+  --output-root experiment_results/elastic_residency/forge \
   --source-git-commit <clean_commit> \
   --source-git-dirty false \
   --source-git-status-entry-count 0
 ```
 
-该批次只解决 C3 的同后端 TTS 容量与运行期证据口径；SM-A 的原生 Linux 恢复属于独立门禁，不混入本批次。
+运行该入口前必须确认 Forge HTTP API 已在独立 `forge-cu128` 环境启动。该批次只解决 diffusion b=1 的同后端容量口径；SM-A 的原生 Linux 恢复属于独立门禁，不混入本批次。
