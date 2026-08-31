@@ -13,6 +13,7 @@
 | 显存迁移 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/resource_manager.py`, `services/cpp_scheduler_engine.py`（门面）+ `cpp_engine_migration.py` / `cpp_engine_llm.py` / `cpp_engine_image.py` / `cpp_engine_utils.py` | `experiments/migration/` |
 | 独立 TTS | [TTS_SUBSYSTEM.md](TTS_SUBSYSTEM.md)、[GPU 句长画像](TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md) | `services/tts/`, `data/adapters/qwen3_tts_adapter.py` | `tests/tts/`, `experiments/tts/` |
 | 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md)、[结果目录](ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md)、[论文实验指南索引](../paper/thesis_experiment_guide/README.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/`；9B 的 C2/C3、KV、TTS/Forge 隔离及 LLM+TTS 共置已完成，K6/K4+Forge 因 swap 失败；主实验迁移到 Qwen3.5-4B-Q4_K_M + 真实 `mmproj`，等待多模态端点门与重画像 | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，9B 与新模型证据分开且不得自动晋升正文 |
+| 多模态端点门（4B + `mmproj`） | [实现路线 P1-B](../paper/thesis_experiment_guide/06_implementation_and_roadmap.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/vision/` 子包；入口 `vision/vision_endpoint_smoke.py` | `tests/elastic_residency/test_vision_*.py`（静态/假后端已通过）；真实 GPU smoke 尚未执行，`TEXT_ONLY` 与 `VISION_WARM_*` 证据必须分开 |
 | Phase-Aware | `.trae/skills/xiaoyou-mvp-core/SKILL.md` | `services/phase_aware/`, `cpp_scheduler/core/phase_strategy.*` | `tests/test_phase_aware_quick.py`, `experiments/phase_aware/` |
 | GPU 计算份额（SM-A） | [CPU/SM 分配方法](../paper/thesis_experiment_guide/05_cpu_and_gpu_allocation.md)、[实现路线](../paper/thesis_experiment_guide/06_implementation_and_roadmap.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/sm/` 子包；入口 `sm/sm_capability.py` | WSL 正式记录 `sm_a_20260830_direct_nvml_v1`：基线成功、36 SM、0 failure/fallback/cleanup failure，但 MPS binary 不存在，暂定 NO_GO；SM-B/C 暂停，等待原生 Linux 恢复验证 |
 | 崩溃恢复 | `docs/PROJECT_CONTEXT.md` | `services/state_backplane.py`, `services/task_scheduler.py` | `experiments/recovery/`, `experiments/semantic_validation/` |
@@ -55,6 +56,9 @@
 | `experiments/elastic_residency/colocated_runtime_evidence.py` | LLM+TTS 共置运行期证据门禁 | 对 TTS 执行窗口的周期 GPU 样本、参与 `B_LLM/P_colocated` 的同步快照和全生命周期 swap 增长执行硬门 |
 | `experiments/elastic_residency/colocated_plan.py` | LLM+TTS 显式候选矩阵 | 解析 `CONTEXT:LLM:TTS` 候选并按给定顺序生成重复轮次，避免筛选结果被扩成无关笛卡尔积；最紧候选可前置 fail-fast |
 | `experiments/elastic_residency/sm/sm_capability.py` | SM-A GPU 计算份额能力探针 | 独立实验基础设施，不改生产调度器；WSL 正式 probe 已因 `mps_binary_unavailable` 判定 NO_GO，当前只能保留普通 CUDA 不受控共享语义 |
+| `experiments/elastic_residency/vision/vision_endpoint_smoke.py` | V1 多模态端点 smoke（K0/FULL × TEXT_ONLY/VISION_WARM） | 先过 artifact/mmproj 能力门禁，再逐单元子进程真实执行；视觉轮次用 libmtmd 对固定图片实际执行 projector，`--vision-eval-mode split_encode` 额外分离 projector 编码时间与视觉嵌入证据 |
+| `experiments/elastic_residency/vision/vision_endpoint_gate.py` | artifact 与 mmproj 能力门禁 | 不加载模型；核验架构/层数/`projection_dim == embedding_length`/来源一致性/声明哈希与固定图片 |
+| `experiments/elastic_residency/vision/gguf_reader.py` | GGUF 头部元数据只读解析 | 纯标准库；只解析 KV 与张量计数，数组折叠为类型与数量，缺字段保持 `None` |
 | `paper/compile_en.bat` | Windows 英文论文编译 | LaTeX 产物属于生成文件 |
 | `cpp_scheduler/build_wsl2.sh` | WSL2 原生扩展构建 | 使用 `mvp_core-cu128` 环境 |
 
@@ -71,6 +75,8 @@
 - `experiment_results/` 中有 JSON，不等于论文已采用该结果。
 - Mock、NVRAM 模拟和 mmap 延迟不能写成真实硬件 NVRAM 结论。
 - C++ 扩展能导入，不等于真实 GGUF 推理、KV Cache 保存恢复或端到端迁移已经通过。
+- `mmproj` 文件存在或 artifact 门禁通过，不等于 projector 已在真实图片上执行；必须看视觉 token 数、`mtmd` 返回码/嵌入证据与 GPU/RSS 增量。
+- `data/adapters/vl_adapter.py` 是独立 Qwen2-VL Transformers 路径，不能当作 Qwen3.5-4B GGUF + `mmproj` 统一执行链的证据。
 - Windows 文件存在，不等于 WSL2 运行副本和模型目录已同步。
 - 父仓库 `.gitignore` 当前忽略整个 `/legacy/`；本目录修改默认不会出现在父仓库 Git 状态中。
 - Python 文件超过 300 行即违反 `AGENTS.md` 的规模上限；应按职责拆模块，而不是继续在同一文件里追加。

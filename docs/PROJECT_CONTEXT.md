@@ -119,6 +119,33 @@ GlobalTaskScheduler (services/task_scheduler.py)
 | `sm/green_context_types.py` / `sm/green_context_probe.py` | Green Context 符号表/结构体自检与只读探测；默认结论为 `UNSUPPORTED` |
 | `sm/sm_probe_env.py` / `sm/sm_client_process.py` / `sm/sm_client_runner.py` / `sm/sm_probe_records.py` / `sm/sm_probe_verdict.py` | 环境采集、子进程执行、客户端编排、记录构造与 Go/No-Go 判定 |
 
+### 多模态端点门（4B + `mmproj`，实验期基础设施）
+
+这一组模块位于 `experiments/elastic_residency/vision/`，只服务于实验，不接入任何在线调度路径。
+
+| 文件 | 职责 |
+|---|---|
+| `gguf_reader.py` | GGUF 头部 KV 只读解析（纯标准库，不加载模型、不占显存） |
+| `vision_artifacts.py` | 主 GGUF / mmproj 画像、哈希与对应关系核验 |
+| `fixed_image.py` | 确定性固定测试图片；`pixel_payload_sha256` 是内容身份，`file_sha256` 只作记录 |
+| `vision_endpoint_gate.py` | 真实测量前的 artifact + mmproj 能力硬门 |
+| `mtmd_runtime.py` | libmtmd projector warm、bitmap 解码、tokenize 与释放 |
+| `mtmd_eval.py` | chunk 级真实执行（`split_encode` / `chunk_single`）、状态同步与固定长度解码 |
+| `vision_endpoint_phases.py` | 文本端点与视觉端点的真实执行阶段 |
+| `vision_evidence.py` | 证据语义、驻留状态、prompt 构造与视觉门禁原语 |
+| `vision_endpoint_checks.py` / `vision_endpoint_contracts.py` | 单轮硬门禁装配；run_config 与 iteration 记录装配 |
+| `vision_endpoint_cli.py` / `vision_endpoint_child.py` / `vision_endpoint_report.py` / `vision_endpoint_smoke.py` | 命令行契约、单轮测量子进程、单元级聚合与端点 smoke 编排 |
+
+语义边界：
+
+- `TEXT_ONLY`：projector 未加载，prompt 为 C1/C2 口径的固定 token 填充；
+- `TEXT_ONLY_CHAT`：projector 未加载，但使用与视觉轮次相同的对话 prompt，作为同 prompt 对照；
+- `VISION_WARM_GPU` / `VISION_WARM_CPU`：projector 已 warm 且对固定图片实际执行，区别只在 projector 所在设备；
+- `visual_token_total` 来自 `mtmd_input_chunk_get_n_tokens`，`visual_position_total` 是上下文实际推进的位置数；启用 M-RoPE 时两者不互相替代；
+- `split_encode` 才有 `projector_encode_s` 与 `visual_embedding_available` 的直接证据，`chunk_single` 只有返回码与位置推进的间接证据；
+- projector 显存/RSS 只能用 warm 前后的 direct NVML 整卡差值与进程 RSS 差值描述，禁止把 `mmproj` 文件大小当作运行期占用；
+- 视觉 prompt 与 `TEXT_ONLY` 填充 prompt 语义不同，TTFT/prefill 不可跨状态直接比较。
+
 语义边界：
 
 - `UNMANAGED`：普通 CUDA 共享，没有可验证份额。
@@ -257,6 +284,7 @@ GPU burst arrives
 | `experiments/overhead/` | 实现开销、综合实验和消融套件 |
 | `experiments/elastic_residency/` | 弹性驻留统一契约、物理核租约、资源与调度 jitter 采样、TTS swap/NVML 运行期证据及后续可行性实验 |
 | `experiments/elastic_residency/sm/` | GPU 计算份额（SM-A）子包：数据契约、MPS 生命周期、客户端探针、探针编排与 Green Context 只读探测 |
+| `experiments/elastic_residency/vision/` | 多模态端点门子包：GGUF 只读解析、artifact 对应关系、固定图片、libmtmd 真实执行、视觉证据语义与端点 smoke |
 | `experiment_results/` | 工作区运行产物和中间结果 |
 | `paper/experiment_data/01_paper_main/` | 新版正文聚合数据入口；当前尚未晋升数据 |
 | `paper/experiment_data/02_auxiliary/` | 新版辅助说明数据入口 |
@@ -314,7 +342,10 @@ GPU burst arrives
 - 2026-08-30 KV 口径补强已完成正式校准：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 基于干净 commit `820ee0f` 完成 48/48 条、0 failure，模型哈希与 C2/C3 相同。`kv_state_bytes` 是含 logits、embedding 与 KV memory 的完整序列化迁移负载，不是纯 GPU KV 显存；`n_ctx/KV tokens=640/2176/4224` 时，KV buffer 总量为 `24/72/136 MiB`，完整序列化状态为 `70.263/118.292/182.331 MiB`。历史 C2/C3 的 240 条 direct NVML 曲线无需重跑；论文旧稿的 1–2 GiB 数值已证伪并删除。
 - 2026-08-31 Qwen3.5-9B LLM+TTS 正式共置 `llm_tts_colocated_candidates_20260831_direct_nvml_v1` 基于干净 commit `d1009158ed03a906933106b500d91d34a1d3ad3c` 完成 6 候选×5 轮，30/30、0 failure/fallback，真实后端、direct NVML、GPU 新鲜度、swap 与 provenance 全部通过。运行版把绝对 `P_colocated` 再加完整 `G_safe`，对 15 条 FULL+T3 记录重复计入 idle；原始测量仍有效，离线 `c3_h_tts_colocated_20260831_v1.json` 按 `(P_colocated-B_idle)+G_safe` 复算后六组均可行，正残差 max=0，冻结 9B `G_safe=501.282 MiB` 与 H_TTS（T0: 512/K24、2048/K20、4096/K20；T3: 全部 FULL）。随后 K6/K4+Forge 均触发 swap 门，9B `H_D` 不冻结；这些阈值不得复用为 4B+视觉结论。
 - 2026-08-31 已实现独立的 LLM+Forge 共置实验链。Qwen3.5-9B 的 512/K6 smoke 与探索性 512/K4 smoke 均只有 swap 门失败，增长分别约 290.44 MiB 与 2070.32 MiB；两者的真实后端、PNG、direct NVML、新鲜度、KV、GPU 容量和 provenance 有效。降低 GPU 层数使主机换页显著恶化，因此不再继续 K2，也不运行 9B 正式 15 条矩阵；这些 artifact 保留为模型特定负面证据，`H_D` 未冻结。
-- 2026-08-31 主实验 LLM 决定迁移到 Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`，用统一模型真实执行文本与图片理解；9B 保留为压力/NO_GO 对照。当前实验入口仍是纯文本 `Llama(model_path=...)`，旧 `VLAdapter` 又是独立 Qwen2-VL Transformers 路径，因此下一步是固定新模型 artifact、接通 llama.cpp/libmtmd 真实图片输入并测量 projector warm/释放，再重跑所有 LLM 特定画像与共置；尚未产生 4B 性能结论。
+- 2026-08-31 主实验 LLM 决定迁移到 Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`，用统一模型真实执行文本与图片理解；9B 保留为压力/NO_GO 对照。旧 `VLAdapter` 是独立 Qwen2-VL Transformers 路径，不能代表新链路；C2/C3、KV、LLM+TTS、LLM+Forge 入口仍是纯文本 `Llama(model_path=...)`。
+- 2026-08-31 WSL2 只读核验：`llama-cpp-python==0.3.35` 随包提供 `libmtmd.so` 与 `llama_cpp/mtmd_cpp.py` 绑定，`llama_chat_format` 已含通用 `MTMDChatHandler`，因此当前环境**具备**该 Qwen3.5 多模态执行能力，无需新增依赖。
+- 2026-08-31 4B artifact 门禁已通过（只读、未加载语言模型）：主 GGUF `general.architecture=qwen35`、`block_count=32`、`context_length=262144`、`embedding_length=2560`、`file_type=15`、426 张量、SHA-256 `00fe7986…ef11a4`、2740937888 B；`mmproj-BF16.gguf` 为 `general.architecture=clip`、`general.type=mmproj`、`clip.projector_type=qwen3vl_merger`、`clip.has_vision_encoder=true`、24 层视觉块、`image_size=768`、`patch_size=16`、`spatial_merge_size=2`、`projection_dim=2560`、298 张量、SHA-256 `302b92d5…21f3a6`、675569344 B。`projection_dim == embedding_length` 与 `general.basename`/`base_model.0.*` 一致构成对应关系证据；`mtmd_get_cap_from_file` 报告 `inp_vision=true`、`inp_audio=false`，media marker 为 `<__media__>`。
+- 2026-08-31 已实现 `experiments/elastic_residency/vision/` 多模态端点门链路：artifact 门禁、固定 448×448 确定性图片（`pixel_payload_sha256=a1514034…43cb00`，`spec_sha256=d4c6fc1c…a0efb8`，按 patch/merge 期望 196 个视觉 token）、libmtmd projector warm/执行/释放、`TEXT_ONLY`/`TEXT_ONLY_CHAT`/`VISION_WARM_GPU`/`VISION_WARM_CPU` 四状态与 K0/FULL 端点 smoke 编排。Windows 侧静态与假后端测试 72 项通过，父进程门禁失败路径已在 WSL2 用合成 artifact 实跑验证；**真实 GPU 视觉 smoke 尚未执行，没有任何 4B 性能、显存或识图质量结论。**
 
 该快照只确认当前依赖和绑定加载链路。模型加载、CUDA offload、真实推理、迁移以及 Forge 仍须用对应验证单独证明。
 
@@ -353,6 +384,7 @@ GPU burst arrives
 | GPU 计算份额 SM-A | `tests/elastic_residency/test_sm_profiles.py`、`test_sm_capability.py`、`test_sm_probe_records.py`、`test_mps_commands.py`、`test_mps_runtime.py`、`test_mps_daemon*.py`、`test_cuda_exec_affinity.py`、`test_green_context_probe.py`、`test_sm_wsl_gates.py` + WSL2 `sm_capability.py` | Windows 静态测试与 WSL 门控均已执行。正式记录 `sm_a_20260830_direct_nvml_v1` 基于干净 `ca7a7ff`，真实 CUDA 基线、36 SM、direct NVML、0 failure/fallback/cleanup failure，但 `nvidia-cuda-mps-control` 不存在，WSL2 路径暂定 NO_GO；暂停 SM-B/SM-C，等待原生 Linux 重验，不修改生产调度器 |
 | LLM+TTS 共置 | `test_llm_kv_colocated.py`、`test_analyze_colocated_results.py` + WSL2 `llm_tts_colocated.py` | `B_idle/B_LLM/P_colocated`、正残差和扣除 idle 后的容量裁决；9B 正式 30/30 已通过并冻结该模型的 `G_safe/H_TTS`，未晋升正文；4B+视觉须重跑并重新冻结 |
 | LLM+Forge 共置 | `test_llm_forge_plan.py`、`test_analyze_forge_colocated_results.py` + WSL2 `llm_forge_colocated.py` | 9B 的 K6/K4 smoke 分别因约 290.44/2070.32 MiB swap 增长失败，正式矩阵停止；入口与冻结分析待扩展到4B+真实 `mmproj` 后重新筛选 |
+| 多模态端点门 V1 | `test_vision_artifacts.py`、`test_vision_mtmd_runtime.py`、`test_vision_evidence.py`、`test_vision_endpoint_phases.py` + WSL2 `vision/vision_endpoint_smoke.py` | 静态层证明 GGUF 解析、artifact 对应关系、固定图片内容哈希、libmtmd 调用契约与失败路径、状态一致性门禁与聚合口径；真实层需要 WSL2 GPU 运行才能证明 projector 真实执行、视觉 token 数、输出文本、GPU/RSS 增量与 swap。假后端通过**不**代表多模态可用 |
 | 恢复/持久化 | `tests/verify_state_backplane_recovery.py` | mmap 读写和恢复闭合 |
 | C++ 绑定 | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` | 扩展导入与 API 契约 |
 | 真实 LLM | `tests/test_llama_gpu.py`, migration experiments | 当前模型/驱动下的推理与迁移 |

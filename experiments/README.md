@@ -21,6 +21,7 @@
 | `tts/` | Qwen3-TTS Base 独立 CPU/GPU smoke 与 10 块 prompt 复用验收 |
 | `elastic_residency/` | 弹性驻留实验契约、物理核租约、资源与调度 jitter 采样；后续承载 T0–T3、LLM 驻留和动态核心预算 |
 | `elastic_residency/sm/` | GPU 计算份额（SM-A）子包：数据契约、MPS 生命周期、客户端探针、探针编排与 Green Context 只读探测 |
+| `elastic_residency/vision/` | 多模态端点门子包：GGUF 只读解析、artifact 对应关系、固定图片、libmtmd 真实执行、视觉证据语义与端点 smoke |
 
 ## 推荐入口
 
@@ -240,7 +241,74 @@ python launch.py --api --listen --port 7860 \
   --skip-version-check --skip-python-version-check
 ```
 
-旧 K4 smoke 与 9B 正式矩阵命令已从当前运行指南删除，防止误跑。新模型的端点与正式命令必须在多模态执行契约、screen 和候选生成完成后再写入；任何结果仍先进入 `experiment_results`，不会自动晋升 `paper/experiment_data/01_paper_main/`。
+旧 K4 smoke 与 9B 正式矩阵命令已从当前运行指南删除，防止误跑。新模型的正式共置命令必须在多模态端点门通过、screen 和候选生成完成后再写入；任何结果仍先进入 `experiment_results`，不会自动晋升 `paper/experiment_data/01_paper_main/`。
+
+### 12.2 V1 多模态端点门（Qwen3.5-4B + 真实 `mmproj`）
+
+对应论文指南 P1-B 的多模态迁移门。当前状态：**代码与静态验证已完成，真实 GPU smoke 尚未执行。**
+
+环境结论（2026-08-31 WSL2 只读核验）：`llama-cpp-python==0.3.35` 随包携带 `libmtmd.so` 与
+`llama_cpp/mtmd_cpp.py` 绑定，并已含通用 `MTMDChatHandler`，因此**不需要新增或修改任何依赖**。
+
+artifact 门禁（不加载语言模型，只读头部 + 哈希）已通过：主 GGUF `qwen35`、32 层、
+`embedding_length=2560`、426 张量；`mmproj-BF16.gguf` 为 `clip`/`mmproj`、
+`clip.projector_type=qwen3vl_merger`、`clip.has_vision_encoder=true`、`projection_dim=2560`、
+298 张量。对应关系判据是 `projection_dim == embedding_length` 加 `general.basename` /
+`general.base_model.0.*` 一致，不靠文件名推断。
+
+最小真实视觉 smoke（WSL2，`mvp_core-cu128`）：
+
+```bash
+python -m experiments.elastic_residency.vision.vision_endpoint_smoke \
+  --run-id v1_vision_endpoint_20260831_direct_nvml_v1 \
+  --configs K0 FULL \
+  --residency-states TEXT_ONLY VISION_WARM_GPU \
+  --context-tokens 512 --generation-tokens 128 --runs 1 \
+  --vision-eval-mode split_encode \
+  --expect-model-sha256 00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4 \
+  --expect-model-size-bytes 2740937888 \
+  --expect-mmproj-sha256 302b92d565080b9cc0281186979ae75a7429ec23d14f6f7607a035539b21f3a6 \
+  --expect-mmproj-size-bytes 675569344 \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false --source-git-status-entry-count 0
+```
+
+四个单元为 `K0/FULL × TEXT_ONLY/VISION_WARM_GPU`，每个单元一个独立子进程；`n_ctx` 固定为
+`512+128=640`。纯文本轮次沿用 C1/C2 的精确 512-token 填充 prompt；视觉轮次使用模型自带
+`tokenizer.chat_template` 渲染的对话 prompt 加 `<__media__>` marker，固定输入图片是内置的
+确定性 448×448 PNG（`pixel_payload_sha256=a1514034…43cb00`），按 `patch=16`、`merge=2`
+期望 196 个视觉 token；实际 token 数一律以 libmtmd 报告为准并与该期望互相核对。
+
+必须保存并检查的产物（位于 `experiment_results/elastic_residency/vision_endpoint/<run_id>/`）：
+`run_config.json`、`manifest.json`（含 `endpoint_gate`：两个 artifact 的 SHA-256/大小/元数据、
+mmproj 能力位、图片 spec 与哈希）、`iterations.jsonl`、`events.jsonl`、`timeline.jsonl`、
+`summary.json`、`summary.csv`、`failures.jsonl`，以及每个单元的 `*_child.json` 与 `*.log`。
+
+逐轮硬门禁包括：层数一致、驻留状态与 projector 实际加载状态一致、`visual_token_total > 0`、
+视觉位置真实推进上下文、`split_encode` 下 `mtmd_get_output_embd` 返回非空嵌入且
+`projector_encode_s > 0`、图片被解码为非音频 bitmap、生成 token 数精确、输出文本非空、
+KV 原生状态与 token 数匹配、direct NVML 且 `gpu_cli_subprocess_used=false`、GPU 样本
+750 ms 新鲜度、swap 增长不超过容忍值、affinity 正确、物理核全部归还、projector 已释放。
+
+补充选项：`--residency-states` 还可加 `TEXT_ONLY_CHAT`（同 prompt 无图片对照）与
+`VISION_WARM_CPU`（`mtmd` 的 `use_gpu=false`）；`--vision-eval-mode chunk_single` 是与
+llama-cpp-python 上游 `MTMDChatHandler` 完全一致的调用路径，只在 `split_encode` 失败时
+显式改用，并且会失去 projector 编码时间与嵌入证据。任何模式下 projector 失败都直接
+判失败，**没有**静默退回纯文本的分支。
+
+静态测试（Windows，不需要 GPU 与 `llama_cpp`）：
+
+```powershell
+..\..\venv_core\Scripts\python.exe -m pytest \
+  tests\elastic_residency\test_vision_artifacts.py \
+  tests\elastic_residency\test_vision_mtmd_runtime.py \
+  tests\elastic_residency\test_vision_evidence.py \
+  tests\elastic_residency\test_vision_endpoint_phases.py -q
+```
+
+这些测试使用合成 GGUF 与假 mtmd 绑定，只证明解析、对应关系判据、调用契约、失败路径与
+统计口径；**不证明**任何 projector 性能、显存或识图质量。端点通过后才决定如何扩展
+C2/C3、KV、LLM+TTS 与 LLM+Forge，并重算 `G_safe/H_TTS/H_D`。
 
 WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：
 

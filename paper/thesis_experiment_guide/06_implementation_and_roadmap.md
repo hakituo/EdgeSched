@@ -9,8 +9,9 @@
 1. `services/phase_aware/phase_model.py`
    - LLM 仍是 GPU_NORMAL / CPU_DEGRADED / RESTORING 三态。
    - TTS 预设默认 CPU，不会动态比较完整流水线。
-   - 当前 C2/C3 与共置入口只执行 Qwen3.5-9B 纯文本 `Llama(model_path=...)`，没有加载或运行 `mmproj`；计划中的 Qwen3.5-4B 统一文本/视觉路径尚未接入。
+   - C2/C3、KV、LLM+TTS 与 LLM+Forge 入口仍只执行纯文本 `Llama(model_path=...)`，不加载 `mmproj`；4B 统一文本/视觉路径目前只存在于独立的端点门子包 `experiments/elastic_residency/vision/`，尚未回灌到这些正式入口。
    - 现有 `data/adapters/vl_adapter.py` 是独立 Qwen2-VL Transformers 路径，不能冒充新主模型的 llama.cpp/libmtmd 多模态证据。
+   - 端点门子包已实现真实 libmtmd 执行（projector warm/编码/释放、视觉 token 统计、`TEXT_ONLY`/`VISION_WARM_*` 状态分离），但**只通过了静态与假后端验证**；真实 GPU 视觉 smoke 未跑前不得据此宣称多模态可用。
 2. `services/phase_aware/gpu_lease.py`
    - Resident 和 Burst 仍按重任务独占处理。
    - SHARED lease 尚未进入真实执行路径。
@@ -120,12 +121,12 @@ k\in\{0,\lceil0.25N\rceil,\lceil0.5N\rceil,
 
 当前模型展开为 `k={0,8,16,24,32,FULL}`。`FULL` 与 `k=32` 分开保留，因为 llama.cpp 的完整 offload 还可能包含非 block 张量。
 
-新模型进入正式曲线前增加多模态迁移门：
+新模型进入正式曲线前增加多模态迁移门（入口：`experiments/elastic_residency/vision/vision_endpoint_smoke.py`）：
 
-1. 固定主 GGUF 与对应 `mmproj` 的来源、版本、SHA-256、量化方式和文件大小；
-2. 证明当前 llama.cpp/libmtmd 路径能对固定真实图片执行 projector，无静默文本 fallback；
-3. 分别测量 `TEXT_ONLY`、`VISION_WARM_GPU`、`VISION_WARM_CPU`（后端支持时）和 projector 释放后的显存/RSS；
-4. 用 K0/FULL 完成文本与视觉端点 smoke，核验图片 token、KV、输出、direct NVML、swap 与资源归还；
+1. **已完成**：固定主 GGUF 与对应 `mmproj` 的来源、版本、SHA-256、量化方式和文件大小；对应关系由 `clip.vision.projection_dim == <arch>.embedding_length` 与 `general.basename`/`general.base_model.0.*` 一致证明，`mmproj` 声明 `clip.has_vision_encoder=true` 且 `mtmd_get_cap_from_file` 报告 `inp_vision=true`。本地 4B GGUF 的 `qwen35.block_count=32` 已重新核验，与 9B 的 32 层是各自独立结论，不互相沿用；
+2. **已实现、待真实运行**：用 libmtmd 对固定真实图片执行 projector。`split_encode` 模式先 `mtmd_encode_chunk` 再核对 `mtmd_get_output_embd` 非空，然后 `mtmd_helper_decode_image_chunk` 把视觉嵌入送进同一个语言模型上下文；`chunk_single` 模式与上游 `MTMDChatHandler` 调用一致。两种模式都没有静默文本 fallback；
+3. **已实现、待真实运行**：分别测量 `TEXT_ONLY`、`TEXT_ONLY_CHAT`（同 prompt 无图片对照）、`VISION_WARM_GPU`、`VISION_WARM_CPU` 与 projector 释放后的整卡显存差值与进程 RSS 差值。禁止把 `mmproj` 文件大小当作 \(M_V\)；
+4. **待执行**：用 K0/FULL 完成 512+128 上下文的文本与视觉端点 smoke，核验视觉 token 数、KV、输出文本、direct NVML 新鲜度、swap 与资源归还；
 5. 端点通过后才重跑 4B 的 C2/C3、KV 和 LLM+TTS/Forge 共置。TTS 与 Forge 隔离校准在环境和后端未变化时可作为输入复用，但最终候选和共置结论必须重算。
 
 每个配置测试约 512、2048 和 4096 tokens 的上下文，固定生成 128 tokens，独立预热并至少重复 5 次。记录加载/重新配置时间、GPU显存、主机内存、TTFT、prefill tokens/s、decode tokens/s、token gap、CPU利用率和KV保存恢复时间。

@@ -117,6 +117,8 @@ M_L(r_L,K)+M_V(r_V,u)+M_T(r_T)+M_D(b)+G_{safe}
 
 其中 \(M_V\) 是对应 Qwen3.5 模型的真实 `mmproj` 常驻与图片编码增量，\(u\) 包含图片分辨率、视觉 token 数和 warm/cold 状态。只有 projector 实际执行时才能进入正式画像；文本阶段可以保留 `VISION_WARM` 作为低延迟配置，也可以释放 projector 形成更低驻留档。
 
+\(M_V\) 的可采集口径已由端点门实现固定为：projector warm 前后的 direct NVML 整卡显存差值（`projector_gpu_card_delta_mb`）与进程 RSS 差值（`projector_rss_delta_bytes`），另加 `projector_load_s` / `projector_free_s` 描述转换成本。`use_gpu=false` 时增量主要落在 RSS 上。禁止用 `mmproj` 文件大小（约 0.67 GB）代入 \(M_V\)，也禁止把它加到旧 9B 曲线上冒充测量。
+
 安全余量 \(G_{safe}\) 必须根据 idle GPU 高水位、`reserved-allocated` allocator slack、单模型峰值相加与真实共置峰值之间的正残差，以及重复运行峰值漂移共同校准，不能只写死为一个未经验证的比例。由于 \(G_{safe}\) 已包含 idle 高水位，使用真实整卡绝对峰值 \(P_{colocated}\) 验证时必须按 \((P_{colocated}-B_{idle})+G_{safe}\le V_{GPU}\) 统一到增量口径，并另验 \(P_{colocated}\le V_{GPU}\)；不得把绝对峰值与完整 \(G_{safe}\) 直接相加而重复计入 idle。容量公式只用于筛选，最终可行性必须由目标组合真实同时加载并运行证明。
 
 ### 6.2 主机内存与 swap 约束

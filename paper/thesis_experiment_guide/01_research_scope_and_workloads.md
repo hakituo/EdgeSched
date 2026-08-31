@@ -47,7 +47,9 @@ EdgeSched 面向单用户、单机、资源受限的本地多模态 AI 助手。
 
 除新选定的 4B 主 GGUF 与 `mmproj` 外，既有后端模型已在当前 WSL2 副本完成路径和关键权重核验；新模型仍待下载和哈希冻结。所有正式实验仍必须把量化方式、运行参数和哈希写入 manifest，不能只引用本指南中的快照。
 
-**2026-08-31 模型迁移决策**：原 Qwen3.5-9B-Q4_K_M 的 direct NVML 曲线、KV、LLM+TTS 和 LLM+Forge smoke 保留为大模型压力与负面边界证据；主实验改用 Qwen3.5-4B-Q4_K_M 加真实执行的 `mmproj`。当前约 2.74 GB 主 GGUF 与约 0.67 GB projector 只是选型阶段的 artifact 体积，不能代替运行期显存/RSS。新模型下载、哈希、llama.cpp 多模态兼容、真实图片输入和资源画像尚未完成，因此旧 9B 性能数字默认不再代表主实验模型。
+**2026-08-31 模型迁移决策**：原 Qwen3.5-9B-Q4_K_M 的 direct NVML 曲线、KV、LLM+TTS 和 LLM+Forge smoke 保留为大模型压力与负面边界证据；主实验改用 Qwen3.5-4B-Q4_K_M 加真实执行的 `mmproj`。旧 9B 性能数字默认不再代表主实验模型。
+
+**2026-08-31 artifact 与环境冻结（已核验）**：主模型为 `Qwen3.5-4B-Q4_K_M.gguf`（`general.architecture=qwen35`、`block_count=32`、`context_length=262144`、`embedding_length=2560`、`file_type=15`、426 张量、2740937888 B、SHA-256 `00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4`，Unsloth 量化）；视觉 projector 为 `mmproj-BF16.gguf`（`general.architecture=clip`、`general.type=mmproj`、`clip.projector_type=qwen3vl_merger`、`clip.has_vision_encoder=true`、24 层视觉块、`image_size=768`、`patch_size=16`、`spatial_merge_size=2`、`projection_dim=2560`、298 张量、675569344 B、SHA-256 `302b92d565080b9cc0281186979ae75a7429ec23d14f6f7607a035539b21f3a6`）。执行后端为 `llama-cpp-python==0.3.35` 随包的 `libmtmd`，media marker 为 `<__media__>`。这些文件体积仍只是 artifact 尺寸，**不能**代替运行期显存/RSS；真实的 \(M_V\) 必须来自 projector warm 前后的整卡显存差值与进程 RSS 差值。当前真实 GPU 视觉 smoke 尚未运行，因此 4B 没有任何性能或显存结论。
 
 ### 1.2 权威实验环境
 
@@ -138,6 +140,8 @@ ImageInput \rightarrow VisionProjector_{\mathrm{mmproj}}
 Qwen3.5 的 `mmproj` 必须加载对应模型的真实文件，并对固定图片执行实际编码；不能只把 projector 文件大小作为静态显存填充。正式画像至少区分文本常驻、projector GPU warm、projector CPU/未加载、真实图片编码峰值和图片 token 进入 LLM 后的 KV 状态。连续视觉对话可以保留 projector warm；视觉队列清空后是否释放由后续 queue horizon 与转换成本决定。
 
 图片输入集必须固定分辨率、内容、SHA-256、prompt 和图像 token 统计。识图结果为空、静默 fallback 或 projector 未实际执行的轮次无效。
+
+当前实现把这些要求落成四个互斥状态：`TEXT_ONLY`（projector 未加载，固定 token 填充 prompt）、`TEXT_ONLY_CHAT`（projector 未加载，与视觉轮次同 prompt 但无图片）、`VISION_WARM_GPU` 与 `VISION_WARM_CPU`。固定输入为内置确定性 448×448 PNG，内容身份用像素哈希 `pixel_payload_sha256=a1514034f07cd8362119d5fd124948d1b0970515d83fdba535c5b3a7b243cb00` 固定（与 PNG 编码器版本无关），spec 哈希为 `d4c6fc1c7f5cb4420a14470cd775fc9f90b6fe2c0644ab62f2913b0d49a0efb8`；按 `patch=16`、`merge=2` 期望 196 个视觉 token，真实值以 libmtmd 统计为准并与该期望交叉核对。视觉 token 数与上下文位置推进分别记录，启用 M-RoPE 时两者不互相替代。
 
 ### 2.3 图像生成工作流
 

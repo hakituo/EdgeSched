@@ -37,7 +37,8 @@
 - 以上 LLM/KV 曲线均属于 Qwen3.5-9B-Q4_K_M；它们保留为大模型压力与模型特定历史证据，不可直接迁移到新模型。
 - Qwen3.5-9B 的 LLM+TTS 正式共置已完成 30/30，并冻结该模型口径的 `G_safe=501.282 MiB` 与 `H_TTS`。
 - Qwen3.5-9B 的 512/K6+Forge 与探索性 512/K4+Forge smoke 均只有 swap 门禁失败，增长分别约 290.44 MiB 和 2070.32 MiB；正式 H_D 矩阵已停止，`H_D` 未冻结。
-- 主实验 LLM 已决定迁移为 Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`，把真实图片识别作为正式多模态阶段；模型尚未下载、接入或重测，不能提前写成性能结论。
+- 主实验 LLM 已迁移为 Qwen3.5-4B-Q4_K_M + `mmproj-BF16.gguf`，两者的 SHA-256、大小、架构、层数与对应关系（`projection_dim == embedding_length`）已核验；`llama-cpp-python==0.3.35` 随包的 `libmtmd` 具备该多模态执行能力，无需新增依赖。
+- 多模态端点门代码（`experiments/elastic_residency/vision/`）已实现并通过 Windows 静态/假后端测试；**真实 GPU 视觉 smoke 尚未运行**，因此 4B 没有任何性能、显存或识图结论，也不得开始 4B 的 C2/C3 与共置。
 - SM-A 在 WSL2 中因 MPS binary 不存在暂定 NO_GO；待原生 Ubuntu 恢复验证，不伪造 SM-B/C 曲线。
 - CPU 物理核拓扑、affinity 与租约基础设施已完成；正式 `auxiliary_core_budget.py` 和核数矩阵尚未实现。
 - `paper/experiment_data/01_paper_main/` 当前没有已晋升的新版正文数据。
