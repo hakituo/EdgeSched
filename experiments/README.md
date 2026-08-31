@@ -296,6 +296,22 @@ llama-cpp-python 上游 `MTMDChatHandler` 完全一致的调用路径，只在 `
 显式改用，并且会失去 projector 编码时间与嵌入证据。任何模式下 projector 失败都直接
 判失败，**没有**静默退回纯文本的分支。
 
+**真实运行结果（2026-08-31，`run_id=v1_vision_endpoint_20260831_direct_nvml_v3`，commit `c9a75da`）**：
+四单元全部通过，0 失败、swap 0、direct NVML 且无 GPU CLI fallback。视觉轮次的
+`clip_encode` 输出 `[2560, 196, 1]` 嵌入，视觉 token 196，M-RoPE 下塌缩为 14 个
+序列位置，KV 位置 167/167 精确；模型文字输出正确描述固定图片（白底、居中红圆、
+左上蓝方块、右下绿方块、黑边框）。参考量级：projector warm 0.28–0.44 s、free
+0.008–0.011 s、warm GPU 增量 710–870 MiB、RSS +55.9 MB；FULL 档 decode 86–90
+tok/s、prefill 文本 2579.9 / 视觉 119.6 tok/s；K0 档 decode 6.66–6.91 tok/s。
+
+引用这些数字时必须注意三条：① warm GPU 增量实测有约 ±80 MiB 波动（CUDA 分配器
+碎片与整卡其他进程共同影响），必须多轮取统计；② 该增量含 warmup 按 1472×1472
+预留的 223.30 MiB compute buffer，不是本轮 448×448 图片的编码成本，后者需要
+另外限制 `image_max_pixels` 或关闭 warmup 再测；③ 视觉轮次输出受 GPU kernel
+累加顺序非确定性影响，同一 seed 多次运行措辞可能不同，输出哈希只作内容证据，
+不作为可复现性门禁。这轮结果只证明多模态执行链路可用，**不是 4B 的常驻画像或
+共置结论**。
+
 静态测试（Windows，不需要 GPU 与 `llama_cpp`）：
 
 ```powershell

@@ -20,6 +20,9 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
+from experiments.elastic_residency.vision.vision_measurement_semantics import (
+    VISION_MEASUREMENT_SEMANTICS as _SEMANTICS,
+)
 
 RESIDENCY_TEXT_ONLY = "TEXT_ONLY"
 RESIDENCY_TEXT_ONLY_CHAT = "TEXT_ONLY_CHAT"
@@ -30,61 +33,8 @@ TEXT_STATES = (RESIDENCY_TEXT_ONLY, RESIDENCY_TEXT_ONLY_CHAT)
 VISION_STATES = (RESIDENCY_VISION_WARM_GPU, RESIDENCY_VISION_WARM_CPU)
 ALL_STATES = TEXT_STATES + VISION_STATES
 
-VISION_MEASUREMENT_SEMANTICS: dict[str, str] = {
-    "residency_state": (
-        "本轮的驻留状态：TEXT_ONLY / TEXT_ONLY_CHAT 表示 projector 未加载；"
-        "VISION_WARM_GPU / VISION_WARM_CPU 表示 projector 已 warm 且对固定图片"
-        "实际执行。状态由代码路径决定，不允许事后改名。"
-    ),
-    "visual_token_total": (
-        "libmtmd 报告的图像 chunk token 总数（mtmd_input_chunk_get_n_tokens），"
-        "是真实进入语言模型的视觉输入规模，不是图片像素数或文件大小。"
-    ),
-    "visual_position_total": (
-        "图像 chunk 在语言模型上下文中实际推进的位置数。启用 M-RoPE 时它可能"
-        "与 visual_token_total 不同，两者分别记录，不互相替代。"
-    ),
-    "projector_encode_s": (
-        "split_encode 模式下 mtmd_encode_chunk 的独立耗时，即 projector"
-        "（视觉编码器 + merger）真实执行时间；chunk_single 模式下为 None。"
-    ),
-    "visual_embedding_available": (
-        "split_encode 模式下 mtmd_get_output_embd 是否返回非空视觉嵌入；"
-        "这是 projector 真实执行的直接证据。chunk_single 模式下为 None，"
-        "此时只以返回码与位置推进作为间接证据。"
-    ),
-    "uses_non_causal_encode": (
-        "该图像 chunk 的编码是否使用非因果注意力，由 mtmd_decode_use_non_causal(ctx, chunk)"
-        "按 chunk 查询，不是 context 级能力，因此逐 chunk 记录。"
-    ),
-    "projector_warmup_enabled": (
-        "libmtmd 的 warmup 是否开启。开启时会按 mmproj 声明的最大像素预留 compute buffer"
-        "（与本轮图片尺寸无关），该预留计入 projector warm 的显存增量；解释 M_V 时必须"
-        "说明这一部分是最大尺寸预留，而非本轮 448×448 图片的实际编码开销。"
-    ),
-    "projector_load_s": "mtmd_init_from_file 的真实耗时，即 projector warm 成本。",
-    "projector_free_s": "mtmd_free 的真实耗时，即 projector 释放成本。",
-    "projector_gpu_card_delta_mb": (
-        "projector warm 前后 direct NVML 整卡显存差值；隔离环境下近似为 projector"
-        "的显存驻留增量，不是精确进程显存，也不是 mmproj 文件大小。"
-    ),
-    "projector_rss_delta_bytes": (
-        "projector warm 前后进程 RSS 差值；use_gpu=False 时主要体现在这里。"
-    ),
-    "prompt_eval_s": (
-        "视觉轮次的 prefill 语义：全部文本与图像 chunk 的真实执行总时长，"
-        "包含 projector 编码与视觉嵌入 decode，不能与纯文本 prefill 直接比较。"
-    ),
-    "image_file_sha256": "固定输入图片的文件 SHA-256。",
-    "image_pixel_payload_sha256": (
-        "固定图片的原始 RGB 像素哈希；与 PNG 编码器版本无关，是图片内容身份。"
-    ),
-    "text_only_prompt_semantics": (
-        "TEXT_ONLY 使用与 C1/C2 相同的固定 token 数填充 prompt；"
-        "TEXT_ONLY_CHAT 使用与视觉轮次相同的对话 prompt 但不含图片。"
-        "跨状态比较 TTFT 时必须说明使用的是哪一种对照。"
-    ),
-}
+# 语义字典单独成模块（字段多且有大量"它不是什么"的边界说明），此处只做再导出。
+VISION_MEASUREMENT_SEMANTICS: dict[str, str] = _SEMANTICS
 
 
 def image_file_evidence(path: str | Path) -> dict[str, Any]:

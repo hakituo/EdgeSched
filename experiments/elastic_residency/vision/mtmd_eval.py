@@ -1,18 +1,17 @@
-"""chunk 级真实执行、llama-cpp-python 状态同步与固定长度解码。
+"""chunk 级执行编排、llama-cpp-python 状态同步与固定长度解码。
 
-两种真实执行模式（都不是 Mock，也不允许静默退回纯文本）：
+两种真实执行模式的具体调用在 `vision_chunk_modes.py`：
 
-- ``chunk_single``：图像 chunk 交给 ``mtmd_helper_eval_chunk_single``，与上游
-  ``MTMDChatHandler`` 完全一致的调用契约，只给出返回码与位置推进证据；
-- ``split_encode``：先 ``mtmd_encode_chunk`` 单独执行 projector，核对
-  ``mtmd_get_output_embd`` 返回非空视觉嵌入，再用 ``mtmd_helper_decode_image_chunk``
-  把该嵌入送进同一个语言模型上下文，因此能分离 projector 执行时间并直接证明
-  视觉嵌入已产生。任何模式下失败都抛错，由上层记录为失败轮次。
+- ``chunk_single`` 与上游 ``MTMDChatHandler`` 契约一致，只有返回码与位置推进证据；
+- ``split_encode`` 先单独执行 projector 并核对视觉嵌入非空，再解码进同一上下文，
+  因此能分离 projector 时间并直接证明视觉嵌入已产生。
+
+本模块负责遍历 chunk、同步 `llm.n_tokens`、聚合统计并在 prompt 已评估的上下文上
+做固定长度贪心解码。任何模式失败都抛错，由上层记录为失败轮次。
 """
 
 from __future__ import annotations
 
-import ctypes
 import statistics
 import time
 from typing import Any
@@ -22,140 +21,16 @@ from experiments.elastic_residency.vision.mtmd_runtime import (
     MtmdUnavailableError,
     MtmdVisionSession,
 )
+from experiments.elastic_residency.vision.vision_chunk_modes import (
+    eval_image_chunk_single,
+    eval_image_chunk_split,
+    eval_text_chunk,
+    require_capacity,
+)
 from experiments.tts.profiling_utils import percentile
 
 
 EVAL_MODES = ("split_encode", "chunk_single")
-
-
-def _null_post_decode_callback(mtmd: Any) -> Any:
-    """构造"不使用"的 post-decode 回调。
-
-    ctypes 不接受 Python `None` 作为 CFUNCTYPE 参数（会报 expected CFunctionType
-    instance），必须给该回调类型传一个空函数指针实例。
-    """
-
-    return mtmd.mtmd_helper_post_decode_callback()
-
-
-def _require_capacity(llm: Any, n_past: int, advance: int) -> None:
-    limit = int(llm.n_ctx())
-    if n_past + advance > limit:
-        raise MtmdUnavailableError(
-            f"prompt 超出 n_ctx：{n_past} + {advance} > {limit}"
-        )
-
-
-def _eval_text_chunk(
-    *,
-    llm: Any,
-    mtmd: Any,
-    chunk: Any,
-    n_past: int,
-) -> dict[str, Any]:
-    count = ctypes.c_size_t()
-    pointer = mtmd.mtmd_input_chunk_get_tokens_text(chunk, ctypes.pointer(count))
-    if not pointer or not count.value:
-        raise MtmdUnavailableError("文本 chunk 没有 token，tokenize 结果无效")
-    tokens = [int(pointer[offset]) for offset in range(count.value)]
-    _require_capacity(llm, n_past, len(tokens))
-    started = time.perf_counter()
-    llm.eval(tokens)
-    elapsed = time.perf_counter() - started
-    return {
-        "eval_s": elapsed,
-        "token_count": len(tokens),
-        "n_past_after": int(llm.n_tokens),
-    }
-
-
-def _eval_image_chunk_single(
-    *,
-    llm: Any,
-    mtmd: Any,
-    ctx: Any,
-    chunk: Any,
-    n_past: int,
-    seq_id: int,
-    logits_last: bool,
-) -> dict[str, Any]:
-    import llama_cpp  # noqa: PLC0415
-
-    new_n_past = llama_cpp.llama_pos(0)
-    started = time.perf_counter()
-    code = int(
-        mtmd.mtmd_helper_eval_chunk_single(
-            ctx,
-            llm._ctx.ctx,
-            chunk,
-            llama_cpp.llama_pos(n_past),
-            llama_cpp.llama_seq_id(seq_id),
-            llm.n_batch,
-            logits_last,
-            ctypes.pointer(new_n_past),
-        )
-    )
-    elapsed = time.perf_counter() - started
-    if code != 0:
-        raise MtmdUnavailableError(f"mtmd_helper_eval_chunk_single 失败，返回码 {code}")
-    return {
-        "eval_s": elapsed,
-        "projector_encode_s": None,
-        "image_decode_s": None,
-        "visual_embedding_available": None,
-        "return_code": code,
-        "n_past_after": int(new_n_past.value),
-    }
-
-
-def _eval_image_chunk_split(
-    *,
-    llm: Any,
-    mtmd: Any,
-    ctx: Any,
-    chunk: Any,
-    n_past: int,
-    seq_id: int,
-) -> dict[str, Any]:
-    import llama_cpp  # noqa: PLC0415
-
-    encode_started = time.perf_counter()
-    encode_code = int(mtmd.mtmd_encode_chunk(ctx, chunk))
-    encode_s = time.perf_counter() - encode_started
-    if encode_code != 0:
-        raise MtmdUnavailableError(f"mtmd_encode_chunk 失败，返回码 {encode_code}")
-    embeddings = mtmd.mtmd_get_output_embd(ctx)
-    if not embeddings:
-        raise MtmdUnavailableError("projector 未返回视觉嵌入，视觉输入无效")
-    new_n_past = llama_cpp.llama_pos(0)
-    decode_started = time.perf_counter()
-    decode_code = int(
-        mtmd.mtmd_helper_decode_image_chunk(
-            ctx,
-            llm._ctx.ctx,
-            chunk,
-            embeddings,
-            llama_cpp.llama_pos(n_past),
-            llama_cpp.llama_seq_id(seq_id),
-            llm.n_batch,
-            ctypes.pointer(new_n_past),
-            _null_post_decode_callback(mtmd),
-            ctypes.c_void_p(0),
-        )
-    )
-    decode_s = time.perf_counter() - decode_started
-    if decode_code != 0:
-        raise MtmdUnavailableError(
-            f"mtmd_helper_decode_image_chunk 失败，返回码 {decode_code}"
-        )
-    return {
-        "eval_s": encode_s + decode_s,
-        "projector_encode_s": encode_s,
-        "image_decode_s": decode_s,
-        "visual_embedding_available": True,
-        "return_code": decode_code,
-        "n_past_after": int(new_n_past.value),
-    }
 
 
 def evaluate_chunks(
@@ -194,7 +69,7 @@ def evaluate_chunks(
         if chunk_type == mtmd.MTMD_INPUT_CHUNK_TYPE_TEXT:
             entry["type_name"] = "text"
             entry.update(
-                _eval_text_chunk(llm=llm, mtmd=mtmd, chunk=chunk, n_past=n_past_before)
+                eval_text_chunk(llm=llm, mtmd=mtmd, chunk=chunk, n_past=n_past_before)
             )
         elif chunk_type == mtmd.MTMD_INPUT_CHUNK_TYPE_IMAGE:
             entry["type_name"] = "image"
@@ -203,10 +78,10 @@ def evaluate_chunks(
             entry["uses_non_causal_encode"] = bool(
                 mtmd.mtmd_decode_use_non_causal(ctx, chunk)
             )
-            _require_capacity(llm, n_past_before, entry["n_tokens"])
+            require_capacity(llm, n_past_before, entry["n_tokens"])
             if mode == "chunk_single":
                 entry.update(
-                    _eval_image_chunk_single(
+                    eval_image_chunk_single(
                         llm=llm,
                         mtmd=mtmd,
                         ctx=ctx,
@@ -218,7 +93,7 @@ def evaluate_chunks(
                 )
             else:
                 entry.update(
-                    _eval_image_chunk_split(
+                    eval_image_chunk_split(
                         llm=llm,
                         mtmd=mtmd,
                         ctx=ctx,
