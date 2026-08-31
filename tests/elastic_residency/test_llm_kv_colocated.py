@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +18,9 @@ from experiments.elastic_residency.llm_kv_cache_calibration import (  # noqa: E4
     FORMAL_CONTEXTS,
     _evidence_scope,
     build_parser as build_kv_parser,
+)
+from experiments.elastic_residency.colocated_runtime_evidence import (  # noqa: E402
+    assess_colocated_runtime,
 )
 from experiments.elastic_residency.llm_tts_colocated import (  # noqa: E402
     build_parser as build_colocated_parser,
@@ -58,6 +62,8 @@ class TestColocatedMatrixContract:
     def test_default_generation_matches_c2_c3(self) -> None:
         args = build_colocated_parser().parse_args([])
         assert args.generation_tokens == 128
+        assert args.max_gpu_sample_age_ms == 750.0
+        assert args.max_swap_growth_mb == 4.0
 
     def test_formal_repeat_count_is_accepted_by_parser(self) -> None:
         args = build_colocated_parser().parse_args(["--runs", "5"])
@@ -75,6 +81,77 @@ class TestParseIsolatedIncrements:
     def test_invalid_entry_raises(self) -> None:
         with pytest.raises(ValueError, match="CONFIG=value"):
             parse_isolated_increments(["T0"])
+
+
+class TestColocatedRuntimeEvidence:
+    @staticmethod
+    def _sample(
+        monotonic_ns: int,
+        *,
+        gpu_sample_age_ms: float,
+        swap_bytes: int,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            monotonic_ns=monotonic_ns,
+            gpu_available=True,
+            gpu_sample_age_ms=gpu_sample_age_ms,
+            system_swap_used_bytes=swap_bytes,
+        )
+
+    @staticmethod
+    def _snapshot(freshness_ms: float) -> dict[str, object]:
+        return {
+            "gpu_sample_freshness_bound_ms": freshness_ms,
+            "gpu_telemetry_backend": "direct_nvml",
+            "gpu_cli_subprocess_used": False,
+        }
+
+    def test_accepts_fresh_samples_and_small_swap_growth(self) -> None:
+        evidence = assess_colocated_runtime(
+            [
+                self._sample(100, gpu_sample_age_ms=20.0, swap_bytes=524288),
+                self._sample(200, gpu_sample_age_ms=250.0, swap_bytes=786432),
+            ],
+            start_ns=50,
+            end_ns=250,
+            capacity_snapshots=[self._snapshot(18.0), self._snapshot(22.0)],
+            max_gpu_sample_age_ms=750.0,
+            max_swap_growth_bytes=4 * 1024 * 1024,
+        )
+        assert all(evidence["checks"].values())
+        assert evidence["swap"]["growth_bytes"] == 262144
+
+    def test_rejects_stale_empty_or_large_growth_evidence(self) -> None:
+        stale = assess_colocated_runtime(
+            [
+                self._sample(100, gpu_sample_age_ms=751.0, swap_bytes=0),
+                self._sample(
+                    200,
+                    gpu_sample_age_ms=10.0,
+                    swap_bytes=512 * 1024 * 1024,
+                ),
+            ],
+            start_ns=50,
+            end_ns=150,
+            capacity_snapshots=[self._snapshot(751.0)],
+            max_gpu_sample_age_ms=750.0,
+            max_swap_growth_bytes=4 * 1024 * 1024,
+        )
+        assert stale["checks"] == {
+            "gpu_periodic_samples_fresh": False,
+            "gpu_capacity_snapshots_fresh": False,
+            "swap_growth_within_tolerance": False,
+        }
+
+        empty = assess_colocated_runtime(
+            [],
+            start_ns=50,
+            end_ns=150,
+            capacity_snapshots=[],
+            max_gpu_sample_age_ms=750.0,
+            max_swap_growth_bytes=4 * 1024 * 1024,
+        )
+        assert not any(empty["checks"].values())
 
 
 class TestColocatedMetrics:

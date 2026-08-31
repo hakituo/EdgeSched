@@ -12,7 +12,7 @@
 | 准入/背压 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/admission_controller.py`, `presentation/websocket/handler.py` | `experiments/admission/`, `tests/test_chat_service.py` |
 | 显存迁移 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/resource_manager.py`, `services/cpp_scheduler_engine.py`（门面）+ `cpp_engine_migration.py` / `cpp_engine_llm.py` / `cpp_engine_image.py` / `cpp_engine_utils.py` | `experiments/migration/` |
 | 独立 TTS | [TTS_SUBSYSTEM.md](TTS_SUBSYSTEM.md)、[GPU 句长画像](TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md) | `services/tts/`, `data/adapters/qwen3_tts_adapter.py` | `tests/tts/`, `experiments/tts/` |
-| 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md)、[结果目录](ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md)、[论文实验指南索引](../paper/thesis_experiment_guide/README.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/`；C2/C3 direct NVML 240 条性能曲线、KV 48 条容量矩阵、T0/T3 与 Forge 同后端校准均已完成，当前重新筛选共置候选 | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，不得自动晋升正文 |
+| 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md)、[结果目录](ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md)、[论文实验指南索引](../paper/thesis_experiment_guide/README.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/`；C2/C3 direct NVML 240 条性能曲线、KV 48 条容量矩阵、T0/T3 与 Forge 同后端校准及完整 16 档筛选均已完成，当前准备 LLM+TTS 共置 smoke | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，不得自动晋升正文 |
 | Phase-Aware | `.trae/skills/xiaoyou-mvp-core/SKILL.md` | `services/phase_aware/`, `cpp_scheduler/core/phase_strategy.*` | `tests/test_phase_aware_quick.py`, `experiments/phase_aware/` |
 | GPU 计算份额（SM-A） | [CPU/SM 分配方法](../paper/thesis_experiment_guide/05_cpu_and_gpu_allocation.md)、[实现路线](../paper/thesis_experiment_guide/06_implementation_and_roadmap.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/sm/` 子包；入口 `sm/sm_capability.py` | WSL 正式记录 `sm_a_20260830_direct_nvml_v1`：基线成功、36 SM、0 failure/fallback/cleanup failure，但 MPS binary 不存在，暂定 NO_GO；SM-B/C 暂停，等待原生 Linux 恢复验证 |
 | 崩溃恢复 | `docs/PROJECT_CONTEXT.md` | `services/state_backplane.py`, `services/task_scheduler.py` | `experiments/recovery/`, `experiments/semantic_validation/` |
@@ -46,6 +46,7 @@
 | `experiments/elastic_residency/forge_runtime_evidence.py` | Forge 运行期有效性门禁 | 对所有参与容量计算的 idle/resident/measurement 窗口逐窗校验周期 GPU 样本年龄，并保留 Forge/WSL2 swap 增长容忍语义 |
 | `experiments/elastic_residency/analysis_input_merge.py` | C2/C3 完整曲线输入门禁 | 按 context 合并粗测与细化结果，拒绝失败、context 不一致、重复档位和非 16 档输入 |
 | `experiments/elastic_residency/analyze_results.py` | C 阶段 G_safe/H_TTS/H_D 筛选分析 | 纯标准库；合并 C2+C3 完整 16 档并读取 B2/Forge summary，输出 G_safe 分量、逐上下文 H 与 k±2/k±4 临界补测建议；只做容量筛选不做共置结论 |
+| `experiments/elastic_residency/colocated_runtime_evidence.py` | LLM+TTS 共置运行期证据门禁 | 对 TTS 执行窗口的周期 GPU 样本、参与 `B_LLM/P_colocated` 的同步快照和全生命周期 swap 增长执行硬门 |
 | `experiments/elastic_residency/sm/sm_capability.py` | SM-A GPU 计算份额能力探针 | 独立实验基础设施，不改生产调度器；WSL 正式 probe 已因 `mps_binary_unavailable` 判定 NO_GO，当前只能保留普通 CUDA 不受控共享语义 |
 | `paper/compile_en.bat` | Windows 英文论文编译 | LaTeX 产物属于生成文件 |
 | `cpp_scheduler/build_wsl2.sh` | WSL2 原生扩展构建 | 使用 `mvp_core-cu128` 环境 |

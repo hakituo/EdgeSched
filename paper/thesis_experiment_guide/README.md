@@ -32,8 +32,9 @@
 
 - C2+C3 direct NVML 已完成 16 个 LLM 驻留档位，共 240 条性能记录。
 - KV 容量与语义校准已完成 48/48 条。
-- B2 旧矩阵已筛出 T0/T3，但参与阈值冻结的 T0/T3 整卡数据仍需 direct NVML 校准。
-- Forge b=1 已有旧后端复测；参与最终阈值前仍需 direct NVML 同后端校准。
+- B2 已筛出 T0/T3，direct NVML v2 隔离矩阵已完成 30/30 技术核验。
+- Forge b=1 direct NVML v1 已完成 5/5，当前 `M_D=5484 MiB`。
+- 完整 16 档离线筛选已生成 `c3_h_direct_nvml_20260831_v1.json`；colocated 残差仍 pending，筛选值尚未冻结。
 - LLM+TTS 只有最小临时 smoke，正式共置矩阵和 colocated 正残差未完成。
 - SM-A 在 WSL2 中因 MPS binary 不存在暂定 NO_GO；待原生 Ubuntu 恢复验证，不伪造 SM-B/C 曲线。
 - CPU 物理核拓扑、affinity 与租约基础设施已完成；正式 `auxiliary_core_budget.py` 和核数矩阵尚未实现。

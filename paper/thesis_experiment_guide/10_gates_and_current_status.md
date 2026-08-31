@@ -68,10 +68,10 @@ No-Go：
 - [x] C3 direct NVML 临界补测：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 已完成 150/150 条；与 C2 合并后覆盖 16 个驻留档位
 - [x] C3 KV 校准：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条，冻结 GPU/宿主 KV buffer 与完整序列化状态的独立语义
 - [x] T0/T3 direct NVML 隔离矩阵：v2 已基于干净 `0261e4da` 完成 30/30 技术核验，0 failure/fallback，运行期 swap 与同步查询新鲜度门禁完整；未晋升论文正文数据
-- [ ] **当前 C3 收尾（还剩 2 个动作）**：
+- [ ] **当前 C3 收尾（还剩共置验证）**：
   1. [x] Forge b=1 direct NVML v1 已完成 5/5，逐窗新鲜度、swap 增长和核心归还门禁全部通过，`M_D=5484 MiB`；
-  2. 用完整 16 档曲线、B2 direct v2 与 Forge direct v1 重新筛选最小共置候选；
-  3. 共置 smoke + 每候选 5 轮，加入 colocated 残差后冻结 `G_safe/H_TTS/H_D`
+  2. [x] 完整 16 档 + B2 direct v2 + Forge direct v1 已生成 `c3_h_direct_nvml_20260831_v1.json`：T0 边界为 512/K24、2048/K20、4096/K20，T3 三个 context 均筛到 FULL；这些仍是容量候选；
+  3. 当前先跑 C4096/K20+T0 单组合 artifact smoke，再对每个保留候选运行 5 轮，加入 colocated 残差后冻结 `G_safe/H_TTS/H_D`
 - [x] **SM-A：GPU 计算份额能力探针**：真实 WSL 记录 `sm_a_20260830_direct_nvml_v1` 已完成；MPS binary 在 WSL2 不存在，结论**暂定 NO_GO**。注意：这是环境能力门禁导致的「暂停」，不是永久取消——待具备可用的原生 Linux 启动环境后重做 SM-A，再决定是否进入 SM-B/C/D/E
 - [ ] **SM-B（PAUSED）：TTS T0/T3 隔离 SM 曲线**：因 SM-A 暂定 NO_GO 按门禁暂停，不运行、不伪造受控 SM 曲线；待 SM-A 在原生 Ubuntu 恢复后重排
 - [ ] **SM-C（PAUSED）：Diffusion b=1 隔离 SM 曲线**：因 SM-A 暂定 NO_GO 按门禁暂停，不运行、不伪造受控 SM 曲线；待 SM-A 在原生 Ubuntu 恢复后重排

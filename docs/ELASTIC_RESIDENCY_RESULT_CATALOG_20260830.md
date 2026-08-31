@@ -34,7 +34,7 @@ experiment_results/elastic_residency/
 | C1 | `c1/c1_llm_residency_512_20260829_verified_v1/` | K0/FULL 端点 smoke |
 | C2 | `c2/c2_llm_residency_curve_20260829_direct_nvml_v2/` | 当前 90/90 粗驻留曲线 |
 | C3 | `c3/c3_llm_critical_refinement_20260829_direct_nvml_v2/` | 当前 150/150 临界细化曲线 |
-| C3 analysis | `c3_analysis/*.json` | 旧筛选保留追溯；当前将用完整 16 档与 direct NVML 同后端输入生成 v1，阈值尚未冻结 |
+| C3 analysis | `c3_analysis/c3_h_direct_nvml_20260831_v1.json` | 完整 16 档 + B2 direct v2 + Forge direct v1 当前筛选；colocated 残差 pending，阈值尚未冻结 |
 | Forge | `forge/forge_b1_reprofile_20260831_direct_nvml_v1/` | 当前 direct NVML 5/5 校准，全部门禁通过，`M_D=5484 MiB` |
 | KV | `kv_calibration/c3_kv_cache_calibration_20260830_direct_nvml_v1/` | 当前 48/48 KV 容量与语义证据 |
 
@@ -84,29 +84,35 @@ experiment_results/elastic_residency/
 
 ## 5. 下一批产物
 
-下一项离线筛选结果写入（C3 收尾当前第 2 步）：
+下一批真实结果写入（C3 收尾共置 smoke）：
 
 ```text
-experiment_results/elastic_residency/c3_analysis/
-  c3_h_direct_nvml_20260831_v1.json
+experiment_results/elastic_residency/llm_tts_colocated/
+  llm_tts_colocated_c4096_k20_t0_smoke_20260831_v1/
 ```
 
-B2 direct v2 与 Forge direct NVML v1 已完成技术核验。旧 `forge_b1_reprofile_20260829_verified_v2` 保留为工程基线，不与新批次拼接；筛选入口必须同时合并 C2 粗测 6 档与 C3 细化 10 档，并对每个 context 强制恰好 16 档。该 JSON 只确定 LLM+TTS smoke 候选，不是论文正文证据或冻结阈值。
+B2 direct v2、Forge direct NVML v1 与完整 16 档筛选均已完成技术核验。当前先以 C4096/K20+T0 验证正式共置 artifact、运行期门禁和 T0 残差；它是 4096 context 下的 T0 筛选边界，按隔离曲线和当前 `G_safe` 仍有约 429.6 MiB 预测余量。该 smoke 只证明链路与单组合容量，不替代每候选 5 轮正式矩阵。
 
-调用模板（WSL2，`mvp_core-cu128` venv；无需启动 Forge 服务）：
+调用模板（WSL2，`mvp_core-cu128` venv；无需启动 Forge 服务；运行前以当时干净 Windows HEAD 替换 `<clean_commit>`）：
 
 ```bash
 cd /home/leslie/mvp_core
 
 /home/leslie/.venvs/mvp_core-cu128/bin/python \
-  experiments/elastic_residency/analyze_results.py \
-  --c2-summary experiment_results/elastic_residency/c2/c2_llm_residency_curve_20260829_direct_nvml_v2/summary.json \
-  --c3-summary experiment_results/elastic_residency/c3/c3_llm_critical_refinement_20260829_direct_nvml_v2/summary.json \
-  --expected-llm-config-count 16 \
-  --b2-summary experiment_results/elastic_residency/b2/b2_tts_pareto_matrix_20260831_direct_nvml_v2/summary.json \
-  --forge-summary experiment_results/elastic_residency/forge/forge_b1_reprofile_20260831_direct_nvml_v1/summary.json \
-  --tts-configs T0,T3 \
-  --output experiment_results/elastic_residency/c3_analysis/c3_h_direct_nvml_20260831_v1.json
+  experiments/elastic_residency/llm_tts_colocated.py \
+  --run-id llm_tts_colocated_c4096_k20_t0_smoke_20260831_v1 \
+  --llm-configs K20 \
+  --tts-configs T0 \
+  --contexts 4096 \
+  --runs 1 \
+  --safety-margin-mb 501.2822265625 \
+  --tts-isolated-increment-mb T0=3255.03515625 \
+  --max-gpu-sample-age-ms 750 \
+  --max-swap-growth-mb 4 \
+  --output-root experiment_results/elastic_residency/llm_tts_colocated \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false \
+  --source-git-status-entry-count 0
 ```
 
-命令只读取已落盘的 summary；Forge 终端可以关闭。输出生成后仍须检查输入 run id、每个 context 的 16 档集合、`G_safe` pending 分量和候选边界，再决定单组合 smoke 参数。
+运行后必须检查 manifest、summary、iterations、failures、WAV、direct NVML、周期与同步快照新鲜度、swap 增长、真实 LLM/TTS 后端、KV 状态和干净 Git provenance；不能只凭最后一行宣布完成。

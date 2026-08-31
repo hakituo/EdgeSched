@@ -348,7 +348,7 @@ GPU burst arrives
 | 弹性驻留 C1 | WSL2 `llm_residency_curve.py` + `c1_llm_residency_512_20260829_verified_v1` | K0/FULL 真实端点、精确 token/gap、阶段资源与 KV 保存恢复；不代替 C2 多轮曲线 |
 | KV 语义/容量 | `tests/elastic_residency/test_kv_measurement.py` + WSL2 `llm_kv_cache_calibration.py` | 字段语义、原生 position/`llm.n_tokens`、日志解析与缺字段失败；`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条正式容量矩阵，不作为性能计时证据 |
 | GPU 计算份额 SM-A | `tests/elastic_residency/test_sm_profiles.py`、`test_sm_capability.py`、`test_sm_probe_records.py`、`test_mps_commands.py`、`test_mps_runtime.py`、`test_mps_daemon*.py`、`test_cuda_exec_affinity.py`、`test_green_context_probe.py`、`test_sm_wsl_gates.py` + WSL2 `sm_capability.py` | Windows 静态测试与 WSL 门控均已执行。正式记录 `sm_a_20260830_direct_nvml_v1` 基于干净 `ca7a7ff`，真实 CUDA 基线、36 SM、direct NVML、0 failure/fallback/cleanup failure，但 `nvidia-cuda-mps-control` 不存在，WSL2 路径暂定 NO_GO；暂停 SM-B/SM-C，等待原生 Linux 重验，不修改生产调度器 |
-| LLM+TTS 共置 | `tests/elastic_residency/test_llm_kv_colocated.py` + WSL2 `llm_tts_colocated.py` | `B_LLM`/`P_colocated`/残差公式与容量裁决（不重复叠加 KV）；最小 K0+T3 direct NVML 临时 smoke 已通过，正式 artifact 矩阵仍待运行 |
+| LLM+TTS 共置 | `tests/elastic_residency/test_llm_kv_colocated.py` + WSL2 `llm_tts_colocated.py` | `B_LLM`/`P_colocated`/残差公式与容量裁决（不重复叠加 KV）；周期 GPU 样本与同步容量快照执行 750 ms 新鲜度门，swap 使用 4 MiB 增长容忍且验收失败写入 failures；最小 K0+T3 临时 smoke 已通过，当前准备 C4096/K20+T0 正式 artifact smoke |
 | 恢复/持久化 | `tests/verify_state_backplane_recovery.py` | mmap 读写和恢复闭合 |
 | C++ 绑定 | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` | 扩展导入与 API 契约 |
 | 真实 LLM | `tests/test_llama_gpu.py`, migration experiments | 当前模型/驱动下的推理与迁移 |

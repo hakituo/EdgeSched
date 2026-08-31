@@ -50,6 +50,9 @@ from experiments.elastic_residency.contracts import (  # noqa: E402
     FailureRecord,
     TimelineSample,
 )
+from experiments.elastic_residency.colocated_runtime_evidence import (  # noqa: E402
+    assess_colocated_runtime,
+)
 from experiments.elastic_residency.cpu_topology import (  # noqa: E402
     CPUTopology,
     PhysicalCoreAllocator,
@@ -395,6 +398,14 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
     )
     if p_colocated_mb is None:
         raise RuntimeError("TTS 执行窗口内没有任何可用整卡样本，禁止填 0 冒充")
+    runtime_evidence = assess_colocated_runtime(
+        sampler.samples,
+        start_ns=tts_window_started_ns,
+        end_ns=tts_window_finished_ns,
+        capacity_snapshots=[b_llm_snapshot, *stage_snapshots],
+        max_gpu_sample_age_ms=args.max_gpu_sample_age_ms,
+        max_swap_growth_bytes=int(args.max_swap_growth_mb * 1024 * 1024),
+    )
     isolated_map = parse_isolated_increments(args.tts_isolated_increment_mb)
     metrics = colocated_metrics(
         b_llm_mb=b_llm_mb,
@@ -437,6 +448,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "gpu_present_for_every_timeline_sample": (
             resource_summary["gpu_unavailable_timeline_sample_count"] == 0
         ),
+        **runtime_evidence["checks"],
         "worker_affinity_matches": set(actual_affinity) == set(llm_lease.affinity),
         "sampler_affinity_matches": (
             set(resource_summary["sampler_thread_affinity"])
@@ -444,9 +456,6 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "gpu_sampler_affinity_matches": (
             set(resource_summary["gpu_thread_affinity"]) == set(system_lease.affinity)
-        ),
-        "swap_unused": all(
-            sample.get("system_swap_used_bytes") == 0 for sample in timeline
         ),
         "all_leases_released": allocator_after_release["active_lease_count"] == 0,
         "all_physical_cores_returned": (
@@ -520,6 +529,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "memory_transfer_peak": memory_transfer_peak,
         "memory_codec_peak": memory_codec_peak,
         "resource_summary": resource_summary,
+        "runtime_evidence": runtime_evidence,
         "phase_intervals_ns": {
             "tts_execution": [tts_window_started_ns, tts_window_finished_ns],
         },
@@ -563,6 +573,10 @@ def run_parent(args: argparse.Namespace) -> Path:
         raise FileNotFoundError("共置 parent 找不到 TTS 模型或参考音频")
     if args.runs < 1:
         raise ValueError("--runs 必须至少为 1")
+    if args.max_gpu_sample_age_ms <= 0:
+        raise ValueError("--max-gpu-sample-age-ms 必须为正")
+    if args.max_swap_growth_mb < 0:
+        raise ValueError("--max-swap-growth-mb 不能为负数")
     metadata = _discover_model_metadata(llm_model_path)
     model_layers = metadata["block_count"]
     llm_config_names = tuple(name.upper() for name in args.llm_configs)
@@ -641,6 +655,8 @@ def run_parent(args: argparse.Namespace) -> Path:
             "gpu_telemetry_backend": "direct_nvml",
             "gpu_cli_subprocess_allowed": False,
             "periodic_gpu_process_memory_query": False,
+            "max_gpu_sample_age_ms": args.max_gpu_sample_age_ms,
+            "max_swap_growth_mb": args.max_swap_growth_mb,
             "safety_margin_mb": args.safety_margin_mb,
             "tts_isolated_increment_mb": parse_isolated_increments(
                 args.tts_isolated_increment_mb
@@ -781,6 +797,10 @@ def run_parent(args: argparse.Namespace) -> Path:
             str(args.gpu_sample_interval),
             "--gpu-warmup-timeout",
             str(args.gpu_warmup_timeout),
+            "--max-gpu-sample-age-ms",
+            str(args.max_gpu_sample_age_ms),
+            "--max-swap-growth-mb",
+            str(args.max_swap_growth_mb),
             "--safety-margin-mb",
             str(args.safety_margin_mb),
             "--seed",
@@ -872,6 +892,16 @@ def run_parent(args: argparse.Namespace) -> Path:
             name for name, passed in record.get("acceptance_checks", {}).items()
             if not passed
         )
+        if failed_checks:
+            writer.append_failure(
+                FailureRecord(
+                    stage=f"C{context_tokens}_{llm_config}_{tts_config}_r{run_index}",
+                    error_type="MeasurementAcceptanceFailure",
+                    message=",".join(failed_checks),
+                    monotonic_ns=time.monotonic_ns(),
+                    attributes={"failed_checks": list(failed_checks)},
+                )
+            )
         failure_suffix = (
             f" failed_checks={','.join(failed_checks)}" if failed_checks else ""
         )
@@ -1050,6 +1080,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sample-interval", type=float, default=0.05)
     parser.add_argument("--gpu-sample-interval", type=float, default=0.25)
     parser.add_argument("--gpu-warmup-timeout", type=float, default=5.0)
+    parser.add_argument("--max-gpu-sample-age-ms", type=float, default=750.0)
+    parser.add_argument("--max-swap-growth-mb", type=float, default=4.0)
     return parser
 
 

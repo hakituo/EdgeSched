@@ -213,10 +213,13 @@ python -m experiments.elastic_residency.llm_kv_cache_calibration \
 python -m experiments.elastic_residency.llm_tts_colocated \
   --run-id <new_run_id> \
   --llm-configs <K...> --tts-configs T0 T3 --contexts 2048 --runs 5 \
+  --max-gpu-sample-age-ms 750 --max-swap-growth-mb 4 \
   --tts-isolated-increment-mb T0=<isolated_mb> T3=<isolated_mb> \
   --source-git-commit <clean_commit> \
   --source-git-dirty false --source-git-status-entry-count 0
 ```
+
+共置入口对 TTS 执行窗口的周期 direct NVML 样本和参与 `B_LLM/P_colocated` 的同步容量快照分别执行 750 ms 新鲜度硬门；swap 按全生命周期最大值相对起点的增长计算，默认容忍 4 MiB 的 WSL2 系统噪声，数百 MiB 级真实换页仍会失败。任何验收检查失败都会写入 `failures.jsonl`，不能只看 summary 最后一行。
 
 WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：
 
