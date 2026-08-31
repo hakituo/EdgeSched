@@ -91,6 +91,8 @@ def test_parent_builds_complete_smoke_artifact(tmp_path: Path, monkeypatch) -> N
         lambda _path: {"block_count": 32, "context_length": 32768},
     )
     monkeypatch.setattr(parent, "sha256_file", lambda _path: "a" * 64)
+    monkeypatch.setattr(parent.platform, "platform", lambda: "test-platform")
+    monkeypatch.setattr(parent.platform, "python_version", lambda: "3.test")
     monkeypatch.setattr(
         parent,
         "_git_source",
