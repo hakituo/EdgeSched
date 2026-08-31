@@ -28,6 +28,16 @@ from experiments.tts.profiling_utils import percentile
 EVAL_MODES = ("split_encode", "chunk_single")
 
 
+def _null_post_decode_callback(mtmd: Any) -> Any:
+    """构造"不使用"的 post-decode 回调。
+
+    ctypes 不接受 Python `None` 作为 CFUNCTYPE 参数（会报 expected CFunctionType
+    instance），必须给该回调类型传一个空函数指针实例。
+    """
+
+    return mtmd.mtmd_helper_post_decode_callback()
+
+
 def _require_capacity(llm: Any, n_past: int, advance: int) -> None:
     limit = int(llm.n_ctx())
     if n_past + advance > limit:
@@ -129,7 +139,7 @@ def _eval_image_chunk_split(
             llama_cpp.llama_seq_id(seq_id),
             llm.n_batch,
             ctypes.pointer(new_n_past),
-            None,
+            _null_post_decode_callback(mtmd),
             ctypes.c_void_p(0),
         )
     )

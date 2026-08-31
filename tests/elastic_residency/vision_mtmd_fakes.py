@@ -235,6 +235,10 @@ class FakeMtmd:
             return None
         return (ctypes.c_float * 4)(0.1, 0.2, 0.3, 0.4)
 
+    def mtmd_helper_post_decode_callback(self, *args: Any, **kwargs: Any) -> Any:
+        # 真实绑定是 CFUNCTYPE；这里只需返回可传入的占位，并让测试能断言非 None。
+        return "null-callback-instance"
+
     def mtmd_helper_decode_image_chunk(
         self,
         ctx: Any,
@@ -249,6 +253,8 @@ class FakeMtmd:
         user_data: Any,
     ) -> int:
         self.calls.append("decode_image")
+        self.decode_image_callback = callback
+        self.decode_image_user_data = user_data
         new_n_past_ptr[0] = int(n_past.value) + self.chunks[chunk]["n_pos"]
         return self.decode_code
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import sys
 from pathlib import Path
 
@@ -182,6 +183,9 @@ class TestChunkExecution:
         assert evidence["projector_encode_total_s"] is not None
         assert evidence["image_decode_total_s"] is not None
         assert "encode" in mtmd.calls and "decode_image" in mtmd.calls
+        # ctypes 不接受 None 作为 CFUNCTYPE 参数，必须是空回调实例
+        assert mtmd.decode_image_callback is not None
+        assert isinstance(mtmd.decode_image_user_data, ctypes.c_void_p)
         assert llm._ctx.cleared == 1
         image_records = [
             item for item in evidence["chunks"] if item["type_name"] == "image"
