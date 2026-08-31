@@ -53,6 +53,11 @@ from experiments.elastic_residency.contracts import (  # noqa: E402
 from experiments.elastic_residency.colocated_runtime_evidence import (  # noqa: E402
     assess_colocated_runtime,
 )
+from experiments.elastic_residency.colocated_plan import (  # noqa: E402
+    ColocatedCandidate,
+    build_execution_plan,
+    parse_candidate_specs,
+)
 from experiments.elastic_residency.cpu_topology import (  # noqa: E402
     CPUTopology,
     PhysicalCoreAllocator,
@@ -86,7 +91,10 @@ from experiments.elastic_residency.tts_component_offload import (  # noqa: E402
     _synchronize,
     placement_for,
 )
-from experiments.tts.profiling_utils import sha256_file  # noqa: E402
+from experiments.tts.profiling_utils import (  # noqa: E402
+    model_tree_hash,
+    sha256_file,
+)
 
 
 def parse_isolated_increments(items: list[str] | None) -> dict[str, float]:
@@ -579,13 +587,25 @@ def run_parent(args: argparse.Namespace) -> Path:
         raise ValueError("--max-swap-growth-mb 不能为负数")
     metadata = _discover_model_metadata(llm_model_path)
     model_layers = metadata["block_count"]
-    llm_config_names = tuple(name.upper() for name in args.llm_configs)
-    tts_config_names = tuple(name.upper() for name in args.tts_configs)
+    explicit_candidates = parse_candidate_specs(args.candidates)
+    if explicit_candidates:
+        llm_config_names = tuple(
+            dict.fromkeys(candidate.llm_config for candidate in explicit_candidates)
+        )
+        tts_config_names = tuple(
+            dict.fromkeys(candidate.tts_config for candidate in explicit_candidates)
+        )
+        contexts = tuple(
+            dict.fromkeys(candidate.context_tokens for candidate in explicit_candidates)
+        )
+    else:
+        llm_config_names = tuple(name.upper() for name in args.llm_configs)
+        tts_config_names = tuple(name.upper() for name in args.tts_configs)
+        contexts = tuple(args.contexts)
     for name in llm_config_names:
         resolve_config(name, model_layers)
     for name in tts_config_names:
         placement_for(name)
-    contexts = tuple(args.contexts)
     if not contexts or len(set(contexts)) != len(contexts):
         raise ValueError("--contexts 必须非空且不能重复")
     if args.generation_tokens < 0:
@@ -596,16 +616,13 @@ def run_parent(args: argparse.Namespace) -> Path:
     ):
         raise ValueError("context + generation 超过 GGUF 声明的上下文长度")
 
-    plan: list[tuple[int, str, str, int, int]] = []
-    ordinal = 0
-    for context_tokens in contexts:
-        for llm_config in llm_config_names:
-            for tts_config in tts_config_names:
-                for run_index in range(1, args.runs + 1):
-                    ordinal += 1
-                    plan.append(
-                        (context_tokens, llm_config, tts_config, run_index, ordinal)
-                    )
+    candidates = explicit_candidates or tuple(
+        ColocatedCandidate(context, llm_config, tts_config)
+        for context in contexts
+        for llm_config in llm_config_names
+        for tts_config in tts_config_names
+    )
+    plan = build_execution_plan(candidates, runs=args.runs)
     expected_records = len(plan)
 
     output_root = Path(args.output_root).expanduser().resolve()
@@ -617,6 +634,8 @@ def run_parent(args: argparse.Namespace) -> Path:
     )
     source_git, git_complete = _git_source(args, writer.layout.root)
     llm_sha256 = sha256_file(llm_model_path)
+    tts_sha256, tts_files = model_tree_hash(tts_model_path)
+    ref_audio_sha256 = sha256_file(ref_audio)
     config = ExperimentRunConfig(
         experiment_name="llm_tts_colocated",
         run_id=args.run_id,
@@ -636,9 +655,7 @@ def run_parent(args: argparse.Namespace) -> Path:
                 backend_kind="real_qwen3_tts_component_split",
                 is_real=True,
                 model_path=str(tts_model_path),
-                model_sha256=sha256_file(
-                    tts_model_path / "config.json"
-                ) if (tts_model_path / "config.json").is_file() else "",
+                model_sha256=tts_sha256,
             ),
         ),
         parameters={
@@ -650,7 +667,14 @@ def run_parent(args: argparse.Namespace) -> Path:
             "llm_physical_cores": args.llm_cores,
             "system_physical_cores": args.system_cores,
             "expected_records": expected_records,
-            "matrix_order": "context_then_llm_then_tts_then_run",
+            "explicit_candidates": [
+                candidate.label for candidate in explicit_candidates
+            ],
+            "matrix_order": (
+                "explicit_candidate_then_run"
+                if explicit_candidates
+                else "context_then_llm_then_tts_then_run"
+            ),
             "inter_run_cooldown_s": args.inter_run_cooldown,
             "gpu_telemetry_backend": "direct_nvml",
             "gpu_cli_subprocess_allowed": False,
@@ -682,8 +706,15 @@ def run_parent(args: argparse.Namespace) -> Path:
             "sha256": llm_sha256,
             "metadata": metadata,
         },
-        "tts_model": {"path": str(tts_model_path)},
-        "ref_audio": {"path": str(ref_audio)},
+        "tts_model": {
+            "path": str(tts_model_path),
+            "sha256": tts_sha256,
+            "files": tts_files,
+        },
+        "ref_audio": {
+            "path": str(ref_audio),
+            "sha256": ref_audio_sha256,
+        },
         "kv_measurement_semantics": KV_MEASUREMENT_SEMANTICS,
     }
     if run_root_existed:
@@ -1025,6 +1056,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-configs", nargs="+", default=["K16"])
     parser.add_argument("--tts-configs", nargs="+", default=["T0", "T3"])
     parser.add_argument("--contexts", nargs="+", type=int, default=[2048])
+    parser.add_argument(
+        "--candidates",
+        nargs="+",
+        help=(
+            "显式候选，格式 CONTEXT:LLM:TTS；提供后覆盖 llm-configs/"
+            "tts-configs/contexts，并按给定顺序 fail-fast"
+        ),
+    )
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--generation-tokens", type=int, default=128)
     parser.add_argument("--max-new-tokens", type=int, default=256)

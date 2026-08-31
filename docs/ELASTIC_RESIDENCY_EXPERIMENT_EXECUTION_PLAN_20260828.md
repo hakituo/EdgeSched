@@ -377,7 +377,7 @@ experiment_results/elastic_residency/_archive/
 
 ## 6. 建议的逐步交付节奏
 
-**当前状态（2026-08-31）**：C2+C3 direct NVML 已完成 16 档（共 240 条）性能曲线，KV 校准 48/48、T0/T3 direct NVML v2 30/30 与 Forge direct NVML v1 5/5 均已完成技术核验。`c3_h_direct_nvml_20260831_v1.json` 已用完整 16 档重新筛选候选；`G_safe=501.282 MiB` 但 colocated 正残差仍 pending。当前先跑 C4096/K20+T0 单组合共置 smoke。SM-A/B/C 不在本计划 A–E 阶段内，其暂定 NO_GO/暂停状态见 `paper/thesis_experiment_guide/10_gates_and_current_status.md`。正式运行前必须从当时的干净 Windows HEAD 读取完整 commit，不在长期文档中硬编码临时 HEAD 或短期测试计数。
+**当前状态（2026-08-31）**：C2+C3 direct NVML 已完成 16 档（共 240 条）性能曲线，KV 校准 48/48、T0/T3 direct NVML v2 30/30 与 Forge direct NVML v1 5/5 均已完成技术核验。`c3_h_direct_nvml_20260831_v1.json` 已用完整 16 档重新筛选候选。C4096/K20+T0 共置 artifact smoke 已 1/1 通过，正残差为 0；单轮不用于冻结，当前进入 6 个保留候选×5 轮正式共置矩阵。SM-A/B/C 不在本计划 A–E 阶段内，其暂定 NO_GO/暂停状态见 `paper/thesis_experiment_guide/10_gates_and_current_status.md`。正式运行前必须从当时的干净 Windows HEAD 读取完整 commit，不在长期文档中硬编码临时 HEAD 或短期测试计数。
 
 - [x] **A1**：GPU/jitter/CPU 首样本/provenance 硬门槛已通过。证据：`a1_smoke_20260829_verified_v7`；v6 仅作历史调试记录。
 - [x] **B1**：T0–T3 真实单文本 smoke 通过。证据：`b1_tts_components_20260829_verified_v2`。
@@ -388,11 +388,12 @@ experiment_results/elastic_residency/_archive/
 - [x] **C3 Forge 旧后端复测**：`forge_b1_reprofile_20260829_verified_v2` 通过当时门禁，`M_D = 5252 MiB`；`c3_h_reprofiled_20260829.json` 只保留为候选筛选（`H_TTS(T0)=16`、`H_TTS(T3)=32+FULL`、`H_D` 为 512:8 / 2048:0 / 4096:0），不得当作 direct NVML 冻结值。
 - [x] **C3 临界补测**：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 已完成 150/150 条并通过；与 C2 direct v2 合并后覆盖 16 个 LLM 驻留档位。
 - [x] **C3 KV 正式校准**：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条并通过，0 failure；`n_ctx/KV tokens=640/2176/4224` 对应 KV buffer 总量 `24/72/136 MiB`，完整序列化状态 `70.263/118.292/182.331 MiB`。
-- [ ] **当前 C3 收尾**（下一项为 C4096/K20+T0 共置 smoke）：
+- [ ] **当前 C3 收尾**（下一项为 6 候选×5 轮正式共置矩阵）：
   1. [x] `forge_b1_reprofile_20260831_direct_nvml_v1`：真实 Forge b=1、warmup 1 次、正式 5 轮全部通过；direct NVML、逐窗 750 ms 样本年龄、swap 增长与核心归还均通过，`M_D=5484 MiB`；
   2. [x] 完整 16 档 LLM 曲线、B2 direct v2 与 Forge direct v1 已生成 `c3_h_direct_nvml_20260831_v1.json`；分析入口同时读取 C2/C3，并拒绝每个 context 非 16 档的输入；
-  3. 当前先跑 C4096/K20+T0 单组合 smoke，再对保留的 context/LLM/T0-T3 组合各跑 5 轮，得到 colocated 正残差；
-  4. 重算 `G_safe`，冻结按 context 分组的 `H_TTS/H_D`，然后进入 D 阶段。
+  3. [x] C4096/K20+T0 单组合 artifact smoke 已 1/1 通过：`P_colocated=6686.793 MiB`、T0 共置增量 2252 MiB、正残差 0、0 failure/fallback；
+  4. 对 6 个显式候选各跑 5 轮正式矩阵，得到重复运行的 colocated 正残差；入口用 `CONTEXT:LLM:TTS` 列表避免生成无关笛卡尔积，并固定完整 TTS 模型树与参考音频哈希；
+  5. 重算 `G_safe`，冻结按 context 分组的 `H_TTS/H_D`，然后进入 D 阶段。
 
 **C3 临界补测 v2 停止记录（2026-08-29）**：`c3_llm_critical_refinement_20260829_verified_v2` 完成 94/150 条后，在 C2048/K20/r5 因推理期 GPU 样本最大年龄 772.875 ms 超过 750 ms 有效性硬门而停止；其余有效性检查及该轮 jitter 性能目标均通过。94 条中所有记录的最大样本年龄均超过 500 ms，10 条超过 700 ms，第 91 条已达 749.570 ms。根因是周期 sampler 每次先查询整卡指标、再查询 WSL 驱动无法数值化返回的 compute-process 显存，后者不贡献正式曲线证据却显著拉长探针周期。修复仅在 LLM 周期 sampler 中关闭无效的进程显存查询；阶段性显存快照与整卡基线差值估算保持不变，750 ms 门槛不放宽。v2 保留为停止记录，不续跑、不用于完整曲线，现位于 `_archive/stopped/c3/`。
 

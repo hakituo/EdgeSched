@@ -35,7 +35,7 @@
 - B2 已筛出 T0/T3，direct NVML v2 隔离矩阵已完成 30/30 技术核验。
 - Forge b=1 direct NVML v1 已完成 5/5，当前 `M_D=5484 MiB`。
 - 完整 16 档离线筛选已生成 `c3_h_direct_nvml_20260831_v1.json`；colocated 残差仍 pending，筛选值尚未冻结。
-- LLM+TTS 只有最小临时 smoke，正式共置矩阵和 colocated 正残差未完成。
+- LLM+TTS 的 C4096/K20+T0 正式 artifact smoke 已 1/1 技术通过；6 候选×5 轮正式共置矩阵和重复运行 colocated 残差尚未完成。
 - SM-A 在 WSL2 中因 MPS binary 不存在暂定 NO_GO；待原生 Ubuntu 恢复验证，不伪造 SM-B/C 曲线。
 - CPU 物理核拓扑、affinity 与租约基础设施已完成；正式 `auxiliary_core_budget.py` 和核数矩阵尚未实现。
 - `paper/experiment_data/01_paper_main/` 当前没有已晋升的新版正文数据。
