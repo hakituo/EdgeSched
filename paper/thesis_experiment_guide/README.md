@@ -28,17 +28,17 @@
 | [09 证据与论文组织](09_evidence_and_paper_plan.md) | 写论文或决定数据能否使用 | 当前数据边界、必须重跑项、章节与图表规划、局限性 |
 | [10 门禁与当前状态](10_gates_and_current_status.md) | 每个新会话必读 | Go/No-Go、完成项、暂停项、下一批实验、完成标准 |
 
-## 当前真值摘要（2026-08-31）
+## 当前真值摘要（2026-09-01）
 
-- C2+C3 direct NVML 已完成 16 个 LLM 驻留档位，共 240 条性能记录。
-- KV 容量与语义校准已完成 48/48 条。
+- Qwen3.5-9B 的 C2+C3 direct NVML 已完成 16 个 LLM 驻留档位，共 240 条性能记录；KV 容量与语义校准已完成 48/48 条，均保留为大模型压力与模型特定历史证据。
+- Qwen3.5-4B 的 C2 90/90、C3 150/150 与纯文本 KV 校准 48/48 已完成并通过；C2+C3 在每个 context 合并为完整 16 档。C2/C3 artifact 保存的是短 commit `a35d4f5`，可唯一解析到完整提交 `a35d4f5f9b17b01b5d90bd6fd0db794cfdb54eb2`，晋升前仍须补独立 provenance 审计记录；KV artifact 已保存完整提交。
 - B2 已筛出 T0/T3，direct NVML v2 隔离矩阵已完成 30/30 技术核验。
 - Forge b=1 direct NVML v1 已完成 5/5，当前 `M_D=5484 MiB`。
-- 以上 LLM/KV 曲线均属于 Qwen3.5-9B-Q4_K_M；它们保留为大模型压力与模型特定历史证据，不可直接迁移到新模型。
 - Qwen3.5-9B 的 LLM+TTS 正式共置已完成 30/30，并冻结该模型口径的 `G_safe=501.282 MiB` 与 `H_TTS`。
+- 4B TEXT_ONLY 曲线与 B2 direct v2 已生成 `c3_h_4b_tts_direct_nvml_20260901_v1.json`：512/2048/4096 下 T0、T3 均筛到 FULL；这只是容量候选，`G_safe` 的 idle/colocated 残差仍 pending，尚未经过 4B 真实 LLM+TTS 共置，不能冻结为 4B `H_TTS`。
 - Qwen3.5-9B 的 512/K6+Forge 与探索性 512/K4+Forge smoke 均只有 swap 门禁失败，增长分别约 290.44 MiB 和 2070.32 MiB；正式 H_D 矩阵已停止，`H_D` 未冻结。
 - 主实验 LLM 已迁移为 Qwen3.5-4B-Q4_K_M + `mmproj-BF16.gguf`，两者的 SHA-256、大小、架构、层数与对应关系（`projection_dim == embedding_length`）已核验；`llama-cpp-python==0.3.35` 随包的 `libmtmd` 具备该多模态执行能力，无需新增依赖。
-- 多模态端点门代码（`experiments/elastic_residency/vision/`）已实现并通过 Windows 静态/假后端测试；**真实 GPU 视觉 smoke 尚未运行**，因此 4B 没有任何性能、显存或识图结论，也不得开始 4B 的 C2/C3 与共置。
+- 多模态端点门 `v1_vision_endpoint_20260831_direct_nvml_v3` 已在真实 GPU 上通过 4/4 单元，但仍只是端点可用性证据；VISION_WARM 多轮画像、图像后端重选和正式共置按当前顺序暂缓。
 - SM-A 在 WSL2 中因 MPS binary 不存在暂定 NO_GO；待原生 Ubuntu 恢复验证，不伪造 SM-B/C 曲线。
 - CPU 物理核拓扑、affinity 与租约基础设施已完成；正式 `auxiliary_core_budget.py` 和核数矩阵尚未实现。
 - `paper/experiment_data/01_paper_main/` 当前没有已晋升的新版正文数据。

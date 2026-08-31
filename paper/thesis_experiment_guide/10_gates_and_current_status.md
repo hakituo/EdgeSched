@@ -83,8 +83,8 @@ No-Go：
   3. [x] 环境能力已核验：`llama-cpp-python==0.3.35` 随包提供 `libmtmd.so` 与 `llama_cpp/mtmd_cpp.py`，`llama_chat_format` 已含通用 `MTMDChatHandler`，`mtmd_get_cap_from_file` 对该 `mmproj` 报告 `inp_vision=true`/`inp_audio=false`，media marker 为 `<__media__>`；**无需新增或修改依赖**；
   4. [x] 已实现多模态端点门代码链路 `experiments/elastic_residency/vision/`：artifact 门禁、确定性 448×448 固定图片（`pixel_payload_sha256=a1514034…43cb00`，期望 196 个视觉 token）、libmtmd projector warm/执行/释放、`TEXT_ONLY` / `TEXT_ONLY_CHAT` / `VISION_WARM_GPU` / `VISION_WARM_CPU` 四状态与 K0/FULL 端点 smoke 编排；Windows 静态与假后端测试 72 项通过，父进程门禁失败路径已在 WSL2 用合成 artifact 实跑；
   5. [x] **已通过**：WSL2 真实 GPU 视觉端点门，`run_id=v1_vision_endpoint_20260831_direct_nvml_v3`、commit `c9a75da`，四单元（`K0/FULL × TEXT_ONLY/VISION_WARM_GPU`，512+128 上下文）全部 `passed=true`、0 失败、swap 0、direct NVML 且无 GPU CLI fallback。projector 在 GPU 上真实执行：448×448 图片编码出 `[2560, 196, 1]` 嵌入，视觉 token 196（与 patch/merge 期望一致），M-RoPE 下塌缩为 14 个序列位置，KV 位置 167/167 精确匹配；模型文字输出正确描述固定图片（白底、居中红圆、左上蓝方块、右下绿方块、黑边框）。projector warm/释放 0.28–0.44 s / 0.008–0.011 s，warm GPU 增量 710–870 MiB、RSS +55.9 MB。FULL 档 decode 86–90 tok/s、prefill 文本 2579.9 / 视觉 119.6 tok/s；K0 档 decode 6.66–6.91 tok/s。
-  6. [ ] **下一步**：重跑 4B 的 C2/C3 常驻画像与临界补测（`llm_residency_curve.py`，`--model` 默认值已切到 4B），再决定 KV 曲线沿用纯文本口径还是同时出视觉口径；
-  7. [ ] 重算 4B 的 `G_safe/H_TTS/H_D`，分别保留 `TEXT_ONLY` 与 `VISION_WARM` 候选，并重跑真实 LLM+TTS/Forge 共置；TTS T0/T3 与 Forge b=1 的隔离结果在后端与环境不变时可复用为输入；
+  6. [x] 4B TEXT_ONLY C2 90/90、C3 150/150 与纯文本 KV 校准 48/48 已完成并通过；C2+C3 在 512/2048/4096 三个 context 下均合并为完整 16 档，KV buffer 为 24/72/136 MiB。C2/C3 artifact 的短 commit `a35d4f5` 已唯一解析到完整提交 `a35d4f5f9b17b01b5d90bd6fd0db794cfdb54eb2`，晋升前仍须保留独立 provenance 审计记录；KV artifact 使用完整提交；
+  7. [ ] 重算并冻结 4B 的 `G_safe/H_TTS/H_D`：TEXT_ONLY 离线容量筛选 `c3_h_4b_tts_direct_nvml_20260901_v1.json` 已生成，T0/T3 在三种 context 下均筛到 FULL；这不等于真实共置通过，idle baseline 与 colocated 正残差仍 pending，下一步先跑 4B LLM+TTS 单组合 smoke 和正式矩阵。VISION_WARM 与图像后端相关画像暂缓，`H_D` 保持 pending；
   8. [ ] 迁移完成前不得把任何 9B 阈值改名为 4B 结论，不得把 `mmproj` 文件大小加到旧 9B 曲线上冒充测量，也不得晋升到 `paper/experiment_data/01_paper_main/`。
 - [x] **SM-A：GPU 计算份额能力探针**：真实 WSL 记录 `sm_a_20260830_direct_nvml_v1` 已完成；MPS binary 在 WSL2 不存在，结论**暂定 NO_GO**。注意：这是环境能力门禁导致的「暂停」，不是永久取消——待具备可用的原生 Linux 启动环境后重做 SM-A，再决定是否进入 SM-B/C/D/E
 - [ ] **SM-B（PAUSED）：TTS T0/T3 隔离 SM 曲线**：因 SM-A 暂定 NO_GO 按门禁暂停，不运行、不伪造受控 SM 曲线；待 SM-A 在原生 Ubuntu 恢复后重排
@@ -98,7 +98,7 @@ No-Go：
 - [ ] **队列视界 predictor/planner（GATED）**：C3 校准、真实共置 smoke/矩阵、colocated 残差和 S0 Go/No-Go 完成前不实现。Go 后先用 calibration split 建立“画像插值 + 有界 EWMA 残差”，再冻结 queue horizon、转换安全余量与 minimum residency window；正式 evaluation 比较 Pareto-only、仅转换成本、queue-horizon-aware EdgeSched 与 oracle
 - [ ] 同步论文、图表和必要的 C++ 契约
 
-B1/B2 已确认 T0/T3 是条件式 Pareto，T0/T3 direct NVML v2 已完成 30/30 技术核验；Qwen3.5-9B 的 C2+C3 16 档（240 条）、KV 48/48、Forge direct NVML v1 5/5 与 LLM+TTS 正式共置 30/30 也已完成。9B 的 `G_safe/H_TTS` 是模型特定冻结值；K6/K4+Forge 均因真实 swap 失败，正式 H_D 矩阵停止。主实验现迁移到 Qwen3.5-4B-Q4_K_M + 真实 `mmproj`：**多模态端点门已通过**（`v1_vision_endpoint_20260831_direct_nvml_v3`，4/4 单元，projector 在 GPU 上真实执行、196 视觉 token、模型正确描述固定图片）。但 4B 的常驻画像（C2/C3）、KV 曲线、临界补测与共置结论**全部尚未重跑**，因此仍不得把 9B 的 `G_safe/H_TTS/H_D` 改名为 4B 结论。端点数据只能用于判定"多模态执行链路可用"和支撑新的 M_V 口径，不能当作正文性能证据。SM-A 在 WSL2 中仍因 MPS binary 不存在暂定 NO_GO，当前不修改在线规划器、不伪造受控 SM 曲线。完成新模型 C3 与真实共置后再实现 CPU 核数画像入口；只有真实性和可行性门禁形成 Go 结论后，才实现 predictor 与 queue-horizon-aware transition planner。
+B1/B2 已确认 T0/T3 是条件式 Pareto，T0/T3 direct NVML v2 已完成 30/30 技术核验；Qwen3.5-9B 的 C2+C3 16 档（240 条）、KV 48/48、Forge direct NVML v1 5/5 与 LLM+TTS 正式共置 30/30 也已完成。9B 的 `G_safe/H_TTS` 是模型特定冻结值；K6/K4+Forge 均因真实 swap 失败，正式 H_D 矩阵停止。主实验 Qwen3.5-4B + 真实 `mmproj` 的多模态端点门、TEXT_ONLY C2 90/90、C3 150/150 与 KV 48/48 已通过；完整 16 档与 B2 direct v2 的离线筛选显示 T0/T3 在三个 context 下均可保留 FULL，但该结果仍是容量候选，4B 真实 LLM+TTS 共置、colocated 残差和正式 `G_safe/H_TTS` 尚未完成，VISION_WARM/H_D 暂缓。SM-A 在 WSL2 中仍因 MPS binary 不存在暂定 NO_GO，当前不修改在线规划器、不伪造受控 SM 曲线。完成 4B 真实共置后再实现 CPU 核数画像入口；只有真实性和可行性门禁形成 Go 结论后，才实现 predictor 与 queue-horizon-aware transition planner。
 
 ---
 

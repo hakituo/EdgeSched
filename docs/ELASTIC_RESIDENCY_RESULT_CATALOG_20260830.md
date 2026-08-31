@@ -36,6 +36,10 @@ experiment_results/elastic_residency/
 | 9B C3 | `c3/c3_llm_critical_refinement_20260829_direct_nvml_v2/` | Qwen3.5-9B 150/150 临界细化曲线；迁移后作为模型特定压力基线 |
 | 9B C3 analysis | `c3_analysis/c3_h_direct_nvml_20260831_v1.json` | 9B 完整 16 档 + B2 direct v2 + Forge direct v1 容量筛选；不得复用为 4B 阈值 |
 | 9B C3 LLM+TTS freeze | `c3_analysis/c3_h_tts_colocated_20260831_v1.json` | 复用 9B 正式共置 30 条离线复算；正残差 max=0，冻结 9B `G_safe=501.282 MiB` 与 H_TTS；9B H_D 未冻结 |
+| 4B C2 | `c2/c2_llm_residency_curve_20260901_4b_direct_nvml_v1/` | Qwen3.5-4B 90/90 粗驻留曲线，真实 GGUF/direct NVML/swap 0；artifact 保存短 commit `a35d4f5`，已唯一解析到完整提交，晋升前须附 provenance 审计记录 |
+| 4B C3 | `c3/c3_llm_critical_refinement_20260901_4b_direct_nvml_v1/` | Qwen3.5-4B 150/150 临界细化曲线；与 4B C2 合并后每个 context 恰好 16 档；同样保留短 commit 审计说明 |
+| 4B KV | `kv_calibration/c3_kv_cache_calibration_20260901_4b_direct_nvml_v1/` | 48/48 正式 KV 容量与语义校准，完整 Git commit、direct NVML、swap 0；640/2176/4224 状态 token 对应 24/72/136 MiB KV buffer |
+| 4B TEXT_ONLY TTS screen | `c3_analysis/c3_h_4b_tts_direct_nvml_20260901_v1.json` | 4B 完整 16 档 + B2 direct v2 离线容量筛选；T0/T3 在 512/2048/4096 下均为 FULL 可行候选；未含真实 4B 共置残差，不冻结 H_TTS，图像 H_D pending |
 | Forge | `forge/forge_b1_reprofile_20260831_direct_nvml_v1/` | 当前 direct NVML 5/5 校准，全部门禁通过，`M_D=5484 MiB` |
 | 9B KV | `kv_calibration/c3_kv_cache_calibration_20260830_direct_nvml_v1/` | Qwen3.5-9B 48/48 KV 容量与语义证据 |
 | 9B LLM+TTS smoke | `llm_tts_colocated/llm_tts_colocated_c4096_k20_t0_smoke_20260831_v1/` | C4096/K20+T0 1/1 技术通过，0 failure/fallback；正残差 0，只作 9B 正式 artifact smoke |

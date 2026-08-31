@@ -283,7 +283,7 @@ Qwen3.5-9B 正式 6 候选×5 轮矩阵 `llm_tts_colocated_candidates_20260831_d
 
 `llm_forge_colocated.py` 已为 Qwen3.5-9B 实现 screen/Forge summary 同源校验、真实 Forge warmup、独立 LLM/KV child、真实 PNG、direct NVML、新鲜度、swap、affinity、资源归还和容量裁决。512/K6 与探索性 512/K4 smoke 的 GPU 容量都通过，但 swap 分别增长约 290.44 MiB 与 2070.32 MiB，故两者整体失败；降低 GPU 层数把更多权重压回 DDR 后明显恶化。9B 正式 15 条矩阵已停止，不再运行 K2，也不冻结 `H_D`。
 
-主实验现迁移到 Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`。当前入口仍是纯文本路径，禁止直接把 projector 文件大小加到旧 9B 曲线。恢复真实 GPU 实验前必须先完成：固定两个 artifact 的 SHA-256；用 llama.cpp/libmtmd 对固定真实图片执行 projector；记录 `TEXT_ONLY/VISION_WARM` 的 GPU/RSS、图片 token、KV、加载/释放与 swap；通过文本/视觉 K0/FULL 端点 smoke。之后才重跑 4B 的 C2/C3、KV、候选筛选和 LLM+TTS/Forge 共置。
+主实验现迁移到 Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`。真实 GPU 多模态端点门已通过；4B TEXT_ONLY C2 90/90、C3 150/150 与纯文本 KV 校准 48/48 也已完成。`c3_h_4b_tts_direct_nvml_20260901_v1.json` 将完整 16 档与 B2 direct v2 合并后，T0/T3 在三个 context 下均筛到 FULL，但这仍只是容量候选：必须经 4B LLM+TTS 真实共置补齐 colocated 残差后才能冻结 `G_safe/H_TTS`。VISION_WARM 多轮画像、图像后端选择与 `H_D` 暂缓；禁止把 projector 文件大小直接加到 TEXT_ONLY 曲线上冒充测量。
 
 Forge 服务终端：
 
