@@ -56,13 +56,31 @@ def screened_candidates(screen: dict[str, Any]) -> tuple[LlmForgeCandidate, ...]
 
 
 def candidate_profile(
-    screen: dict[str, Any], candidate: LlmForgeCandidate
+    screen: dict[str, Any],
+    candidate: LlmForgeCandidate,
+    *,
+    allow_lower_fallback: bool = False,
 ) -> dict[str, float]:
     """读取候选所需的隔离增量、G_safe 与 GPU 容量。"""
 
     expected = set(screened_candidates(screen))
     if candidate not in expected:
-        raise ValueError(f"候选不属于筛选 H_D 边界: {candidate.label}")
+        context = screen["per_context"].get(str(candidate.context_tokens))
+        if context is None or candidate.llm_config not in context.get("m_l_mb", {}):
+            raise ValueError(f"screen 没有候选画像: {candidate.label}")
+        boundary = context["h_d"]
+        is_lower = False
+        if candidate.llm_config.startswith("K"):
+            try:
+                layers = int(candidate.llm_config[1:])
+            except ValueError:
+                layers = -1
+            is_lower = layers >= 0 and (
+                bool(boundary.get("full_feasible"))
+                or layers < int(boundary["h_layers"])
+            )
+        if not allow_lower_fallback or not is_lower:
+            raise ValueError(f"候选不属于筛选 H_D 边界或其降档: {candidate.label}")
     entry = screen["per_context"][str(candidate.context_tokens)]
     return {
         "llm_isolated_increment_mb": float(entry["m_l_mb"][candidate.llm_config]),
@@ -73,6 +91,32 @@ def candidate_profile(
         "safety_margin_mb": float(screen["g_safe"]["value_mb"]),
         "gpu_total_mb": float(screen["gpu_total_mb"]),
     }
+
+
+def select_candidates(
+    screen: dict[str, Any],
+    specs: list[str] | None,
+    *,
+    allow_exploratory_fallback: bool,
+) -> tuple[
+    tuple[LlmForgeCandidate, ...],
+    tuple[LlmForgeCandidate, ...],
+    tuple[LlmForgeCandidate, ...],
+]:
+    """选择 H_D 边界；显式开关仅允许 screen 已画像的更低驻留档。"""
+
+    boundaries = screened_candidates(screen)
+    candidates = parse_candidate_specs(specs) or boundaries
+    exploratory = tuple(item for item in candidates if item not in set(boundaries))
+    if exploratory and not allow_exploratory_fallback:
+        raise ValueError("探索性降档必须显式启用")
+    for candidate in candidates:
+        candidate_profile(
+            screen,
+            candidate,
+            allow_lower_fallback=allow_exploratory_fallback,
+        )
+    return candidates, boundaries, exploratory
 
 
 def build_execution_plan(

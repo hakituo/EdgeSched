@@ -42,6 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         help="显式候选 CONTEXT:LLM；缺省时使用 screen 中全部 H_D 边界",
     )
+    parser.add_argument(
+        "--allow-exploratory-fallback",
+        action="store_true",
+        help="允许测试 screen 已画像且低于 H_D 边界的驻留档；结果只算探索证据",
+    )
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--generation-tokens", type=int, default=128)

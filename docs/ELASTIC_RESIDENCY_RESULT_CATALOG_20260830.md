@@ -92,10 +92,11 @@ experiment_results/elastic_residency/
 ```text
 experiment_results/elastic_residency/llm_forge_colocated/
   llm_forge_colocated_c512_k6_smoke_<date>_v1/
+  llm_forge_colocated_c512_k4_fallback_smoke_<date>_v1/
   llm_forge_colocated_h_d_<date>_direct_nvml_v1/
 ```
 
-B2、Forge 隔离校准、完整 16 档筛选和 LLM+TTS 正式共置均已完成。下一步先运行预测余量最小的 512/K6+Forge 单轮 smoke；通过后才运行 512/K6、4096/K4、2048/K4 各 5 轮，共 15 条。入口从 screen/Forge summary 读取 `M_L/M_D/G_safe/B_idle`，不允许手填另一口径；如果最紧候选失败则默认停止，不继续浪费矩阵。
+B2、Forge 隔离校准、完整 16 档筛选和 LLM+TTS 正式共置均已完成。512/K6+Forge 单轮 smoke 已形成有效真实运行证据，但因 swap 增长约 290.44 MiB 判失败；正式 15 条已按门禁停止。下一步仅用显式探索开关运行 screen 已画像的 512/K4，入口仍从 screen/Forge summary 读取 `M_L/M_D/G_safe/B_idle`，不允许手填另一口径，也不得把降档结果直接写成冻结 H_D。
 
 Forge 服务必须在独立 `forge-cu128` 终端保持开启；实验命令使用 `mvp_core-cu128`：
 
@@ -104,8 +105,9 @@ cd /home/leslie/mvp_core
 
 /home/leslie/.venvs/mvp_core-cu128/bin/python \
   experiments/elastic_residency/llm_forge_colocated.py \
-  --run-id llm_forge_colocated_c512_k6_smoke_<date>_v1 \
-  --candidates 512:K6 --runs 1 --warmup 1 \
+  --run-id llm_forge_colocated_c512_k4_fallback_smoke_<date>_v1 \
+  --candidates 512:K4 --allow-exploratory-fallback \
+  --runs 1 --warmup 1 \
   --max-gpu-sample-age-ms 750 \
   --max-swap-growth-mb 4 \
   --output-root experiment_results/elastic_residency/llm_forge_colocated \

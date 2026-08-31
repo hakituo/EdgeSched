@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from experiments.elastic_residency import llm_forge_parent as parent
 from experiments.elastic_residency.llm_forge_colocated import build_parser
 
@@ -13,7 +15,26 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def test_parent_builds_complete_smoke_artifact(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("candidate", "extra_args", "expected_scope", "exploratory"),
+    (
+        ("512:K6", [], "llm_forge_colocated_smoke_or_pilot", []),
+        (
+            "512:K4",
+            ["--allow-exploratory-fallback"],
+            "llm_forge_colocated_exploratory_fallback",
+            ["512:K4"],
+        ),
+    ),
+)
+def test_parent_builds_complete_smoke_artifact(
+    tmp_path: Path,
+    monkeypatch,
+    candidate: str,
+    extra_args: list[str],
+    expected_scope: str,
+    exploratory: list[str],
+) -> None:
     model = tmp_path / "model.gguf"
     model.write_bytes(b"gguf")
     screen_path = tmp_path / "screen.json"
@@ -34,7 +55,7 @@ def test_parent_builds_complete_smoke_artifact(tmp_path: Path, monkeypatch) -> N
             },
             "per_context": {
                 "512": {
-                    "m_l_mb": {"K6": 2117.0},
+                    "m_l_mb": {"K4": 1853.0, "K6": 2117.0},
                     "h_d": {
                         "h_layers": 6,
                         "full_feasible": False,
@@ -68,7 +89,8 @@ def test_parent_builds_complete_smoke_artifact(tmp_path: Path, monkeypatch) -> N
             "--forge-summary",
             str(forge_path),
             "--candidates",
-            "512:K6",
+            candidate,
+            *extra_args,
             "--runs",
             "1",
             "--inter-run-cooldown",
@@ -114,11 +136,12 @@ def test_parent_builds_complete_smoke_artifact(tmp_path: Path, monkeypatch) -> N
         child_json = Path(command[command.index("--child-output-json") + 1])
         image = Path(command[command.index("--child-output-image") + 1])
         image.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 2048)
+        llm_config = command[command.index("--llm-config") + 1]
         _write_json(
             child_json,
             {
                 "context_tokens": 512,
-                "llm_config": "K6",
+                "llm_config": llm_config,
                 "run_index": 1,
                 "passed": True,
                 "acceptance_checks": {"all": True},
@@ -135,6 +158,7 @@ def test_parent_builds_complete_smoke_artifact(tmp_path: Path, monkeypatch) -> N
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     assert summary["passed"] is True
     assert summary["actual_records"] == 1
-    assert summary["evidence_scope"] == "llm_forge_colocated_smoke_or_pilot"
+    assert summary["evidence_scope"] == expected_scope
+    assert summary["candidate_selection"]["exploratory_candidates"] == exploratory
     assert manifest["forge"]["active_checkpoint"] == "model.safetensors"
     assert (root / "failures.jsonl").read_text(encoding="utf-8") == ""

@@ -28,8 +28,7 @@ from experiments.elastic_residency.llm_forge_plan import (
     LlmForgeCandidate,
     build_execution_plan,
     candidate_profile,
-    parse_candidate_specs,
-    screened_candidates,
+    select_candidates,
 )
 from experiments.elastic_residency.llm_residency_curve import (
     _discover_model_metadata,
@@ -143,13 +142,17 @@ def run_parent(args: Any) -> Path:
     args.forge_resident_baseline_mb = forge_profile["forge_resident_baseline_mb"]
     metadata = _discover_model_metadata(model_path)
     model_layers = int(metadata["block_count"])
-    candidates = parse_candidate_specs(args.candidates) or screened_candidates(screen)
-    expected_candidates = set(screened_candidates(screen))
-    if not set(candidates).issubset(expected_candidates):
-        raise ValueError("候选必须来自 screen 的 H_D 边界")
+    candidates, boundaries, exploratory = select_candidates(
+        screen, args.candidates,
+        allow_exploratory_fallback=args.allow_exploratory_fallback,
+    )
+    expected_candidates = set(boundaries)
     for candidate in candidates:
         resolve_config(candidate.llm_config, model_layers)
-        candidate_profile(screen, candidate)
+        candidate_profile(
+            screen, candidate,
+            allow_lower_fallback=args.allow_exploratory_fallback,
+        )
     plan = build_execution_plan(candidates, runs=args.runs)
     expected_records = len(plan)
 
@@ -174,6 +177,11 @@ def run_parent(args: Any) -> Path:
         ),
         parameters={
             "candidates": [item.label for item in candidates],
+            "candidate_selection": {
+                "screened_h_d_boundaries": [item.label for item in boundaries],
+                "exploratory_lower_residency_allowed": args.allow_exploratory_fallback,
+                "exploratory_candidates": [item.label for item in exploratory],
+            },
             "runs": args.runs,
             "warmup": args.warmup,
             "generation_tokens": args.generation_tokens,
@@ -247,7 +255,9 @@ def run_parent(args: Any) -> Path:
         child_json = writer.layout.root / f"{label}_child.json"
         child_image = writer.layout.root / f"{label}.png"
         print(f"[{ordinal}/{expected_records}] run {label}", flush=True)
-        command = _child_command(args, candidate, candidate_profile(screen, candidate),
+        command = _child_command(args, candidate, candidate_profile(
+            screen, candidate,
+            allow_lower_fallback=args.allow_exploratory_fallback),
                                  run_index, ordinal, model_layers, child_json, child_image)
         try:
             result = subprocess.run(command, capture_output=True, text=True,
@@ -287,11 +297,15 @@ def run_parent(args: Any) -> Path:
 
     failure_count = len(_read_jsonl(writer.layout.failures))
     passed = git_complete and len(records) == expected_records and failure_count == 0 and all(r["passed"] for r in records)
-    formal = set(candidates) == expected_candidates and args.runs >= 5
+    formal = not exploratory and set(candidates) == expected_candidates and args.runs >= 5
+    scope = ("llm_forge_colocated_exploratory_fallback"
+             if exploratory else "llm_forge_colocated_formal_repeated_matrix"
+             if formal else "llm_forge_colocated_smoke_or_pilot")
     summary = {"passed": passed, "expected_records": expected_records,
                "actual_records": len(records), "failure_count": failure_count,
                "git_provenance_complete": git_complete, "records": records,
-               "evidence_scope": "llm_forge_colocated_formal_repeated_matrix" if formal else "llm_forge_colocated_smoke_or_pilot"}
+               "candidate_selection": config.parameters["candidate_selection"],
+               "evidence_scope": scope}
     writer.write_summary(summary)
     writer.write_summary_csv({"run_id": args.run_id, "passed": passed,
         "expected_records": expected_records, "actual_records": len(records),

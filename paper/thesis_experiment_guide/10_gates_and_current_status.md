@@ -74,7 +74,7 @@ No-Go：
   3. [x] C4096/K20+T0 artifact smoke 已 1/1 技术通过：`P_colocated=6686.793 MiB`，T0 共置增量 2252 MiB，正残差 0，计入 501.282 MiB 安全余量后容量可行，0 failure/fallback；
   4. [x] `llm_tts_colocated_candidates_20260831_direct_nvml_v1` 已完成 6 候选×5 轮，共 30/30、0 failure/fallback；全部真实后端、direct NVML，新鲜度和 swap 门禁通过，colocated 正残差最大值为 0；
   5. [x] `c3_h_tts_colocated_20260831_v1.json` 已离线复算并冻结 `G_safe=501.282 MiB` 与按 context 的 `H_TTS`：T0 为 512/K24、2048/K20、4096/K20，T3 三个 context 均为 FULL；
-  6. [ ] 真实 LLM+Forge 入口、child 门禁、显式 H_D 候选矩阵和最终冻结分析已实现并通过 Windows 静态/Mock 验证；下一步保持 Forge 服务开启，先运行 512/K6 单组合 smoke，通过后再运行 512/K6、4096/K4、2048/K4 各 5 轮正式矩阵。真实结果核验前仍不得冻结 `H_D`。
+  6. [ ] 真实 LLM+Forge 入口、child 门禁、显式 H_D 候选矩阵和最终冻结分析已实现；512/K6 单组合真实 smoke 的后端、PNG、direct NVML、新鲜度、KV、容量和 provenance 均有效，但 swap 增长约 290.44 MiB，整体门禁失败，正式矩阵暂停。已补显式探索性降档契约，下一步保持同一 Forge 服务只运行 512/K4 单组合；该结果必须标为探索证据，核验前仍不得修正或冻结 `H_D`。
 - [x] **SM-A：GPU 计算份额能力探针**：真实 WSL 记录 `sm_a_20260830_direct_nvml_v1` 已完成；MPS binary 在 WSL2 不存在，结论**暂定 NO_GO**。注意：这是环境能力门禁导致的「暂停」，不是永久取消——待具备可用的原生 Linux 启动环境后重做 SM-A，再决定是否进入 SM-B/C/D/E
 - [ ] **SM-B（PAUSED）：TTS T0/T3 隔离 SM 曲线**：因 SM-A 暂定 NO_GO 按门禁暂停，不运行、不伪造受控 SM 曲线；待 SM-A 在原生 Ubuntu 恢复后重排
 - [ ] **SM-C（PAUSED）：Diffusion b=1 隔离 SM 曲线**：因 SM-A 暂定 NO_GO 按门禁暂停，不运行、不伪造受控 SM 曲线；待 SM-A 在原生 Ubuntu 恢复后重排

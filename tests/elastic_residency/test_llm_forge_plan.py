@@ -14,6 +14,7 @@ from experiments.elastic_residency.llm_forge_plan import (
     build_execution_plan,
     candidate_profile,
     parse_candidate_specs,
+    select_candidates,
     screened_candidates,
 )
 from experiments.elastic_residency.llm_forge_child import decode_forge_image
@@ -29,7 +30,11 @@ def _screen() -> dict:
         },
         "per_context": {
             "512": {
-                "m_l_mb": {"K6": 2117.09765625},
+                "m_l_mb": {
+                    "K4": 1853.09765625,
+                    "K6": 2117.09765625,
+                    "K8": 2365.09765625,
+                },
                 "h_d": {"h_layers": 6, "full_feasible": False, "m_d_mb": 5484.0},
             },
             "2048": {
@@ -60,6 +65,26 @@ def test_plan_rejects_duplicates_and_non_screened_candidate() -> None:
         parse_candidate_specs(["512:K6", "512:k6"])
     with pytest.raises(ValueError, match="不属于"):
         candidate_profile(_screen(), LlmForgeCandidate(512, "K4"))
+
+
+def test_plan_explicitly_allows_only_profiled_lower_fallback() -> None:
+    candidates, boundaries, exploratory = select_candidates(
+        _screen(), ["512:K4"], allow_exploratory_fallback=True
+    )
+    assert candidates == exploratory == (LlmForgeCandidate(512, "K4"),)
+    assert boundaries[0] == LlmForgeCandidate(512, "K6")
+    profile = candidate_profile(
+        _screen(), candidates[0], allow_lower_fallback=True
+    )
+    assert profile["llm_isolated_increment_mb"] == pytest.approx(1853.09765625)
+    with pytest.raises(ValueError, match="边界或其降档"):
+        select_candidates(
+            _screen(), ["512:K8"], allow_exploratory_fallback=True
+        )
+    with pytest.raises(ValueError, match="没有候选画像"):
+        select_candidates(
+            _screen(), ["512:K2"], allow_exploratory_fallback=True
+        )
 
 
 def test_profile_and_capacity_use_global_idle_increment_semantics() -> None:

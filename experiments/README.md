@@ -227,7 +227,9 @@ python -m experiments.elastic_residency.llm_tts_colocated \
 
 ### 12.1 LLM+Forge 真实共置与 H_D 冻结
 
-`llm_forge_colocated.py` 强制读取完整 C3 screen 与同 run 的 Forge direct NVML summary，只接受 512/K6、2048/K4、4096/K4 三个筛选边界。父进程先通过真实 Forge API warmup；每轮独立 child 在 Forge 常驻时加载 GGUF、填充 `context+128` KV 状态，再执行固定 1024×1024、8 steps、Euler、b=1 请求。每轮保存真实 PNG、`B_Forge/B_LLM/P_colocated`、KV、direct NVML 时间线、同步快照新鲜度、swap、affinity、资源归还和失败记录。Forge 终端必须在整个 smoke/矩阵期间保持运行。
+`llm_forge_colocated.py` 强制读取完整 C3 screen 与同 run 的 Forge direct NVML summary，正式候选为 512/K6、2048/K4、4096/K4 三个筛选边界。父进程先通过真实 Forge API warmup；每轮独立 child 在 Forge 常驻时加载 GGUF、填充 `context+128` KV 状态，再执行固定 1024×1024、8 steps、Euler、b=1 请求。每轮保存真实 PNG、`B_Forge/B_LLM/P_colocated`、KV、direct NVML 时间线、同步快照新鲜度、swap、affinity、资源归还和失败记录。Forge 终端必须在整个 smoke/矩阵期间保持运行。
+
+512/K6 的首轮真实 smoke 已完成真实后端、PNG、direct NVML、新鲜度、KV、容量和 provenance 核验，但 swap 从约 1.26 MiB 增至 291.70 MiB，故整体失败且不得运行正式 15 条。入口提供 `--allow-exploratory-fallback`，只允许 screen 已包含并低于 H_D 边界的驻留档；run config 与 summary 会保存筛选边界、探索候选及独立 evidence scope，不能把降档 smoke 冒充冻结 H_D。
 
 Forge 服务终端：
 
@@ -238,21 +240,22 @@ python launch.py --api --listen --port 7860 \
   --skip-version-check --skip-python-version-check
 ```
 
-先运行最紧的 512/K6 单组合 smoke：
+K6 失败后，只运行 512/K4 探索性降档 smoke：
 
 ```bash
 cd /home/leslie/mvp_core
 /home/leslie/.venvs/mvp_core-cu128/bin/python \
   experiments/elastic_residency/llm_forge_colocated.py \
-  --run-id llm_forge_colocated_c512_k6_smoke_<date>_v1 \
-  --candidates 512:K6 --runs 1 --warmup 1 \
+  --run-id llm_forge_colocated_c512_k4_fallback_smoke_<date>_v1 \
+  --candidates 512:K4 --allow-exploratory-fallback \
+  --runs 1 --warmup 1 \
   --max-gpu-sample-age-ms 750 --max-swap-growth-mb 4 \
   --output-root experiment_results/elastic_residency/llm_forge_colocated \
   --source-git-commit <clean_commit> \
   --source-git-dirty false --source-git-status-entry-count 0
 ```
 
-smoke 的 manifest、summary、iteration、failure、PNG、child log、direct NVML、新鲜度、swap、KV、真实后端和 provenance 全部通过后，才运行 3 候选×5 轮正式矩阵；按预测安全余量从紧到松排列并默认 fail-fast：
+K4 smoke 的 manifest、summary、iteration、failure、PNG、child log、direct NVML、新鲜度、swap、KV、真实后端和 provenance 全部通过后，先离线修正 H_D 候选，再生成对应正式矩阵；不得继续使用已经失败的 512/K6 正式命令。以下旧 15 条模板仅保留为 K6 通过时的历史计划，当前禁止执行：
 
 ```bash
 /home/leslie/.venvs/mvp_core-cu128/bin/python \
