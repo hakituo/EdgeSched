@@ -9,6 +9,8 @@
 1. `services/phase_aware/phase_model.py`
    - LLM 仍是 GPU_NORMAL / CPU_DEGRADED / RESTORING 三态。
    - TTS 预设默认 CPU，不会动态比较完整流水线。
+   - 当前 C2/C3 与共置入口只执行 Qwen3.5-9B 纯文本 `Llama(model_path=...)`，没有加载或运行 `mmproj`；计划中的 Qwen3.5-4B 统一文本/视觉路径尚未接入。
+   - 现有 `data/adapters/vl_adapter.py` 是独立 Qwen2-VL Transformers 路径，不能冒充新主模型的 llama.cpp/libmtmd 多模态证据。
 2. `services/phase_aware/gpu_lease.py`
    - Resident 和 Burst 仍按重任务独占处理。
    - SHARED lease 尚未进入真实执行路径。
@@ -28,7 +30,7 @@
    - 当前源码已包含真实 Qwen3-TTS worker、GPU 句长 profiling、CPU/GPU smoke、确定性断句、有界队列与取消/顺序测试；这些结果仍属于 `experiment_results/` 探索数据。
    - 2026-08-28 的 GPU 句长画像中 45/45 条 RTF 均大于 1；当前后端尚不能支持持续实时播放，不能声称稳态无 underrun。
    - GPU句长 profiling 使用未限制 CPU affinity 的主机基线；还需要补充保留系统核心后的对照。
-   - TTS 尚未接入 Phase-Aware；T0–T3 的独立实验实现、B1 smoke 与 B2 旧口径矩阵已完成，但 T0/T3 的 direct NVML 隔离矩阵和正式共置矩阵仍未完成。
+   - TTS 尚未接入 Phase-Aware；T0/T3 direct NVML 隔离矩阵与 Qwen3.5-9B 的正式 LLM+TTS 共置均已完成，但模型迁移后必须重算新主模型的候选并重跑相关共置矩阵。
 8. N 阶段实验
    - `experiments/phase_aware/exp2_*` 和 `exp3_*` 主要使用 `asyncio.sleep`，只能验证调度语义。
 9. 辅助任务与播放环境
@@ -109,7 +111,7 @@ P0 的独立 worker、adapter、smoke、原始 GPU 句长迭代和 manifest 已�
 
 #### P1-B / 执行阶段 C：LLM `n_gpu_layers` 驻留曲线（C1 smoke，C2 正式曲线）
 
-当前 GGUF 元数据已核验 `qwen35.block_count=32`，即 \(N=32\)。固定 \(R_{sys}=2\) 和 \(c_L=14\)，进行粗粒度扫描：
+历史 Qwen3.5-9B GGUF 已核验 `qwen35.block_count=32`，并完成 direct NVML 画像；这些结果转为模型特定压力基线。新主实验计划使用 Qwen3.5-4B-Q4_K_M 与对应 BF16/F16 `mmproj`，官方结构同为 32 层，但必须在本地 GGUF 中重新核验，不能沿用 9B 的显存、RSS、KV 或性能数字。固定 \(R_{sys}=2\) 和 \(c_L=14\)，进行粗粒度扫描：
 
 \[
 k\in\{0,\lceil0.25N\rceil,\lceil0.5N\rceil,
@@ -117,6 +119,14 @@ k\in\{0,\lceil0.25N\rceil,\lceil0.5N\rceil,
 \]
 
 当前模型展开为 `k={0,8,16,24,32,FULL}`。`FULL` 与 `k=32` 分开保留，因为 llama.cpp 的完整 offload 还可能包含非 block 张量。
+
+新模型进入正式曲线前增加多模态迁移门：
+
+1. 固定主 GGUF 与对应 `mmproj` 的来源、版本、SHA-256、量化方式和文件大小；
+2. 证明当前 llama.cpp/libmtmd 路径能对固定真实图片执行 projector，无静默文本 fallback；
+3. 分别测量 `TEXT_ONLY`、`VISION_WARM_GPU`、`VISION_WARM_CPU`（后端支持时）和 projector 释放后的显存/RSS；
+4. 用 K0/FULL 完成文本与视觉端点 smoke，核验图片 token、KV、输出、direct NVML、swap 与资源归还；
+5. 端点通过后才重跑 4B 的 C2/C3、KV 和 LLM+TTS/Forge 共置。TTS 与 Forge 隔离校准在环境和后端未变化时可作为输入复用，但最终候选和共置结论必须重算。
 
 每个配置测试约 512、2048 和 4096 tokens 的上下文，固定生成 128 tokens，独立预热并至少重复 5 次。记录加载/重新配置时间、GPU显存、主机内存、TTFT、prefill tokens/s、decode tokens/s、token gap、CPU利用率和KV保存恢复时间。
 
@@ -129,6 +139,8 @@ H_{TTS}=\max k:\ M_L(k)+M_T+G_{safe}\le V_{GPU},
 \[
 H_D=\max k:\ M_L(k)+M_D(b=1)+G_{safe}\le V_{GPU}.
 \]
+
+对于视觉 ready 状态，另行计算包含 \(M_V(r_V,u)\) 的 `H_TTS^vision/H_D^vision`；不能把未执行的 projector 文件大小直接加到文本曲线，也不能用文本 `H` 代表真实识图阶段。
 
 在每个临界点附近补测 \(k\pm2\) 和 \(k\pm4\)。第一版使用 llama.cpp 的连续层 offload，不自行设计注意力层、MLP 层或单个张量的任意拆分。
 

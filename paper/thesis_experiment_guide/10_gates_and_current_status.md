@@ -68,13 +68,22 @@ No-Go：
 - [x] C3 direct NVML 临界补测：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 已完成 150/150 条；与 C2 合并后覆盖 16 个驻留档位
 - [x] C3 KV 校准：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条，冻结 GPU/宿主 KV buffer 与完整序列化状态的独立语义
 - [x] T0/T3 direct NVML 隔离矩阵：v2 已基于干净 `0261e4da` 完成 30/30 技术核验，0 failure/fallback，运行期 swap 与同步查询新鲜度门禁完整；未晋升论文正文数据
-- [ ] **当前 C3 收尾（LLM+TTS 已完成，H_D 还缺 LLM+Forge 共置）**：
+- [x] **Qwen3.5-9B C3 已按资源门禁停止，保留为模型特定压力证据**：
   1. [x] Forge b=1 direct NVML v1 已完成 5/5，逐窗新鲜度、swap 增长和核心归还门禁全部通过，`M_D=5484 MiB`；
   2. [x] 完整 16 档 + B2 direct v2 + Forge direct v1 已生成 `c3_h_direct_nvml_20260831_v1.json`：T0 边界为 512/K24、2048/K20、4096/K20，T3 三个 context 均筛到 FULL；这些仍是容量候选；
   3. [x] C4096/K20+T0 artifact smoke 已 1/1 技术通过：`P_colocated=6686.793 MiB`，T0 共置增量 2252 MiB，正残差 0，计入 501.282 MiB 安全余量后容量可行，0 failure/fallback；
   4. [x] `llm_tts_colocated_candidates_20260831_direct_nvml_v1` 已完成 6 候选×5 轮，共 30/30、0 failure/fallback；全部真实后端、direct NVML，新鲜度和 swap 门禁通过，colocated 正残差最大值为 0；
-  5. [x] `c3_h_tts_colocated_20260831_v1.json` 已离线复算并冻结 `G_safe=501.282 MiB` 与按 context 的 `H_TTS`：T0 为 512/K24、2048/K20、4096/K20，T3 三个 context 均为 FULL；
-  6. [ ] 真实 LLM+Forge 入口、child 门禁、显式 H_D 候选矩阵和最终冻结分析已实现；512/K6 单组合真实 smoke 的后端、PNG、direct NVML、新鲜度、KV、容量和 provenance 均有效，但 swap 增长约 290.44 MiB，整体门禁失败，正式矩阵暂停。已补显式探索性降档契约，下一步保持同一 Forge 服务只运行 512/K4 单组合；该结果必须标为探索证据，核验前仍不得修正或冻结 `H_D`。
+  5. [x] `c3_h_tts_colocated_20260831_v1.json` 已离线复算并冻结 **9B 模型口径**的 `G_safe=501.282 MiB` 与按 context 的 `H_TTS`：T0 为 512/K24、2048/K20、4096/K20，T3 三个 context 均为 FULL；模型迁移后这些值不再代表主实验模型；
+  6. [x] 512/K6+Forge 真实 smoke 的后端、PNG、direct NVML、新鲜度、KV、GPU 容量和 provenance 均有效，但 swap 增长约 290.44 MiB，整体失败；
+  7. [x] 探索性 512/K4+Forge smoke 同样只有 swap 门失败，增长约 2070.32 MiB；降低 GPU 层数释放了显存，却显著增加主机换页，因此不再继续 K2，也不运行 9B 正式 15 条矩阵；
+  8. [x] 9B 的 `H_D` 未冻结；两次失败作为“仅看显存会选错目标档”的负面证据保留，不得晋升为 9B 共置可行结论。
+- [ ] **主实验模型迁移：Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`**：
+  1. [x] 已冻结研究口径：统一模型必须真实执行文本与图片理解，`mmproj` 是正式 session-warm 视觉组件，不是静态填充；9B 保留为压力/NO_GO 对照；
+  2. [ ] 下载并固定主 GGUF/`mmproj` 的来源、版本、完整 SHA-256、量化与文件大小；
+  3. [ ] 核验当前 llama.cpp/libmtmd 的 Qwen3.5 多模态执行，使用固定真实图片并记录图片 token、输出和 projector GPU/CPU 状态；
+  4. [ ] 先跑 4B 的文本/视觉 K0/FULL 端点 smoke，再决定是否进入 C2/C3、KV 与临界补测；
+  5. [ ] 重算 4B 的 `G_safe/H_TTS/H_D`，分别保留 `TEXT_ONLY` 与 `VISION_WARM` 候选，并重跑真实 LLM+TTS/Forge 共置；
+  6. [ ] 迁移完成前不得把任何 9B 阈值改名为 4B 结论，也不得晋升到 `paper/experiment_data/01_paper_main/`。
 - [x] **SM-A：GPU 计算份额能力探针**：真实 WSL 记录 `sm_a_20260830_direct_nvml_v1` 已完成；MPS binary 在 WSL2 不存在，结论**暂定 NO_GO**。注意：这是环境能力门禁导致的「暂停」，不是永久取消——待具备可用的原生 Linux 启动环境后重做 SM-A，再决定是否进入 SM-B/C/D/E
 - [ ] **SM-B（PAUSED）：TTS T0/T3 隔离 SM 曲线**：因 SM-A 暂定 NO_GO 按门禁暂停，不运行、不伪造受控 SM 曲线；待 SM-A 在原生 Ubuntu 恢复后重排
 - [ ] **SM-C（PAUSED）：Diffusion b=1 隔离 SM 曲线**：因 SM-A 暂定 NO_GO 按门禁暂停，不运行、不伪造受控 SM 曲线；待 SM-A 在原生 Ubuntu 恢复后重排
@@ -87,7 +96,7 @@ No-Go：
 - [ ] **队列视界 predictor/planner（GATED）**：C3 校准、真实共置 smoke/矩阵、colocated 残差和 S0 Go/No-Go 完成前不实现。Go 后先用 calibration split 建立“画像插值 + 有界 EWMA 残差”，再冻结 queue horizon、转换安全余量与 minimum residency window；正式 evaluation 比较 Pareto-only、仅转换成本、queue-horizon-aware EdgeSched 与 oracle
 - [ ] 同步论文、图表和必要的 C++ 契约
 
-B1/B2 已确认 T0/T3 是条件式 Pareto，T0/T3 direct NVML v2 已完成 30/30 技术核验；C2+C3 direct NVML 已完成 16 档（共 240 条）性能曲线，独立 KV 校准 48/48、Forge direct NVML v1 5/5 与 LLM+TTS 正式共置 30/30 也已完成。正式共置的正残差最大值为 0，`G_safe=501.282 MiB` 与按 context 的 `H_TTS` 已冻结；`H_D` 仍等待真实 LLM+Forge 共置，不得用隔离加法或 LLM+TTS 结果替代。SM-A 已在真实 WSL2 中因 MPS binary 不存在判定**暂定 NO_GO**——这是环境门禁导致的暂停而非永久取消，待原生 Ubuntu 恢复 SM-A 后再决定是否进入 SM-B/C/D/E；当前不修改在线规划器、不伪造受控 SM 曲线。完成 `H_D` 共置验证后实现 CPU 核数画像入口，再跑辅助任务 1/2/4 核曲线与 `R_sys={0,1,2,4}`，必要时补 LLM/TTS 核数扩展曲线，最后在原生 Ubuntu 恢复 SM-A。只有上述真实性和可行性门禁形成 Go 结论后，才实现 predictor 与 queue-horizon-aware transition planner；Pareto 过滤保留为目标配置选择规则，不单独作为算法创新点。
+B1/B2 已确认 T0/T3 是条件式 Pareto，T0/T3 direct NVML v2 已完成 30/30 技术核验；Qwen3.5-9B 的 C2+C3 16 档（240 条）、KV 48/48、Forge direct NVML v1 5/5 与 LLM+TTS 正式共置 30/30 也已完成。9B 的 `G_safe/H_TTS` 是模型特定冻结值；K6/K4+Forge 均因真实 swap 失败，正式 H_D 矩阵停止。主实验现迁移到 Qwen3.5-4B-Q4_K_M + 真实 `mmproj`，必须先通过多模态端点门禁再重跑模型相关画像。SM-A 在 WSL2 中仍因 MPS binary 不存在暂定 NO_GO，当前不修改在线规划器、不伪造受控 SM 曲线。完成新模型 C3 与真实共置后再实现 CPU 核数画像入口；只有真实性和可行性门禁形成 Go 结论后，才实现 predictor 与 queue-horizon-aware transition planner。
 
 ---
 

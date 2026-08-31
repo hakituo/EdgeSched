@@ -39,13 +39,15 @@ EdgeSched 面向单用户、单机、资源受限的本地多模态 AI 助手。
 
 | 工作负载 | 计划模型/后端 | 运行语义 |
 |---|---|---|
-| LLM | Qwen3.5-9B-Q4_K_M，GGUF + llama.cpp | 常驻、流式、可在 CPU/GPU 间重新配置 |
+| LLM + Vision | Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`，GGUF + llama.cpp/libmtmd | 统一文本与真实图片理解；语言层可重新配置，视觉 projector 可作为 session-warm 组件驻留或释放 |
 | TTS | Qwen3-TTS-12Hz-0.6B-Base | 下游、句子级流式、CPU/GPU 均可运行 |
 | Image | SDXL Turbo + Forge | GPU 必需、非硬抢占、一次性或短队列任务 |
 | ASR | Faster-Whisper Small，CTranslate2 FP16 权重 | CPU 辅助阶段，不作为主要显存竞争者 |
 | RAG embedding | BGE-small-zh-v1.5，ONNX，512 维 | CPU 辅助阶段；dense embedding/rerank，不冒充 cross-encoder |
 
-上述模型文件已在当前 WSL2 副本完成路径和关键权重核验，但量化方式、运行参数和哈希仍必须写入每次正式实验 manifest，不能只引用本指南中的快照。
+除新选定的 4B 主 GGUF 与 `mmproj` 外，既有后端模型已在当前 WSL2 副本完成路径和关键权重核验；新模型仍待下载和哈希冻结。所有正式实验仍必须把量化方式、运行参数和哈希写入 manifest，不能只引用本指南中的快照。
+
+**2026-08-31 模型迁移决策**：原 Qwen3.5-9B-Q4_K_M 的 direct NVML 曲线、KV、LLM+TTS 和 LLM+Forge smoke 保留为大模型压力与负面边界证据；主实验改用 Qwen3.5-4B-Q4_K_M 加真实执行的 `mmproj`。当前约 2.74 GB 主 GGUF 与约 0.67 GB projector 只是选型阶段的 artifact 体积，不能代替运行期显存/RSS。新模型下载、哈希、llama.cpp 多模态兼容、真实图片输入和资源画像尚未完成，因此旧 9B 性能数字默认不再代表主实验模型。
 
 ### 1.2 权威实验环境
 
@@ -124,7 +126,20 @@ ASR/RAG \rightarrow LLM_{\mathrm{stream}}
 - 取消后，排队 chunk 立即清除；正在执行的 chunk 可以自然完成，但结果必须丢弃。
 - 实验中关闭随机逗号断句，保证相同文本得到相同切分。
 
-### 2.2 图像工作流
+### 2.2 视觉理解工作流
+
+视觉理解请求为：
+
+\[
+ImageInput \rightarrow VisionProjector_{\mathrm{mmproj}}
+\rightarrow LLM_{\mathrm{stream}}.
+\]
+
+Qwen3.5 的 `mmproj` 必须加载对应模型的真实文件，并对固定图片执行实际编码；不能只把 projector 文件大小作为静态显存填充。正式画像至少区分文本常驻、projector GPU warm、projector CPU/未加载、真实图片编码峰值和图片 token 进入 LLM 后的 KV 状态。连续视觉对话可以保留 projector warm；视觉队列清空后是否释放由后续 queue horizon 与转换成本决定。
+
+图片输入集必须固定分辨率、内容、SHA-256、prompt 和图像 token 统计。识图结果为空、静默 fallback 或 projector 未实际执行的轮次无效。
+
+### 2.3 图像生成工作流
 
 普通单图请求为：
 
@@ -134,7 +149,7 @@ LLM \rightarrow Diffusion(b=1).
 
 普通请求要求立即进入资源准备和执行流程，不为了收集未来请求而增加主动等待窗口。迁移、模型加载和显存释放时间仍计入第一张图片延迟。
 
-### 2.3 多图语义
+### 2.4 多图语义
 
 必须区分两类情况：
 
@@ -151,13 +166,13 @@ LLM \rightarrow Diffusion(b=1).
 
 现有 `experiment_results/batch_scaling/` 结果是探索性特性数据，当前只证明同一 prompt 下的 batch 扩展趋势；正式实验需要对每个 batch shape 独立预热并完善 manifest。
 
-### 2.4 轻量任务
+### 2.5 轻量任务
 
 ASR、RAG embedding 和文档解析用于证明调度器能够容纳 CPU 辅助阶段，但它们不是论文的主要显存竞争对象。
 
 OCR 若由多模态 LLM 完成，不必额外引入独立大模型。不得为了凑任务数量而人为增加不符合应用流程的模型。
 
-### 2.5 通用任务抽象：设备亲和性、驻留能力与 GPU 计算份额能力
+### 2.6 通用任务抽象：设备亲和性、驻留能力与 GPU 计算份额能力
 
 EdgeSched 不按 LLM、TTS 或 Diffusion 等模型名称硬编码路由规则。每个阶段首先声明三个正交维度；第三个维度描述阶段及其后端能否接受可验证的 GPU 计算份额约束，而不是根据一次平均 GPU 利用率猜测所需算力。
 

@@ -205,9 +205,9 @@ python -m experiments.elastic_residency.llm_kv_cache_calibration \
 
 正式记录 `c3_kv_cache_calibration_20260830_direct_nvml_v1` 基于干净 commit `820ee0fbcbbf671a791d31786bf171bf2a241d1a` 完成 48/48 条、0 failure。`n_ctx/KV tokens=640/2176/4224` 时，预分配 KV buffer 总量为 `24/72/136 MiB`，FULL 的 GPU KV 部分同为 `24/72/136 MiB`；完整序列化状态为 `70.263/118.292/182.331 MiB`。该结果只补齐容量语义，不把单轮确定性校准当作性能重复实验。
 
-### 12. LLM+TTS 真实共置显存测量
+### 12. LLM+TTS 真实共置显存测量（现有 9B 链路记录）
 
-`experiments/elastic_residency/llm_tts_colocated.py` 在同一进程加载真实 GGUF LLM（填充 context 后记录整卡基线 `B_LLM`）与 Qwen3-TTS（T0/T3 放置，分阶段 `torch.cuda.synchronize()` + reset peak），TTS 执行窗口内由 direct NVML 时间线和阶段快照取整卡峰值 `P_colocated`，并计算 `tts_colocated_increment_mb = P_colocated - B_LLM` 与 `colocated_positive_residual_mb = max(0, colocated_increment - isolated_increment)`（隔离增量由 `--tts-isolated-increment-mb CONFIG=value` 注入，缺失时保持 None，禁止估计）。`G_safe` 已包含 idle GPU baseline high water，因此容量裁决使用 `(P_colocated - B_idle) + G_safe <= gpu_total`，并另以 `P_colocated <= gpu_total` 检查物理峰值；直接对绝对峰值再加完整 `G_safe` 会重复计算 idle。`M_L(k, context)` 已包含该 LLM 配置的 KV buffer，容量计算不得再叠加一次 KV。共置候选由 C2+C3 新曲线分析后确定，先 smoke 后小矩阵：
+`experiments/elastic_residency/llm_tts_colocated.py` 在同一进程加载真实 GGUF LLM（填充 context 后记录整卡基线 `B_LLM`）与 Qwen3-TTS（T0/T3 放置，分阶段 `torch.cuda.synchronize()` + reset peak），TTS 执行窗口内由 direct NVML 时间线和阶段快照取整卡峰值 `P_colocated`，并计算 `tts_colocated_increment_mb = P_colocated - B_LLM` 与 `colocated_positive_residual_mb = max(0, colocated_increment - isolated_increment)`（隔离增量由 `--tts-isolated-increment-mb CONFIG=value` 注入，缺失时保持 None，禁止估计）。`G_safe` 已包含 idle GPU baseline high water，因此容量裁决使用 `(P_colocated - B_idle) + G_safe <= gpu_total`，并另以 `P_colocated <= gpu_total` 检查物理峰值；直接对绝对峰值再加完整 `G_safe` 会重复计算 idle。`M_L(k, context)` 已包含该 LLM 配置的 KV buffer，容量计算不得再叠加一次 KV。下方命令只记录现有纯文本链路的调用契约，不是可直接执行的 4B+视觉正式命令；4B 入口扩展后，候选仍按“新曲线筛选 → smoke → 小矩阵”执行：
 
 ```bash
 python -m experiments.elastic_residency.llm_tts_colocated \
@@ -221,15 +221,15 @@ python -m experiments.elastic_residency.llm_tts_colocated \
 
 共置入口对 TTS 执行窗口的周期 direct NVML 样本和参与 `B_LLM/P_colocated` 的同步容量快照分别执行 750 ms 新鲜度硬门；swap 按全生命周期最大值相对起点的增长计算，默认容忍 4 MiB 的 WSL2 系统噪声，数百 MiB 级真实换页仍会失败。任何验收检查失败都会写入 `failures.jsonl`，不能只看 summary 最后一行。
 
-正式 6 候选×5 轮矩阵 `llm_tts_colocated_candidates_20260831_direct_nvml_v1` 已完成 30/30、0 failure/fallback。原始测量有效，但其运行时版本把绝对 `P_colocated` 再加完整 `G_safe`，对 15 条 FULL+T3 记录产生了 idle 重复计数的旧判定。无需重跑模型；`analyze_colocated_results.py` 复用原始 `B_idle/B_LLM/P_colocated` 离线重算，输出 `c3_h_tts_colocated_20260831_v1.json`：六个候选全部容量可行，colocated 正残差最大值为 0，`G_safe=501.282 MiB`，按 context 的 `H_TTS` 已冻结。`H_D` 仍须真实 LLM+Forge 共置，当前不得冻结。
+Qwen3.5-9B 正式 6 候选×5 轮矩阵 `llm_tts_colocated_candidates_20260831_direct_nvml_v1` 已完成 30/30、0 failure/fallback。原始测量有效，但其运行时版本把绝对 `P_colocated` 再加完整 `G_safe`，对 15 条 FULL+T3 记录产生了 idle 重复计数的旧判定。9B 测量无需重跑；`analyze_colocated_results.py` 复用原始 `B_idle/B_LLM/P_colocated` 离线重算，输出 `c3_h_tts_colocated_20260831_v1.json`：六个候选全部容量可行，colocated 正残差最大值为 0，冻结 9B `G_safe=501.282 MiB` 与按 context 的 `H_TTS`。9B `H_D` 已因 K6/K4+Forge 的 swap 门失败停止且不冻结；4B+视觉须重新生成全部 LLM 相关阈值。
 
 筛选后的正式矩阵使用 `--candidates CONTEXT:LLM:TTS ...` 显式列出候选；该参数覆盖 `--llm-configs/--tts-configs/--contexts` 的笛卡尔积，并按给定顺序执行每候选的重复轮次。最紧候选应放首位配合默认 fail-fast。正式 manifest 同时保存 GGUF 哈希、完整 TTS 模型树哈希及逐文件清单、参考音频哈希，不能只用 `config.json` 代替模型 provenance。
 
-### 12.1 LLM+Forge 真实共置与 H_D 冻结
+### 12.1 9B LLM+Forge 真实共置停止记录
 
-`llm_forge_colocated.py` 强制读取完整 C3 screen 与同 run 的 Forge direct NVML summary，正式候选为 512/K6、2048/K4、4096/K4 三个筛选边界。父进程先通过真实 Forge API warmup；每轮独立 child 在 Forge 常驻时加载 GGUF、填充 `context+128` KV 状态，再执行固定 1024×1024、8 steps、Euler、b=1 请求。每轮保存真实 PNG、`B_Forge/B_LLM/P_colocated`、KV、direct NVML 时间线、同步快照新鲜度、swap、affinity、资源归还和失败记录。Forge 终端必须在整个 smoke/矩阵期间保持运行。
+`llm_forge_colocated.py` 已为 Qwen3.5-9B 实现 screen/Forge summary 同源校验、真实 Forge warmup、独立 LLM/KV child、真实 PNG、direct NVML、新鲜度、swap、affinity、资源归还和容量裁决。512/K6 与探索性 512/K4 smoke 的 GPU 容量都通过，但 swap 分别增长约 290.44 MiB 与 2070.32 MiB，故两者整体失败；降低 GPU 层数把更多权重压回 DDR 后明显恶化。9B 正式 15 条矩阵已停止，不再运行 K2，也不冻结 `H_D`。
 
-512/K6 的首轮真实 smoke 已完成真实后端、PNG、direct NVML、新鲜度、KV、容量和 provenance 核验，但 swap 从约 1.26 MiB 增至 291.70 MiB，故整体失败且不得运行正式 15 条。入口提供 `--allow-exploratory-fallback`，只允许 screen 已包含并低于 H_D 边界的驻留档；run config 与 summary 会保存筛选边界、探索候选及独立 evidence scope，不能把降档 smoke 冒充冻结 H_D。
+主实验现迁移到 Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`。当前入口仍是纯文本路径，禁止直接把 projector 文件大小加到旧 9B 曲线。恢复真实 GPU 实验前必须先完成：固定两个 artifact 的 SHA-256；用 llama.cpp/libmtmd 对固定真实图片执行 projector；记录 `TEXT_ONLY/VISION_WARM` 的 GPU/RSS、图片 token、KV、加载/释放与 swap；通过文本/视觉 K0/FULL 端点 smoke。之后才重跑 4B 的 C2/C3、KV、候选筛选和 LLM+TTS/Forge 共置。
 
 Forge 服务终端：
 
@@ -240,35 +240,7 @@ python launch.py --api --listen --port 7860 \
   --skip-version-check --skip-python-version-check
 ```
 
-K6 失败后，只运行 512/K4 探索性降档 smoke：
-
-```bash
-cd /home/leslie/mvp_core
-/home/leslie/.venvs/mvp_core-cu128/bin/python \
-  experiments/elastic_residency/llm_forge_colocated.py \
-  --run-id llm_forge_colocated_c512_k4_fallback_smoke_<date>_v1 \
-  --candidates 512:K4 --allow-exploratory-fallback \
-  --runs 1 --warmup 1 \
-  --max-gpu-sample-age-ms 750 --max-swap-growth-mb 4 \
-  --output-root experiment_results/elastic_residency/llm_forge_colocated \
-  --source-git-commit <clean_commit> \
-  --source-git-dirty false --source-git-status-entry-count 0
-```
-
-K4 smoke 的 manifest、summary、iteration、failure、PNG、child log、direct NVML、新鲜度、swap、KV、真实后端和 provenance 全部通过后，先离线修正 H_D 候选，再生成对应正式矩阵；不得继续使用已经失败的 512/K6 正式命令。以下旧 15 条模板仅保留为 K6 通过时的历史计划，当前禁止执行：
-
-```bash
-/home/leslie/.venvs/mvp_core-cu128/bin/python \
-  experiments/elastic_residency/llm_forge_colocated.py \
-  --run-id llm_forge_colocated_h_d_<date>_direct_nvml_v1 \
-  --candidates 512:K6 4096:K4 2048:K4 --runs 5 --warmup 1 \
-  --max-gpu-sample-age-ms 750 --max-swap-growth-mb 4 \
-  --output-root experiment_results/elastic_residency/llm_forge_colocated \
-  --source-git-commit <clean_commit> \
-  --source-git-dirty false --source-git-status-entry-count 0
-```
-
-正式 15 条通过后，`analyze_forge_colocated_results.py` 合并已有 TTS freeze 与 Forge 共置正残差，重新检查 H_TTS 安全余量并冻结最终 `G_safe/H_TTS/H_D`。该分析仍写入 `experiment_results`，不会自动晋升 `paper/experiment_data/01_paper_main/`。
+旧 K4 smoke 与 9B 正式矩阵命令已从当前运行指南删除，防止误跑。新模型的端点与正式命令必须在多模态执行契约、screen 和候选生成完成后再写入；任何结果仍先进入 `experiment_results`，不会自动晋升 `paper/experiment_data/01_paper_main/`。
 
 WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：
 

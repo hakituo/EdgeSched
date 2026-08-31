@@ -34,6 +34,9 @@ d_i,\rho_i,g_i,\chi_i,role_i,preempt_i,queue_i,deps_i
 - 上下文长度和 KV Cache 大小；
 - prefill token 数；
 - 输出 token 数。
+- 文本模式或真实视觉模式；
+- `mmproj` 未加载、CPU、GPU warm 等组件状态；
+- 图片分辨率、图片数量、视觉 token 数和 projector 是否命中 warm residency。
 
 记录：
 
@@ -44,6 +47,9 @@ d_i,\rho_i,g_i,\chi_i,role_i,preempt_i,queue_i,deps_i
 - 显存、内存峰值；
 - KV 保存、恢复和实例切换时间；
 - 不同驻留档位之间的转换时间。
+- `mmproj` 加载/卸载时间、GPU/RSS 常驻增量；
+- 真实图片预处理、编码、投影和首 token 延迟；
+- 视觉阶段结束后 projector warm/释放两种状态的恢复成本。
 
 ### 5.2 TTS 画像
 
@@ -102,16 +108,31 @@ d_i,\rho_i,g_i,\chi_i,role_i,preempt_i,queue_i,deps_i
 \le V_{GPU}.
 \]
 
-在当前三模型实例中可展开为：
+在当前多模态实例中可展开为：
 
 \[
-M_L(r_L,K)+M_T(r_T)+M_D(b)+G_{safe}
+M_L(r_L,K)+M_V(r_V,u)+M_T(r_T)+M_D(b)+G_{safe}
 \le V_{GPU}.
 \]
 
+其中 \(M_V\) 是对应 Qwen3.5 模型的真实 `mmproj` 常驻与图片编码增量，\(u\) 包含图片分辨率、视觉 token 数和 warm/cold 状态。只有 projector 实际执行时才能进入正式画像；文本阶段可以保留 `VISION_WARM` 作为低延迟配置，也可以释放 projector 形成更低驻留档。
+
 安全余量 \(G_{safe}\) 必须根据 idle GPU 高水位、`reserved-allocated` allocator slack、单模型峰值相加与真实共置峰值之间的正残差，以及重复运行峰值漂移共同校准，不能只写死为一个未经验证的比例。由于 \(G_{safe}\) 已包含 idle 高水位，使用真实整卡绝对峰值 \(P_{colocated}\) 验证时必须按 \((P_{colocated}-B_{idle})+G_{safe}\le V_{GPU}\) 统一到增量口径，并另验 \(P_{colocated}\le V_{GPU}\)；不得把绝对峰值与完整 \(G_{safe}\) 直接相加而重复计入 idle。容量公式只用于筛选，最终可行性必须由目标组合真实同时加载并运行证明。
 
-### 6.2 CPU 约束
+### 6.2 主机内存与 swap 约束
+
+显存可行不代表主机内存可行。对当前 WSL2 实验环境同时要求：
+
+\[
+\sum_{i\in\mathcal A_t}\hat H_i(r_i,z_i)+H_{safe}
+\le H_{effective},
+\]
+
+其中 \(H_{effective}\) 是实验进程实际可见的 WSL2 `MemTotal`，不是只报告 Windows 物理内存；\(\hat H_i\) 包含 CPU/DDR 权重、mmap 驻留页、KV、projector、Forge 进程 RSS 与临时缓冲。manifest 必须保存 `MemTotal/SwapTotal`，每轮保存起点、峰值、终点与增长。
+
+Qwen3.5-9B 的 512/K6+Forge 与 512/K4+Forge 虽通过 GPU 容量门，但 swap 分别增长约 290.44 MiB 与 2070.32 MiB；K4 把更多权重退回 DDR 后反而恶化。这两次真实 smoke 证明驻留筛选必须联合 GPU 与主机内存，不得靠放宽 swap 门禁宣布可行。主实验迁移到 4B+`mmproj` 后仍须重新校准该约束。
+
+### 6.3 CPU 约束
 
 \[
 \sum_{i\in\mathcal A_t}c_i+R\le C_{physical},
@@ -152,7 +173,7 @@ ASR、RAG 和 BERT 不永久占用这两个系统核心。它们作为短时阶�
 
 SMT 逻辑线程不能直接当作额外物理核心。正式实验必须记录物理核心、逻辑 CPU、亲和掩码和 CCD 拓扑。
 
-### 6.3 GPU 计算份额与共运行约束
+### 6.4 GPU 计算份额与共运行约束
 
 对能够形成显式空间分区的后端，GPU 计算份额满足：
 
@@ -177,7 +198,7 @@ SM 数量约束不能代替性能可行性。共享配置还必须满足：
 
 论文需要明确给出一个关键结论：`VRAM-compatible co-residency` 不必然意味着 `execution-compatible co-scheduling`。GPU utilization 的单个平均值也不能替代 SM 曲线与共运行画像。
 
-### 6.4 分层目标
+### 6.5 分层目标
 
 不使用难以解释的单一主观加权和。采用分层约束与 Pareto 比较。
 
@@ -207,7 +228,7 @@ SM 数量约束不能代替性能可行性。共享配置还必须满足：
 
 Diffusion slowdown 不预先锁死为唯一阈值。正式报告应展示 5%、10%、20% slowdown 约束下的可行配置或 Pareto 前沿。
 
-### 6.5 保守回退
+### 6.6 保守回退
 
 画像缺失、预测显存不足或共享 GPU 配置未经验证时，回退到：
 

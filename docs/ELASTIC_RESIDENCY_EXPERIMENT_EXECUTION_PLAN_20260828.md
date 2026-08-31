@@ -6,7 +6,7 @@
 
 1. 辅助任务物理核预算与 `R_sys` 正式验证；
 2. Qwen3-TTS T0–T3 组件级部分卸载；
-3. Qwen3.5-9B LLM 驻留曲线与 `H_TTS` / `H_D` 临界档位；
+3. Qwen3.5-4B-Q4_K_M + 真实 `mmproj` 的统一文本/视觉驻留曲线与 `H_TTS` / `H_D` 临界档位；Qwen3.5-9B 结果保留为压力基线；
 4. 无图像时 LLM→TTS 的真实重叠放置。
 
 在这些实验完成并出现真实 Pareto 改进前，不修改 Phase-Aware 核心调度器、不扩展 C++ 驻留状态，也不把结果晋升到论文正文数据。
@@ -22,10 +22,10 @@
 | GPU | RTX 5070 Laptop，8151 MiB | 所有显存约束使用卡总量、进程总量和 PyTorch allocated/reserved 三套读数 |
 | WSL2 内存 | 约 15 GiB，另有 4 GiB swap | 记录 RSS、系统可用内存和 swap；发生 swap 的轮次判为不可用 |
 | CPU | 16 个物理核、32 个逻辑 CPU | 物理核代表为 `0,2,4,...,30`，不能把 SMT 线程当作额外物理核 |
-| LLM | Qwen3.5-9B-Q4_K_M，GGUF 约 5.23 GiB | GGUF 元数据 `qwen35.block_count=32` |
+| LLM + Vision | 计划迁移到 Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`；主 GGUF 约 2.74 GB、projector 约 0.67 GB（选型值） | 必须重新核验 `qwen35.block_count=32`，真实执行图片并分别记录语言层/projector 驻留；9B 旧值不得复用 |
 | TTS | Qwen3-TTS-12Hz-0.6B-Base | 真实 worker 已存在；当前为句子级非增量音频生成 |
 
-因此 LLM 首轮粗测点固定为：
+4B 本地 artifact 与多模态执行门通过后，LLM 首轮粗测点仍按 32 层候选设计：
 
 ```text
 N = 32
@@ -377,7 +377,7 @@ experiment_results/elastic_residency/_archive/
 
 ## 6. 建议的逐步交付节奏
 
-**当前状态（2026-08-31）**：C2+C3 direct NVML 已完成 16 档（共 240 条）性能曲线，KV 校准 48/48、T0/T3 direct NVML v2 30/30、Forge direct NVML v1 5/5 与 LLM+TTS 正式共置 30/30 均已完成技术核验。`c3_h_tts_colocated_20260831_v1.json` 复用正式矩阵原始测量，按扣除 idle 的统一增量口径完成离线复算：colocated 正残差最大值 0，`G_safe=501.282 MiB`，按 context 的 `H_TTS` 已冻结；`H_D` 仍须真实 LLM+Forge 共置验证。SM-A/B/C 不在本计划 A–E 阶段内，其暂定 NO_GO/暂停状态见 `paper/thesis_experiment_guide/10_gates_and_current_status.md`。正式运行前必须从当时的干净 Windows HEAD 读取完整 commit，不在长期文档中硬编码临时 HEAD 或短期测试计数。
+**当前状态（2026-08-31）**：Qwen3.5-9B 的 C2+C3 direct NVML 16 档（240 条）、KV 48/48、T0/T3 direct NVML v2 30/30、Forge direct NVML v1 5/5 与 LLM+TTS 正式共置 30/30 均已完成技术核验；该模型口径的 `G_safe/H_TTS` 已冻结。9B 的 512/K6 与探索性 512/K4+Forge 虽通过 GPU 容量检查，却因 swap 分别增长约 290.44/2070.32 MiB 失败，正式 H_D 矩阵停止。主实验迁移到 Qwen3.5-4B-Q4_K_M + 真实 `mmproj`，旧曲线转为模型特定压力基线；新模型尚未下载、接入或重测。SM-A/B/C 的暂定 NO_GO/暂停状态见 `paper/thesis_experiment_guide/10_gates_and_current_status.md`。
 
 - [x] **A1**：GPU/jitter/CPU 首样本/provenance 硬门槛已通过。证据：`a1_smoke_20260829_verified_v7`；v6 仅作历史调试记录。
 - [x] **B1**：T0–T3 真实单文本 smoke 通过。证据：`b1_tts_components_20260829_verified_v2`。
@@ -388,15 +388,20 @@ experiment_results/elastic_residency/_archive/
 - [x] **C3 Forge 旧后端复测**：`forge_b1_reprofile_20260829_verified_v2` 通过当时门禁，`M_D = 5252 MiB`；`c3_h_reprofiled_20260829.json` 只保留为候选筛选（`H_TTS(T0)=16`、`H_TTS(T3)=32+FULL`、`H_D` 为 512:8 / 2048:0 / 4096:0），不得当作 direct NVML 冻结值。
 - [x] **C3 临界补测**：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 已完成 150/150 条并通过；与 C2 direct v2 合并后覆盖 16 个 LLM 驻留档位。
 - [x] **C3 KV 正式校准**：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条并通过，0 failure；`n_ctx/KV tokens=640/2176/4224` 对应 KV buffer 总量 `24/72/136 MiB`，完整序列化状态 `70.263/118.292/182.331 MiB`。
-- [ ] **当前 C3 收尾**（LLM+TTS 已完成，下一项为 LLM+Forge 共置）：
+- [x] **9B C3 压力基线收尾**：
   1. [x] `forge_b1_reprofile_20260831_direct_nvml_v1`：真实 Forge b=1、warmup 1 次、正式 5 轮全部通过；direct NVML、逐窗 750 ms 样本年龄、swap 增长与核心归还均通过，`M_D=5484 MiB`；
   2. [x] 完整 16 档 LLM 曲线、B2 direct v2 与 Forge direct v1 已生成 `c3_h_direct_nvml_20260831_v1.json`；分析入口同时读取 C2/C3，并拒绝每个 context 非 16 档的输入；
   3. [x] C4096/K20+T0 单组合 artifact smoke 已 1/1 通过：`P_colocated=6686.793 MiB`、T0 共置增量 2252 MiB、正残差 0、0 failure/fallback；
   4. [x] 6 个保留候选×5 轮正式 LLM+TTS 共置已完成 30/30，0 failure/fallback，全部 direct NVML 且新鲜度/swap 门禁通过；
-  5. [x] `c3_h_tts_colocated_20260831_v1.json` 已冻结 `G_safe=501.282 MiB` 与 `H_TTS`；旧 artifact 中 15 条 FULL+T3 的 `capacity_admissible=false` 来自绝对峰值再次叠加完整 `G_safe` 的 idle 重复计数，原始峰值测量有效，无需重跑；
-  6. [ ] LLM+Forge 共置入口、真实图像/KV/direct NVML/新鲜度/swap/provenance 门禁与最终冻结分析已实现；下一步先跑 512/K6 单组合 smoke，通过后对 512/K6、4096/K4、2048/K4 各跑 5 轮，核验后冻结 `H_D`，再进入 D 阶段。
+  5. [x] `c3_h_tts_colocated_20260831_v1.json` 已冻结 9B 模型口径的 `G_safe=501.282 MiB` 与 `H_TTS`；旧 artifact 中 15 条 FULL+T3 的 `capacity_admissible=false` 来自绝对峰值再次叠加完整 `G_safe` 的 idle 重复计数，原始峰值测量有效；
+  6. [x] 512/K6+Forge 与探索性 512/K4+Forge 已真实运行，只有 swap 门失败，增长约 290.44/2070.32 MiB；停止 K2 和正式 15 条，9B `H_D` 不冻结。
+- [ ] **4B+`mmproj` 主模型迁移门**：
+  1. [ ] 固定主 GGUF/projector 的来源、版本、SHA-256、量化与文件大小；
+  2. [ ] 接通 llama.cpp/libmtmd 真实图片输入，保存固定图片哈希、图片 token 与 projector 实际执行证据；
+  3. [ ] 测量 `TEXT_ONLY/VISION_WARM` 的显存、RSS、加载/释放、KV、direct NVML 和 swap；
+  4. [ ] 通过文本/视觉 K0/FULL 端点 smoke 后，重跑 4B 的 C2/C3、KV 与 LLM+TTS/Forge 共置并重算 H。
 
-**LLM+Forge 共置实现记录（2026-08-31）**：新增 `llm_forge_colocated.py`、`llm_forge_parent.py`、`llm_forge_child.py`、`llm_forge_plan.py`、`forge_colocated_capacity.py` 与 `analyze_forge_colocated_results.py`。入口强制读取 `c3_h_direct_nvml_20260831_v1.json` 和同 run 的 Forge direct NVML summary，只接受逐 context 的 H_D 边界候选。父进程先用真实 Forge API warmup，随后每轮独立子进程在 Forge 常驻时加载 GGUF、填充 `context+128` KV 状态并请求 b=1 txt2img；保存真实图像、整卡时间线、同步快照、KV/affinity/资源归还与失败记录。容量统一使用 `(P_colocated-B_idle_reference)+G_safe<=V_GPU`，正残差为真实共置增量超过 `M_L+M_D` 的正部。静态/Mock 通过不代表真实容量可行；必须先 smoke 再正式 15 条矩阵。
+**LLM+Forge 共置实现记录（2026-08-31）**：新增 `llm_forge_colocated.py`、`llm_forge_parent.py`、`llm_forge_child.py`、`llm_forge_plan.py`、`forge_colocated_capacity.py` 与 `analyze_forge_colocated_results.py`。原 9B 入口强制读取 `c3_h_direct_nvml_20260831_v1.json` 和同 run 的 Forge direct NVML summary，只接受逐 context 的 H_D 边界候选。父进程先用真实 Forge API warmup，随后每轮独立子进程在 Forge 常驻时加载 GGUF、填充 `context+128` KV 状态并请求 b=1 txt2img；保存真实图像、整卡时间线、同步快照、KV/affinity/资源归还与失败记录。容量统一使用 `(P_colocated-B_idle_reference)+G_safe<=V_GPU`，正残差为真实共置增量超过 `M_L+M_D` 的正部。该段描述的是已实现链路，不是继续运行 9B 正式矩阵的命令；9B 已在 K6/K4 smoke 后按 swap 门停止，入口须扩展到 4B+真实 `mmproj` 并重新筛选候选后，才按“端点 smoke → 正式矩阵”恢复执行。
 
 **C3 临界补测 v2 停止记录（2026-08-29）**：`c3_llm_critical_refinement_20260829_verified_v2` 完成 94/150 条后，在 C2048/K20/r5 因推理期 GPU 样本最大年龄 772.875 ms 超过 750 ms 有效性硬门而停止；其余有效性检查及该轮 jitter 性能目标均通过。94 条中所有记录的最大样本年龄均超过 500 ms，10 条超过 700 ms，第 91 条已达 749.570 ms。根因是周期 sampler 每次先查询整卡指标、再查询 WSL 驱动无法数值化返回的 compute-process 显存，后者不贡献正式曲线证据却显著拉长探针周期。修复仅在 LLM 周期 sampler 中关闭无效的进程显存查询；阶段性显存快照与整卡基线差值估算保持不变，750 ms 门槛不放宽。v2 保留为停止记录，不续跑、不用于完整曲线，现位于 `_archive/stopped/c3/`。
 
