@@ -53,6 +53,15 @@ VISION_MEASUREMENT_SEMANTICS: dict[str, str] = {
         "这是 projector 真实执行的直接证据。chunk_single 模式下为 None，"
         "此时只以返回码与位置推进作为间接证据。"
     ),
+    "uses_non_causal_encode": (
+        "该图像 chunk 的编码是否使用非因果注意力，由 mtmd_decode_use_non_causal(ctx, chunk)"
+        "按 chunk 查询，不是 context 级能力，因此逐 chunk 记录。"
+    ),
+    "projector_warmup_enabled": (
+        "libmtmd 的 warmup 是否开启。开启时会按 mmproj 声明的最大像素预留 compute buffer"
+        "（与本轮图片尺寸无关），该预留计入 projector warm 的显存增量；解释 M_V 时必须"
+        "说明这一部分是最大尺寸预留，而非本轮 448×448 图片的实际编码开销。"
+    ),
     "projector_load_s": "mtmd_init_from_file 的真实耗时，即 projector warm 成本。",
     "projector_free_s": "mtmd_free 的真实耗时，即 projector 释放成本。",
     "projector_gpu_card_delta_mb": (

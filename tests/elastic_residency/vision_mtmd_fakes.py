@@ -49,6 +49,8 @@ def install_fake_mtmd_module(fake: "FakeMtmd") -> types.ModuleType:
 
 
 class FakeContextParams:
+    """字段与真实 mtmd_context_params 对齐（本链路实际读写的子集）。"""
+
     def __init__(self) -> None:
         self.use_gpu = False
         self.print_timings = False
@@ -57,6 +59,7 @@ class FakeContextParams:
         self.image_max_tokens = -1
         self.image_min_tokens = -1
         self.media_marker = DEFAULT_MARKER
+        self.warmup = True
 
 
 class FakeInputText(ctypes.Structure):
@@ -133,8 +136,10 @@ class FakeMtmd:
     def mtmd_decode_use_mrope(self, ctx: Any) -> bool:
         return True
 
-    def mtmd_decode_use_non_causal(self, ctx: Any) -> bool:
-        return False
+    def mtmd_decode_use_non_causal(self, ctx: Any, chunk: Any) -> bool:
+        # 与真实绑定一致：按 chunk 查询（mtmd_decode_use_non_causal(ctx, chunk)）。
+        self.calls.append("use_non_causal")
+        return True
 
     def mtmd_get_marker(self, ctx: Any) -> bytes:
         return DEFAULT_MARKER

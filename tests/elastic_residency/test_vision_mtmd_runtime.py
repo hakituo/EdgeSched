@@ -67,6 +67,10 @@ class TestSessionLifecycle:
         assert evidence["uses_mrope"] is True
         assert evidence["media_marker"] == "<__media__>"
         assert evidence["projector_load_s"] >= 0.0
+        assert evidence["projector_warmup_enabled"] is True
+        # non-causal 是 per-chunk 属性，不得出现在 session 级证据里
+        assert "uses_non_causal_encode" not in evidence
+        assert "use_non_causal" not in mtmd.calls
         assert mtmd.init_params.use_gpu is True
         assert mtmd.init_params.n_threads == 14
         assert mtmd.init_params.image_max_tokens == 256
@@ -179,6 +183,11 @@ class TestChunkExecution:
         assert evidence["image_decode_total_s"] is not None
         assert "encode" in mtmd.calls and "decode_image" in mtmd.calls
         assert llm._ctx.cleared == 1
+        image_records = [
+            item for item in evidence["chunks"] if item["type_name"] == "image"
+        ]
+        assert [item["uses_non_causal_encode"] for item in image_records] == [True]
+        assert mtmd.calls.count("use_non_causal") == 1
 
     def test_chunk_single_mode_uses_upstream_helper(self, mmproj_file: Path) -> None:
         mtmd = FakeMtmd()

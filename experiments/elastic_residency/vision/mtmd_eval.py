@@ -188,6 +188,11 @@ def evaluate_chunks(
             )
         elif chunk_type == mtmd.MTMD_INPUT_CHUNK_TYPE_IMAGE:
             entry["type_name"] = "image"
+            # non-causal 是按 chunk 查询的属性（mtmd_decode_use_non_causal(ctx, chunk)），
+            # 不是 context 级能力，因此只能在这里逐 chunk 记录。
+            entry["uses_non_causal_encode"] = bool(
+                mtmd.mtmd_decode_use_non_causal(ctx, chunk)
+            )
             _require_capacity(llm, n_past_before, entry["n_tokens"])
             if mode == "chunk_single":
                 entry.update(

@@ -213,16 +213,14 @@ class MtmdVisionSession:
             "supports_vision": True,
             "supports_audio": bool(self._mtmd.mtmd_support_audio(ctx)),
             "uses_mrope": bool(self._mtmd.mtmd_decode_use_mrope(ctx)),
-            "uses_non_causal_encode": bool(
-                self._mtmd.mtmd_decode_use_non_causal(ctx)
-            ),
-            "media_marker": (
-                marker.decode("utf-8") if marker else None
-            ),
+            "media_marker": (marker.decode("utf-8") if marker else None),
             "requested_image_max_tokens": int(self.config.image_max_tokens),
             "requested_image_min_tokens": int(self.config.image_min_tokens),
             "n_threads": int(self.config.n_threads),
             "flash_attn_enabled": bool(self.config.flash_attn_enabled),
+            # warmup 由 libmtmd 按最大像素预留 compute buffer（与本轮图片尺寸无关），
+            # 会计入 projector warm 的显存增量，必须随证据记录以便正确解释 M_V。
+            "projector_warmup_enabled": bool(getattr(params, "warmup", True)),
         }
         return dict(self.open_evidence)
 
