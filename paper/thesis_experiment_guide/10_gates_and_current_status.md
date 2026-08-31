@@ -68,11 +68,13 @@ No-Go：
 - [x] C3 direct NVML 临界补测：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 已完成 150/150 条；与 C2 合并后覆盖 16 个驻留档位
 - [x] C3 KV 校准：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条，冻结 GPU/宿主 KV buffer 与完整序列化状态的独立语义
 - [x] T0/T3 direct NVML 隔离矩阵：v2 已基于干净 `0261e4da` 完成 30/30 技术核验，0 failure/fallback，运行期 swap 与同步查询新鲜度门禁完整；未晋升论文正文数据
-- [ ] **当前 C3 收尾（还剩共置验证）**：
+- [ ] **当前 C3 收尾（LLM+TTS 已完成，H_D 还缺 LLM+Forge 共置）**：
   1. [x] Forge b=1 direct NVML v1 已完成 5/5，逐窗新鲜度、swap 增长和核心归还门禁全部通过，`M_D=5484 MiB`；
   2. [x] 完整 16 档 + B2 direct v2 + Forge direct v1 已生成 `c3_h_direct_nvml_20260831_v1.json`：T0 边界为 512/K24、2048/K20、4096/K20，T3 三个 context 均筛到 FULL；这些仍是容量候选；
   3. [x] C4096/K20+T0 artifact smoke 已 1/1 技术通过：`P_colocated=6686.793 MiB`，T0 共置增量 2252 MiB，正残差 0，计入 501.282 MiB 安全余量后容量可行，0 failure/fallback；
-  4. 当前对 6 个保留候选各运行 5 轮正式共置矩阵，加入重复运行的 colocated 残差后冻结 `G_safe/H_TTS/H_D`
+  4. [x] `llm_tts_colocated_candidates_20260831_direct_nvml_v1` 已完成 6 候选×5 轮，共 30/30、0 failure/fallback；全部真实后端、direct NVML，新鲜度和 swap 门禁通过，colocated 正残差最大值为 0；
+  5. [x] `c3_h_tts_colocated_20260831_v1.json` 已离线复算并冻结 `G_safe=501.282 MiB` 与按 context 的 `H_TTS`：T0 为 512/K24、2048/K20、4096/K20，T3 三个 context 均为 FULL；
+  6. [ ] 实现并运行真实 LLM+Forge 单组合 smoke/正式共置，验证 512/K6、2048/K4、4096/K4 后才能冻结 `H_D`。LLM+TTS 结果不能替代该目标组合证据。
 - [x] **SM-A：GPU 计算份额能力探针**：真实 WSL 记录 `sm_a_20260830_direct_nvml_v1` 已完成；MPS binary 在 WSL2 不存在，结论**暂定 NO_GO**。注意：这是环境能力门禁导致的「暂停」，不是永久取消——待具备可用的原生 Linux 启动环境后重做 SM-A，再决定是否进入 SM-B/C/D/E
 - [ ] **SM-B（PAUSED）：TTS T0/T3 隔离 SM 曲线**：因 SM-A 暂定 NO_GO 按门禁暂停，不运行、不伪造受控 SM 曲线；待 SM-A 在原生 Ubuntu 恢复后重排
 - [ ] **SM-C（PAUSED）：Diffusion b=1 隔离 SM 曲线**：因 SM-A 暂定 NO_GO 按门禁暂停，不运行、不伪造受控 SM 曲线；待 SM-A 在原生 Ubuntu 恢复后重排
@@ -85,7 +87,7 @@ No-Go：
 - [ ] **队列视界 predictor/planner（GATED）**：C3 校准、真实共置 smoke/矩阵、colocated 残差和 S0 Go/No-Go 完成前不实现。Go 后先用 calibration split 建立“画像插值 + 有界 EWMA 残差”，再冻结 queue horizon、转换安全余量与 minimum residency window；正式 evaluation 比较 Pareto-only、仅转换成本、queue-horizon-aware EdgeSched 与 oracle
 - [ ] 同步论文、图表和必要的 C++ 契约
 
-B1/B2 已确认 T0/T3 是条件式 Pareto，T0/T3 direct NVML v2 已完成 30/30 技术核验；C2+C3 direct NVML 已完成 16 档（共 240 条）性能曲线，独立 KV 校准 48/48、Forge direct NVML v1 5/5 与 C4096/K20+T0 共置 artifact smoke 1/1 也已完成。SM-A 已在真实 WSL2 中因 MPS binary 不存在判定**暂定 NO_GO**——这是环境门禁导致的暂停而非永久取消，待原生 Ubuntu 恢复 SM-A 后再决定是否进入 SM-B/C/D/E；当前不修改在线规划器、不伪造受控 SM 曲线。当前运行 6 个保留候选×5 轮正式共置矩阵，随后按重复运行的 colocated 残差冻结 `G_safe/H_TTS/H_D`；其后实现 CPU 核数画像入口，再跑辅助任务 1/2/4 核曲线与 `R_sys={0,1,2,4}`，必要时补 LLM/TTS 核数扩展曲线，最后在原生 Ubuntu 恢复 SM-A，形成 CPU＋显存驻留＋SM 联合调度。只有上述真实性和可行性门禁形成 Go 结论后，才实现 predictor 与 queue-horizon-aware transition planner；Pareto 过滤保留为目标配置选择规则，不单独作为算法创新点。
+B1/B2 已确认 T0/T3 是条件式 Pareto，T0/T3 direct NVML v2 已完成 30/30 技术核验；C2+C3 direct NVML 已完成 16 档（共 240 条）性能曲线，独立 KV 校准 48/48、Forge direct NVML v1 5/5 与 LLM+TTS 正式共置 30/30 也已完成。正式共置的正残差最大值为 0，`G_safe=501.282 MiB` 与按 context 的 `H_TTS` 已冻结；`H_D` 仍等待真实 LLM+Forge 共置，不得用隔离加法或 LLM+TTS 结果替代。SM-A 已在真实 WSL2 中因 MPS binary 不存在判定**暂定 NO_GO**——这是环境门禁导致的暂停而非永久取消，待原生 Ubuntu 恢复 SM-A 后再决定是否进入 SM-B/C/D/E；当前不修改在线规划器、不伪造受控 SM 曲线。完成 `H_D` 共置验证后实现 CPU 核数画像入口，再跑辅助任务 1/2/4 核曲线与 `R_sys={0,1,2,4}`，必要时补 LLM/TTS 核数扩展曲线，最后在原生 Ubuntu 恢复 SM-A。只有上述真实性和可行性门禁形成 Go 结论后，才实现 predictor 与 queue-horizon-aware transition planner；Pareto 过滤保留为目标配置选择规则，不单独作为算法创新点。
 
 ---
 

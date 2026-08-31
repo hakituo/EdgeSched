@@ -11,7 +11,8 @@
 5. ``tts_colocated_increment_mb = P_colocated - B_LLM``；
 6. ``colocated_positive_residual_mb = max(0, colocated_increment - isolated_increment)``
    （isolated 增量来自同配置 B1/B2 离线结果，运行时注入，缺失时保持 None）；
-7. 容量裁决只用实测整卡峰值：``P_colocated + safety_margin <= gpu_total``。
+7. 容量裁决使用实测整卡增量：
+   ``(P_colocated - B_idle) + G_safe <= gpu_total``；另保留物理峰值越界检查。
    M_L(k, context) 已包含该 LLM 配置实际的权重、KV buffer、compute buffer
    与 workspace，本入口不得再额外加一次 KV，避免重复计数。
 
@@ -52,6 +53,9 @@ from experiments.elastic_residency.contracts import (  # noqa: E402
 )
 from experiments.elastic_residency.colocated_runtime_evidence import (  # noqa: E402
     assess_colocated_runtime,
+)
+from experiments.elastic_residency.colocated_capacity import (  # noqa: E402
+    colocated_metrics,
 )
 from experiments.elastic_residency.colocated_plan import (  # noqa: E402
     ColocatedCandidate,
@@ -107,51 +111,6 @@ def parse_isolated_increments(items: list[str] | None) -> dict[str, float]:
             raise ValueError(f"非法的隔离增量条目: {item!r}，应为 CONFIG=value")
         result[name.strip().upper()] = float(value)
     return result
-
-
-def colocated_metrics(
-    *,
-    b_llm_mb: float,
-    p_colocated_mb: float,
-    gpu_total_mb: float,
-    safety_margin_mb: float,
-    tts_isolated_increment_mb: float | None,
-) -> dict[str, Any]:
-    """共置残差与容量裁决公式（纯函数，供单元测试锁定口径）。
-
-    容量裁决只使用实测整卡峰值 ``P_colocated``。M_L(k, context) 已包含
-    该 LLM 配置的 KV buffer，因此这里不接受也不叠加任何 KV 字段，
-    防止容量重复计数。
-    """
-
-    if b_llm_mb is None or p_colocated_mb is None:
-        raise ValueError("B_LLM 或 P_colocated 不可用时不得计算共置指标")
-    if p_colocated_mb < b_llm_mb:
-        raise ValueError("P_colocated 低于 B_LLM，测量口径不一致")
-    tts_colocated_increment_mb = p_colocated_mb - b_llm_mb
-    colocated_positive_residual_mb = (
-        max(0.0, tts_colocated_increment_mb - tts_isolated_increment_mb)
-        if tts_isolated_increment_mb is not None
-        else None
-    )
-    capacity_headroom_mb = gpu_total_mb - p_colocated_mb
-    capacity_admissible = p_colocated_mb + safety_margin_mb <= gpu_total_mb
-    return {
-        "b_llm_mb": b_llm_mb,
-        "p_colocated_mb": p_colocated_mb,
-        "gpu_total_mb": gpu_total_mb,
-        "safety_margin_mb": safety_margin_mb,
-        "tts_colocated_increment_mb": tts_colocated_increment_mb,
-        "tts_isolated_increment_mb": tts_isolated_increment_mb,
-        "colocated_positive_residual_mb": colocated_positive_residual_mb,
-        "capacity_headroom_mb": capacity_headroom_mb,
-        "capacity_admissible": capacity_admissible,
-        "capacity_formula": (
-            "P_colocated + safety_margin <= gpu_total "
-            "(kv 已含在实测峰值内，不额外叠加)"
-        ),
-        "kv_buffer_added_to_capacity": False,
-    }
 
 
 def _stage_snapshot(
@@ -416,6 +375,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
     )
     isolated_map = parse_isolated_increments(args.tts_isolated_increment_mb)
     metrics = colocated_metrics(
+        global_idle_baseline_mb=baseline_card_used_mb,
         b_llm_mb=b_llm_mb,
         p_colocated_mb=p_colocated_mb,
         gpu_total_mb=gpu_total_mb,
@@ -960,7 +920,8 @@ def run_parent(args: argparse.Namespace) -> Path:
         "failure_count": failure_count,
         "git_provenance_complete": git_complete,
         "capacity_formula": (
-            "P_colocated + safety_margin <= gpu_total；M_L 已含 KV buffer"
+            "(P_colocated - B_idle) + G_safe <= gpu_total and "
+            "P_colocated <= gpu_total；M_L 已含 KV buffer"
         ),
         "kv_measurement_semantics": KV_MEASUREMENT_SEMANTICS,
         "records": records,
@@ -981,12 +942,16 @@ def run_parent(args: argparse.Namespace) -> Path:
         "matrix_execution_ordinal",
         "passed",
         "n_gpu_layers",
+        "global_idle_baseline_mb",
         "b_llm_mb",
         "p_colocated_mb",
         "gpu_total_mb",
         "tts_colocated_increment_mb",
         "tts_isolated_increment_mb",
         "colocated_positive_residual_mb",
+        "colocated_card_delta_mb",
+        "physical_headroom_mb",
+        "safe_capacity_used_mb",
         "capacity_headroom_mb",
         "capacity_admissible",
         "kv_gpu_buffer_mb",
@@ -1010,6 +975,9 @@ def run_parent(args: argparse.Namespace) -> Path:
                     "matrix_execution_ordinal": record["matrix_execution_ordinal"],
                     "passed": record["passed"],
                     "n_gpu_layers": record["n_gpu_layers"],
+                    "global_idle_baseline_mb": metrics[
+                        "global_idle_baseline_mb"
+                    ],
                     "b_llm_mb": metrics["b_llm_mb"],
                     "p_colocated_mb": metrics["p_colocated_mb"],
                     "gpu_total_mb": metrics["gpu_total_mb"],
@@ -1022,6 +990,11 @@ def run_parent(args: argparse.Namespace) -> Path:
                     "colocated_positive_residual_mb": metrics[
                         "colocated_positive_residual_mb"
                     ],
+                    "colocated_card_delta_mb": metrics[
+                        "colocated_card_delta_mb"
+                    ],
+                    "physical_headroom_mb": metrics["physical_headroom_mb"],
+                    "safe_capacity_used_mb": metrics["safe_capacity_used_mb"],
                     "capacity_headroom_mb": metrics["capacity_headroom_mb"],
                     "capacity_admissible": metrics["capacity_admissible"],
                     "kv_gpu_buffer_mb": record.get("kv_gpu_buffer_mb"),

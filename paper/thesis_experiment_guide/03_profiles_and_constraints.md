@@ -109,7 +109,7 @@ M_L(r_L,K)+M_T(r_T)+M_D(b)+G_{safe}
 \le V_{GPU}.
 \]
 
-安全余量 \(G_{safe}\) 必须根据 idle GPU 高水位、`reserved-allocated` allocator slack、单模型峰值相加与真实共置峰值之间的正残差，以及重复运行峰值漂移共同校准，不能只写死为一个未经验证的比例。容量公式只用于筛选，最终可行性必须由目标组合真实同时加载并运行证明。
+安全余量 \(G_{safe}\) 必须根据 idle GPU 高水位、`reserved-allocated` allocator slack、单模型峰值相加与真实共置峰值之间的正残差，以及重复运行峰值漂移共同校准，不能只写死为一个未经验证的比例。由于 \(G_{safe}\) 已包含 idle 高水位，使用真实整卡绝对峰值 \(P_{colocated}\) 验证时必须按 \((P_{colocated}-B_{idle})+G_{safe}\le V_{GPU}\) 统一到增量口径，并另验 \(P_{colocated}\le V_{GPU}\)；不得把绝对峰值与完整 \(G_{safe}\) 直接相加而重复计入 idle。容量公式只用于筛选，最终可行性必须由目标组合真实同时加载并运行证明。
 
 ### 6.2 CPU 约束
 

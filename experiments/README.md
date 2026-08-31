@@ -207,7 +207,7 @@ python -m experiments.elastic_residency.llm_kv_cache_calibration \
 
 ### 12. LLM+TTS 真实共置显存测量
 
-`experiments/elastic_residency/llm_tts_colocated.py` 在同一进程加载真实 GGUF LLM（填充 context 后记录整卡基线 `B_LLM`）与 Qwen3-TTS（T0/T3 放置，分阶段 `torch.cuda.synchronize()` + reset peak），TTS 执行窗口内由 direct NVML 时间线和阶段快照取整卡峰值 `P_colocated`，并计算 `tts_colocated_increment_mb = P_colocated - B_LLM` 与 `colocated_positive_residual_mb = max(0, colocated_increment - isolated_increment)`（隔离增量由 `--tts-isolated-increment-mb CONFIG=value` 注入，缺失时保持 None，禁止估计）。容量裁决只用实测峰值：`P_colocated + safety_margin <= gpu_total`；`M_L(k, context)` 已包含该 LLM 配置的 KV buffer，容量计算不得再叠加一次 KV。共置候选由 C2+C3 新曲线分析后确定，先 smoke 后小矩阵：
+`experiments/elastic_residency/llm_tts_colocated.py` 在同一进程加载真实 GGUF LLM（填充 context 后记录整卡基线 `B_LLM`）与 Qwen3-TTS（T0/T3 放置，分阶段 `torch.cuda.synchronize()` + reset peak），TTS 执行窗口内由 direct NVML 时间线和阶段快照取整卡峰值 `P_colocated`，并计算 `tts_colocated_increment_mb = P_colocated - B_LLM` 与 `colocated_positive_residual_mb = max(0, colocated_increment - isolated_increment)`（隔离增量由 `--tts-isolated-increment-mb CONFIG=value` 注入，缺失时保持 None，禁止估计）。`G_safe` 已包含 idle GPU baseline high water，因此容量裁决使用 `(P_colocated - B_idle) + G_safe <= gpu_total`，并另以 `P_colocated <= gpu_total` 检查物理峰值；直接对绝对峰值再加完整 `G_safe` 会重复计算 idle。`M_L(k, context)` 已包含该 LLM 配置的 KV buffer，容量计算不得再叠加一次 KV。共置候选由 C2+C3 新曲线分析后确定，先 smoke 后小矩阵：
 
 ```bash
 python -m experiments.elastic_residency.llm_tts_colocated \
@@ -220,6 +220,8 @@ python -m experiments.elastic_residency.llm_tts_colocated \
 ```
 
 共置入口对 TTS 执行窗口的周期 direct NVML 样本和参与 `B_LLM/P_colocated` 的同步容量快照分别执行 750 ms 新鲜度硬门；swap 按全生命周期最大值相对起点的增长计算，默认容忍 4 MiB 的 WSL2 系统噪声，数百 MiB 级真实换页仍会失败。任何验收检查失败都会写入 `failures.jsonl`，不能只看 summary 最后一行。
+
+正式 6 候选×5 轮矩阵 `llm_tts_colocated_candidates_20260831_direct_nvml_v1` 已完成 30/30、0 failure/fallback。原始测量有效，但其运行时版本把绝对 `P_colocated` 再加完整 `G_safe`，对 15 条 FULL+T3 记录产生了 idle 重复计数的旧判定。无需重跑模型；`analyze_colocated_results.py` 复用原始 `B_idle/B_LLM/P_colocated` 离线重算，输出 `c3_h_tts_colocated_20260831_v1.json`：六个候选全部容量可行，colocated 正残差最大值为 0，`G_safe=501.282 MiB`，按 context 的 `H_TTS` 已冻结。`H_D` 仍须真实 LLM+Forge 共置，当前不得冻结。
 
 筛选后的正式矩阵使用 `--candidates CONTEXT:LLM:TTS ...` 显式列出候选；该参数覆盖 `--llm-configs/--tts-configs/--contexts` 的笛卡尔积，并按给定顺序执行每候选的重复轮次。最紧候选应放首位配合默认 fail-fast。正式 manifest 同时保存 GGUF 哈希、完整 TTS 模型树哈希及逐文件清单、参考音频哈希，不能只用 `config.json` 代替模型 provenance。
 

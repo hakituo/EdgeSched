@@ -157,6 +157,7 @@ class TestColocatedRuntimeEvidence:
 class TestColocatedMetrics:
     def test_increment_and_residual(self) -> None:
         metrics = colocated_metrics(
+            global_idle_baseline_mb=300.0,
             b_llm_mb=4000.0,
             p_colocated_mb=5500.0,
             gpu_total_mb=16384.0,
@@ -165,11 +166,15 @@ class TestColocatedMetrics:
         )
         assert metrics["tts_colocated_increment_mb"] == pytest.approx(1500.0)
         assert metrics["colocated_positive_residual_mb"] == pytest.approx(100.0)
-        assert metrics["capacity_headroom_mb"] == pytest.approx(16384.0 - 5500.0)
+        assert metrics["physical_headroom_mb"] == pytest.approx(16384.0 - 5500.0)
+        assert metrics["capacity_headroom_mb"] == pytest.approx(
+            16384.0 - (5500.0 - 300.0) - 1024.0
+        )
         assert metrics["capacity_admissible"] is True
 
     def test_negative_residual_clamps_to_zero(self) -> None:
         metrics = colocated_metrics(
+            global_idle_baseline_mb=300.0,
             b_llm_mb=4000.0,
             p_colocated_mb=5000.0,
             gpu_total_mb=16384.0,
@@ -180,6 +185,7 @@ class TestColocatedMetrics:
 
     def test_missing_isolated_increment_keeps_residual_none(self) -> None:
         metrics = colocated_metrics(
+            global_idle_baseline_mb=300.0,
             b_llm_mb=4000.0,
             p_colocated_mb=5000.0,
             gpu_total_mb=16384.0,
@@ -189,8 +195,9 @@ class TestColocatedMetrics:
         assert metrics["colocated_positive_residual_mb"] is None
         assert metrics["tts_colocated_increment_mb"] == pytest.approx(1000.0)
 
-    def test_capacity_verdict_uses_measured_peak_only(self) -> None:
+    def test_capacity_verdict_uses_idle_corrected_measured_peak(self) -> None:
         tight = colocated_metrics(
+            global_idle_baseline_mb=300.0,
             b_llm_mb=4000.0,
             p_colocated_mb=15800.0,
             gpu_total_mb=16384.0,
@@ -198,11 +205,26 @@ class TestColocatedMetrics:
             tts_isolated_increment_mb=100.0,
         )
         assert tight["capacity_admissible"] is False
-        assert tight["capacity_headroom_mb"] == pytest.approx(584.0)
+        assert tight["physical_headroom_mb"] == pytest.approx(584.0)
+        assert tight["capacity_headroom_mb"] == pytest.approx(-140.0)
+
+        # G_safe 已包含 idle，高峰绝对值直接加 G_safe 会重复计数并误判。
+        corrected = colocated_metrics(
+            global_idle_baseline_mb=475.6953125,
+            b_llm_mb=6134.79296875,
+            p_colocated_mb=7924.79296875,
+            gpu_total_mb=8151.0,
+            safety_margin_mb=501.2822265625,
+            tts_isolated_increment_mb=1979.09765625,
+        )
+        assert corrected["capacity_admissible"] is True
+        assert corrected["physical_headroom_mb"] == pytest.approx(226.20703125)
+        assert corrected["capacity_headroom_mb"] == pytest.approx(200.6201171875)
 
     def test_peak_below_baseline_raises(self) -> None:
         with pytest.raises(ValueError, match="口径不一致"):
             colocated_metrics(
+                global_idle_baseline_mb=300.0,
                 b_llm_mb=5000.0,
                 p_colocated_mb=4999.0,
                 gpu_total_mb=16384.0,
@@ -213,6 +235,7 @@ class TestColocatedMetrics:
     def test_none_inputs_raise_instead_of_zero(self) -> None:
         with pytest.raises(ValueError, match="不得计算"):
             colocated_metrics(
+                global_idle_baseline_mb=0.0,
                 b_llm_mb=None,  # type: ignore[arg-type]
                 p_colocated_mb=100.0,
                 gpu_total_mb=16384.0,
@@ -229,6 +252,7 @@ class TestColocatedMetrics:
                 f"colocated_metrics 不得接受 KV 字段: {name}"
             )
         metrics = colocated_metrics(
+            global_idle_baseline_mb=300.0,
             b_llm_mb=4000.0,
             p_colocated_mb=5000.0,
             gpu_total_mb=16384.0,

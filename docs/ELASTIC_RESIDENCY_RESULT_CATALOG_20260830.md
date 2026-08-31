@@ -34,10 +34,12 @@ experiment_results/elastic_residency/
 | C1 | `c1/c1_llm_residency_512_20260829_verified_v1/` | K0/FULL 端点 smoke |
 | C2 | `c2/c2_llm_residency_curve_20260829_direct_nvml_v2/` | 当前 90/90 粗驻留曲线 |
 | C3 | `c3/c3_llm_critical_refinement_20260829_direct_nvml_v2/` | 当前 150/150 临界细化曲线 |
-| C3 analysis | `c3_analysis/c3_h_direct_nvml_20260831_v1.json` | 完整 16 档 + B2 direct v2 + Forge direct v1 当前筛选；colocated 残差 pending，阈值尚未冻结 |
+| C3 analysis | `c3_analysis/c3_h_direct_nvml_20260831_v1.json` | 完整 16 档 + B2 direct v2 + Forge direct v1 容量筛选；保留为正式共置前输入 |
+| C3 LLM+TTS freeze | `c3_analysis/c3_h_tts_colocated_20260831_v1.json` | 复用正式共置 30 条离线复算；正残差 max=0，`G_safe=501.282 MiB` 与 H_TTS 已冻结，H_D pending LLM+Forge |
 | Forge | `forge/forge_b1_reprofile_20260831_direct_nvml_v1/` | 当前 direct NVML 5/5 校准，全部门禁通过，`M_D=5484 MiB` |
 | KV | `kv_calibration/c3_kv_cache_calibration_20260830_direct_nvml_v1/` | 当前 48/48 KV 容量与语义证据 |
 | LLM+TTS smoke | `llm_tts_colocated/llm_tts_colocated_c4096_k20_t0_smoke_20260831_v1/` | C4096/K20+T0 1/1 技术通过，0 failure/fallback；正残差 0，只作正式 artifact smoke |
+| LLM+TTS formal | `llm_tts_colocated/llm_tts_colocated_candidates_20260831_direct_nvml_v1/` | 6 候选×5 轮，30/30、0 failure/fallback；真实后端/direct NVML/新鲜度/swap/provenance 全通过；原始运行版容量字段有 idle 重复计数，测量无需重跑，以离线复算为准 |
 
 2026-08-30 整理后，当前区约为 342.62 MiB、736 个文件。大文件主要是逐轮 child JSON 和高频时间线，不是论文聚合表。
 
@@ -79,7 +81,7 @@ experiment_results/elastic_residency/
 
 1. C2/C3 最终性能曲线只使用 `direct_nvml_v2` 两个批次。
 2. KV 容量只使用 `c3_kv_cache_calibration_20260830_direct_nvml_v1`。
-3. B2 direct v2 与 Forge direct NVML v1 是当前同后端隔离校准；B2 v1 与 Forge 2026-08-29 v2 只作旧口径基线。冻结 `G_safe/H_TTS/H_D` 前仍须完成真实共置残差。
+3. B2 direct v2 与 Forge direct NVML v1 是当前同后端隔离校准；B2 v1 与 Forge 2026-08-29 v2 只作旧口径基线。LLM+TTS 正式共置已冻结 `G_safe/H_TTS`；`H_D` 仍须真实 LLM+Forge 共置。
 4. `_archive/stopped` 中的部分记录即使单轮 `passed=true`，整个矩阵仍不完整，禁止拼接。
 5. `timeline.jsonl` 和 `*_child.json` 是原始可追溯证据；清理磁盘前应整体压缩归档，不能只保留 summary 后删除原始轮次。
 
