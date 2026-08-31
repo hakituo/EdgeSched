@@ -154,7 +154,7 @@ python -m experiments.elastic_residency.llm_residency_curve \
 配置在每个轮次内确定性轮转，降低固定顺序热漂移。意外中断时，只能用完全相同的参数、源码 commit、Python/平台和模型 manifest 加 `--resume`；已有 `(context, config, run)` 会跳过，矩阵外或重复记录会拒绝。子轮超时、进程失败或测量有效性验收失败默认立即停止，总汇总失败时命令返回非零。C2 的 jitter 阈值是待测性能目标而非证据有效性门，因此正式矩阵必须显式使用 `observe`：超标轮次写入 `performance_target_checks` 并保留在完整曲线中，不会被隐藏或改写为通过。若 `failures.jsonl` 非空，该 run 即使后来补齐也不能成为通过记录，修复后必须换新 run id。
 
 正式 GPU sampler 通过 ctypes 直接调用 NVML，不启动 `nvidia-smi` 子进程，也不做静默 CLI fallback；manifest、summary 和每轮验收必须记录 `gpu_telemetry_backend=direct_nvml` 与 `gpu_cli_subprocess_used=false`。GPU 数据最大年龄 750 ms 仍是测量有效性硬门。周期探针若越过下一采样 tick，完成后必须立即补采，禁止继续等待固定网格而人为放大陈旧窗口；`gpu_deadline_recovery_count` 记录这种恢复。驻留曲线的显存查询必须位于辅助 utilization/power/temperature 查询之后，使样本时间戳紧邻显存读数。WSL 若无法返回数值化的 compute-process 显存，必须保留 unavailable 原因；`gpu_card_delta_from_baseline_mb` 只表示隔离运行下的整卡差值，不得称为精确进程显存。TTS 另以 PyTorch allocated/reserved 峰值作为框架内主证据。
-更早的 B2/Forge/C2/C3 结果使用旧采样口径，只保留为工程基线和链路证据。C2 direct v2（90 条）、C3 direct v2（150 条）与 B2 direct v2（30 条）已完成同后端技术核验；参与 `H_D` 的 Forge 整卡数据仍须 direct NVML 校准，不能跨后端拼接为论文阈值。
+更早的 B2/Forge/C2/C3 结果使用旧采样口径，只保留为工程基线和链路证据。C2 direct v2（90 条）、C3 direct v2（150 条）、B2 direct v2（30 条）与 Forge direct NVML v1（5 条）已完成同后端技术核验；下一步只用这些当前批次重新筛选候选，不能跨后端拼接为论文阈值。
 冻结的 10 档临界矩阵（K2/K4/K6/K10/K12/K14/K18/K20/K28/K30、3 上下文、5 轮、128 生成 token、observe）标记为 `c3_critical_refinement`；建议显式使用 `--output-root experiment_results/elastic_residency/c3`，避免与 C1 smoke 产物混放。有效性门失败时控制台会直接打印失败检查名。
 
 ### 10.1 Forge b=1 direct NVML 同后端校准
@@ -171,6 +171,21 @@ python -m experiments.elastic_residency.forge_b1_reprofile \
 ```
 
 `forge_runtime_evidence.py` 对参与 `M_D` 计算的 idle baseline、resident baseline 和每个正式 measurement 窗口分别检查 GPU 样本年龄；任一窗口无有效年龄样本或超过 750 ms，都会使 `summary.passed=false` 并写入 `failures.jsonl`。direct NVML 后端和样本数通过但样本过期，仍视为无效批次。旧 `forge_b1_reprofile_20260829_verified_v2` 只保留为旧口径工程基线。
+
+正式记录 `forge_b1_reprofile_20260831_direct_nvml_v1` 已完成 5/5，`summary.passed=true`，`M_D=5484 MiB`。完成后可关闭 Forge 服务；下一步是纯离线的完整 16 档候选筛选：
+
+```bash
+python experiments/elastic_residency/analyze_results.py \
+  --c2-summary experiment_results/elastic_residency/c2/c2_llm_residency_curve_20260829_direct_nvml_v2/summary.json \
+  --c3-summary experiment_results/elastic_residency/c3/c3_llm_critical_refinement_20260829_direct_nvml_v2/summary.json \
+  --expected-llm-config-count 16 \
+  --b2-summary experiment_results/elastic_residency/b2/b2_tts_pareto_matrix_20260831_direct_nvml_v2/summary.json \
+  --forge-summary experiment_results/elastic_residency/forge/forge_b1_reprofile_20260831_direct_nvml_v1/summary.json \
+  --tts-configs T0,T3 \
+  --output experiment_results/elastic_residency/c3_analysis/c3_h_direct_nvml_20260831_v1.json
+```
+
+`analysis_input_merge.py` 要求 C2/C3 均通过、context 集合一致、档位互斥，并在每个 context 合并为恰好 16 档；不满足时命令失败且不产生可用筛选结果。该输出仍是共置 smoke 的候选清单，不是冻结阈值。
 
 ### 11. KV Cache 容量校准（独立入口，不影响 C2/C3 曲线）
 

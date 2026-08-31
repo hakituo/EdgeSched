@@ -34,8 +34,8 @@ experiment_results/elastic_residency/
 | C1 | `c1/c1_llm_residency_512_20260829_verified_v1/` | K0/FULL 端点 smoke |
 | C2 | `c2/c2_llm_residency_curve_20260829_direct_nvml_v2/` | 当前 90/90 粗驻留曲线 |
 | C3 | `c3/c3_llm_critical_refinement_20260829_direct_nvml_v2/` | 当前 150/150 临界细化曲线 |
-| C3 analysis | `c3_analysis/*.json` | 旧 TTS/Forge 口径下的候选筛选；阈值尚未冻结 |
-| Forge | `forge/forge_b1_reprofile_20260829_verified_v2/` | 旧整卡采样基线；等待 direct NVML 同后端校准 |
+| C3 analysis | `c3_analysis/*.json` | 旧筛选保留追溯；当前将用完整 16 档与 direct NVML 同后端输入生成 v1，阈值尚未冻结 |
+| Forge | `forge/forge_b1_reprofile_20260831_direct_nvml_v1/` | 当前 direct NVML 5/5 校准，全部门禁通过，`M_D=5484 MiB` |
 | KV | `kv_calibration/c3_kv_cache_calibration_20260830_direct_nvml_v1/` | 当前 48/48 KV 容量与语义证据 |
 
 2026-08-30 整理后，当前区约为 342.62 MiB、736 个文件。大文件主要是逐轮 child JSON 和高频时间线，不是论文聚合表。
@@ -78,37 +78,35 @@ experiment_results/elastic_residency/
 
 1. C2/C3 最终性能曲线只使用 `direct_nvml_v2` 两个批次。
 2. KV 容量只使用 `c3_kv_cache_calibration_20260830_direct_nvml_v1`。
-3. B2 direct v2 是当前 TTS 隔离校准；B2 v1 与 Forge v2 只作旧口径基线。冻结 `G_safe/H_TTS/H_D` 前仍须完成 Forge direct NVML 校准和真实共置残差。
+3. B2 direct v2 与 Forge direct NVML v1 是当前同后端隔离校准；B2 v1 与 Forge 2026-08-29 v2 只作旧口径基线。冻结 `G_safe/H_TTS/H_D` 前仍须完成真实共置残差。
 4. `_archive/stopped` 中的部分记录即使单轮 `passed=true`，整个矩阵仍不完整，禁止拼接。
 5. `timeline.jsonl` 和 `*_child.json` 是原始可追溯证据；清理磁盘前应整体压缩归档，不能只保留 summary 后删除原始轮次。
 
 ## 5. 下一批产物
 
-下一批正式结果写入（C3 收尾当前第 1 步）：
+下一项离线筛选结果写入（C3 收尾当前第 2 步）：
 
 ```text
-experiment_results/elastic_residency/forge/
-  forge_b1_reprofile_20260831_direct_nvml_v1/
+experiment_results/elastic_residency/c3_analysis/
+  c3_h_direct_nvml_20260831_v1.json
 ```
 
-B2 direct v2 已完成技术核验，因此下一批转为 Forge b=1 direct NVML 同后端校准。旧 `forge_b1_reprofile_20260829_verified_v2` 保留为工程基线，不与新批次拼接；新入口对 idle baseline、resident baseline 和每个正式 measurement 窗口逐窗执行 750 ms GPU 样本年龄硬门，并保留 swap 增长、GPU 探针统计和核心归还证据。
+B2 direct v2 与 Forge direct NVML v1 已完成技术核验。旧 `forge_b1_reprofile_20260829_verified_v2` 保留为工程基线，不与新批次拼接；筛选入口必须同时合并 C2 粗测 6 档与 C3 细化 10 档，并对每个 context 强制恰好 16 档。该 JSON 只确定 LLM+TTS smoke 候选，不是论文正文证据或冻结阈值。
 
-调用模板（WSL2，`mvp_core-cu128` venv；运行前将 `<clean_commit>` 替换为当时 Windows 干净 HEAD）：
+调用模板（WSL2，`mvp_core-cu128` venv；无需启动 Forge 服务）：
 
 ```bash
 cd /home/leslie/mvp_core
 
 /home/leslie/.venvs/mvp_core-cu128/bin/python \
-  experiments/elastic_residency/forge_b1_reprofile.py \
-  --run-id forge_b1_reprofile_20260831_direct_nvml_v1 \
-  --iterations 5 \
-  --warmup 1 \
-  --max-gpu-sample-age-ms 750 \
-  --max-swap-growth-mb 4 \
-  --output-root experiment_results/elastic_residency/forge \
-  --source-git-commit <clean_commit> \
-  --source-git-dirty false \
-  --source-git-status-entry-count 0
+  experiments/elastic_residency/analyze_results.py \
+  --c2-summary experiment_results/elastic_residency/c2/c2_llm_residency_curve_20260829_direct_nvml_v2/summary.json \
+  --c3-summary experiment_results/elastic_residency/c3/c3_llm_critical_refinement_20260829_direct_nvml_v2/summary.json \
+  --expected-llm-config-count 16 \
+  --b2-summary experiment_results/elastic_residency/b2/b2_tts_pareto_matrix_20260831_direct_nvml_v2/summary.json \
+  --forge-summary experiment_results/elastic_residency/forge/forge_b1_reprofile_20260831_direct_nvml_v1/summary.json \
+  --tts-configs T0,T3 \
+  --output experiment_results/elastic_residency/c3_analysis/c3_h_direct_nvml_20260831_v1.json
 ```
 
-运行该入口前必须确认 Forge HTTP API 已在独立 `forge-cu128` 环境启动。该批次只解决 diffusion b=1 的同后端容量口径；SM-A 的原生 Linux 恢复属于独立门禁，不混入本批次。
+命令只读取已落盘的 summary；Forge 终端可以关闭。输出生成后仍须检查输入 run id、每个 context 的 16 档集合、`G_safe` pending 分量和候选边界，再决定单组合 smoke 参数。

@@ -2,7 +2,7 @@
 """C 阶段收尾分析：G_safe 校准、H_TTS/H_D 计算与临界补测建议。
 
 输入：
-- C2 驻留曲线 summary.json（``by_context_config.<ctx>.<config>.gpu_delta_mb``）；
+- C2 粗驻留曲线与 C3 临界细化 summary.json；二者必须通过且按 context 合并为完整 16 档；
 - B2 TTS 组件矩阵 summary.json（``by_config.<T>.max_card_delta_mb``、
   ``torch_peak_allocated_mb`` / ``torch_peak_reserved_mb``）；
 - 可选 Forge b=1 复测 summary.json（forge_b1_reprofile.py 产物，
@@ -21,6 +21,7 @@
 用法：
   python experiments/elastic_residency/analyze_results.py \\
       --c2-summary experiment_results/elastic_residency/c2/<run>/summary.json \\
+      --c3-summary experiment_results/elastic_residency/c3/<run>/summary.json \\
       --b2-summary experiment_results/elastic_residency/b2/<run>/summary.json \\
       [--forge-summary experiment_results/elastic_residency/forge/<run>/summary.json] \\
       [--output experiment_results/elastic_residency/c3_analysis/<name>.json]
@@ -30,8 +31,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any, Mapping
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from experiments.elastic_residency.analysis_input_merge import (  # noqa: E402
+    merge_llm_curve_summaries,
+)
 
 SCHEMA_VERSION = "edgesched.elastic_residency.v1"
 
@@ -336,6 +346,9 @@ def analyze(
         "analysis_name": "c_stage_gsafe_h_calculation",
         "inputs": {
             "c2_run_id": c2_summary.get("run_id"),
+            "llm_curve_run_ids": c2_summary.get(
+                "source_run_ids", [c2_summary.get("run_id")]
+            ),
             "b2_run_id": b2_summary.get("run_id"),
             "forge": {
                 "source": forge["source"],
@@ -361,6 +374,8 @@ def analyze(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--c2-summary", required=True)
+    parser.add_argument("--c3-summary", required=True)
+    parser.add_argument("--expected-llm-config-count", type=int, default=16)
     parser.add_argument("--b2-summary", required=True)
     parser.add_argument("--forge-summary")
     parser.add_argument("--legacy-forge-peak-mb", type=float)
@@ -374,10 +389,21 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
+    c2_summary = load_json(args.c2_summary)
+    c3_summary = load_json(args.c3_summary)
+    c2_summary.setdefault("run_id", Path(args.c2_summary).resolve().parent.name)
+    c3_summary.setdefault("run_id", Path(args.c3_summary).resolve().parent.name)
+    llm_summary = merge_llm_curve_summaries(
+        c2_summary,
+        c3_summary,
+        expected_config_count=args.expected_llm_config_count,
+    )
     forge_summary = load_json(args.forge_summary) if args.forge_summary else None
+    b2_summary = load_json(args.b2_summary)
+    b2_summary.setdefault("run_id", Path(args.b2_summary).resolve().parent.name)
     result = analyze(
-        c2_summary=load_json(args.c2_summary),
-        b2_summary=load_json(args.b2_summary),
+        c2_summary=llm_summary,
+        b2_summary=b2_summary,
         forge_summary=forge_summary,
         legacy_forge_peak_mb=args.legacy_forge_peak_mb,
         legacy_forge_idle_mb=args.legacy_forge_idle_mb,
@@ -386,6 +412,7 @@ def main() -> None:
         tts_configs=[item.strip() for item in args.tts_configs.split(",") if item.strip()],
     )
     result["inputs"]["c2_summary_path"] = str(Path(args.c2_summary).resolve())
+    result["inputs"]["c3_summary_path"] = str(Path(args.c3_summary).resolve())
     result["inputs"]["b2_summary_path"] = str(Path(args.b2_summary).resolve())
     if args.forge_summary:
         result["inputs"]["forge_summary_path"] = str(

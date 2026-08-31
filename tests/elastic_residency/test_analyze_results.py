@@ -14,6 +14,9 @@ from experiments.elastic_residency.analyze_results import (
     extract_tts_profiles,
     suggest_refinements,
 )
+from experiments.elastic_residency.analysis_input_merge import (
+    merge_llm_curve_summaries,
+)
 
 
 def _c2_summary() -> dict[str, Any]:
@@ -24,12 +27,30 @@ def _c2_summary() -> dict[str, Any]:
 
     return {
         "run_id": "c2_test",
+        "passed": True,
         "by_context_config": {
             "512": {
                 "K0": _config(127.0),
                 "K16": _config(3373.0),
                 "K24": _config(4383.0),
                 "FULL": _config(5543.0),
+            },
+        },
+    }
+
+
+def _c3_summary() -> dict[str, Any]:
+    return {
+        "run_id": "c3_test",
+        "passed": True,
+        "by_context_config": {
+            "512": {
+                "K8": {
+                    "gpu_delta_mb": {"mean": 2000.0, "max": 2004.0, "min": 1998.0}
+                },
+                "K20": {
+                    "gpu_delta_mb": {"mean": 3900.0, "max": 3904.0, "min": 3898.0}
+                },
             },
         },
     }
@@ -66,6 +87,43 @@ def test_extract_llm_memory_curve_reads_by_context() -> None:
     assert set(curve) == {"512"}
     assert curve["512"]["K24"]["mean"] == 4383.0
     assert curve["512"]["FULL"]["max"] == 5547.0
+
+
+def test_merge_llm_curves_requires_complete_non_overlapping_inputs() -> None:
+    merged = merge_llm_curve_summaries(
+        _c2_summary(), _c3_summary(), expected_config_count=6
+    )
+    assert merged["source_run_ids"] == ["c2_test", "c3_test"]
+    assert set(merged["by_context_config"]["512"]) == {
+        "K0",
+        "K8",
+        "K16",
+        "K20",
+        "K24",
+        "FULL",
+    }
+
+    incomplete = _c3_summary()
+    incomplete["by_context_config"]["512"].pop("K20")
+    try:
+        merge_llm_curve_summaries(
+            _c2_summary(), incomplete, expected_config_count=6
+        )
+    except ValueError as exc:
+        assert "预期 6" in str(exc)
+    else:  # pragma: no cover - 防止门禁失效
+        raise AssertionError("不完整 16 档输入必须被拒绝")
+
+    duplicate = _c3_summary()
+    duplicate["by_context_config"]["512"]["K16"] = duplicate[
+        "by_context_config"
+    ]["512"]["K8"]
+    try:
+        merge_llm_curve_summaries(_c2_summary(), duplicate)
+    except ValueError as exc:
+        assert "重复" in str(exc)
+    else:  # pragma: no cover - 防止门禁失效
+        raise AssertionError("重复配置必须被拒绝")
 
 
 def test_extract_tts_profiles_computes_allocator_slack() -> None:

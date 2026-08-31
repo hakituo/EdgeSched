@@ -377,7 +377,7 @@ experiment_results/elastic_residency/_archive/
 
 ## 6. 建议的逐步交付节奏
 
-**当前状态（2026-08-31）**：C2+C3 direct NVML 已完成 16 档（共 240 条）性能曲线，KV 校准 48/48 已完成；C3 收尾第 1 步的 T0/T3 direct NVML v1 已完成 30/30，但审计发现运行期 swap/同步查询耗时字段和干净全树 provenance 不完整，正在以新增证据门禁准备 v2。SM-A/B/C 不在本计划 A–E 阶段内，其暂定 NO_GO/暂停状态见 `paper/thesis_experiment_guide/10_gates_and_current_status.md`。正式运行前必须从当时的干净 Windows HEAD 读取完整 commit，不在长期文档中硬编码临时 HEAD 或短期测试计数。
+**当前状态（2026-08-31）**：C2+C3 direct NVML 已完成 16 档（共 240 条）性能曲线，KV 校准 48/48、T0/T3 direct NVML v2 30/30 与 Forge direct NVML v1 5/5 均已完成技术核验。Forge 新批次 `M_D=5484 MiB`；当前用完整 16 档、B2 direct v2 与 Forge direct v1 重新筛选共置候选。SM-A/B/C 不在本计划 A–E 阶段内，其暂定 NO_GO/暂停状态见 `paper/thesis_experiment_guide/10_gates_and_current_status.md`。正式运行前必须从当时的干净 Windows HEAD 读取完整 commit，不在长期文档中硬编码临时 HEAD 或短期测试计数。
 
 - [x] **A1**：GPU/jitter/CPU 首样本/provenance 硬门槛已通过。证据：`a1_smoke_20260829_verified_v7`；v6 仅作历史调试记录。
 - [x] **B1**：T0–T3 真实单文本 smoke 通过。证据：`b1_tts_components_20260829_verified_v2`。
@@ -388,9 +388,9 @@ experiment_results/elastic_residency/_archive/
 - [x] **C3 Forge 旧后端复测**：`forge_b1_reprofile_20260829_verified_v2` 通过当时门禁，`M_D = 5252 MiB`；`c3_h_reprofiled_20260829.json` 只保留为候选筛选（`H_TTS(T0)=16`、`H_TTS(T3)=32+FULL`、`H_D` 为 512:8 / 2048:0 / 4096:0），不得当作 direct NVML 冻结值。
 - [x] **C3 临界补测**：`c3_llm_critical_refinement_20260829_direct_nvml_v2` 已完成 150/150 条并通过；与 C2 direct v2 合并后覆盖 16 个 LLM 驻留档位。
 - [x] **C3 KV 正式校准**：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条并通过，0 failure；`n_ctx/KV tokens=640/2176/4224` 对应 KV buffer 总量 `24/72/136 MiB`，完整序列化状态 `70.263/118.292/182.331 MiB`。
-- [ ] **当前 C3 收尾**（下一项正式实验为 Forge direct NVML 校准）：
-  1. 运行 `forge_b1_reprofile_20260831_direct_nvml_v1`：真实 Forge b=1、warmup 1 次、正式 5 轮；direct NVML、逐窗 750 ms 样本年龄、swap 增长与核心归还均为硬门；
-  2. 基于完整 16 档 LLM 曲线、B2 direct v2 与 Forge 新结果重新筛选最小共置候选；
+- [ ] **当前 C3 收尾**（下一项为离线完整 16 档候选筛选）：
+  1. [x] `forge_b1_reprofile_20260831_direct_nvml_v1`：真实 Forge b=1、warmup 1 次、正式 5 轮全部通过；direct NVML、逐窗 750 ms 样本年龄、swap 增长与核心归还均通过，`M_D=5484 MiB`；
+  2. 基于完整 16 档 LLM 曲线、B2 direct v2 与 Forge direct v1 重新筛选最小共置候选；分析入口必须同时读取 C2/C3，并拒绝每个 context 非 16 档的输入；
   3. 先跑 LLM+TTS 单组合 smoke，再对保留的 context/LLM/T0-T3 组合各跑 5 轮，得到 colocated 正残差；
   4. 重算 `G_safe`，冻结按 context 分组的 `H_TTS/H_D`，然后进入 D 阶段。
 
