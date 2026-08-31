@@ -225,6 +225,48 @@ python -m experiments.elastic_residency.llm_tts_colocated \
 
 筛选后的正式矩阵使用 `--candidates CONTEXT:LLM:TTS ...` 显式列出候选；该参数覆盖 `--llm-configs/--tts-configs/--contexts` 的笛卡尔积，并按给定顺序执行每候选的重复轮次。最紧候选应放首位配合默认 fail-fast。正式 manifest 同时保存 GGUF 哈希、完整 TTS 模型树哈希及逐文件清单、参考音频哈希，不能只用 `config.json` 代替模型 provenance。
 
+### 12.1 LLM+Forge 真实共置与 H_D 冻结
+
+`llm_forge_colocated.py` 强制读取完整 C3 screen 与同 run 的 Forge direct NVML summary，只接受 512/K6、2048/K4、4096/K4 三个筛选边界。父进程先通过真实 Forge API warmup；每轮独立 child 在 Forge 常驻时加载 GGUF、填充 `context+128` KV 状态，再执行固定 1024×1024、8 steps、Euler、b=1 请求。每轮保存真实 PNG、`B_Forge/B_LLM/P_colocated`、KV、direct NVML 时间线、同步快照新鲜度、swap、affinity、资源归还和失败记录。Forge 终端必须在整个 smoke/矩阵期间保持运行。
+
+Forge 服务终端：
+
+```bash
+cd /home/leslie/mvp_core/stable-diffusion-webui-forge-main
+source /home/leslie/.venvs/forge-cu128/bin/activate
+python launch.py --api --listen --port 7860 \
+  --skip-version-check --skip-python-version-check
+```
+
+先运行最紧的 512/K6 单组合 smoke：
+
+```bash
+cd /home/leslie/mvp_core
+/home/leslie/.venvs/mvp_core-cu128/bin/python \
+  experiments/elastic_residency/llm_forge_colocated.py \
+  --run-id llm_forge_colocated_c512_k6_smoke_<date>_v1 \
+  --candidates 512:K6 --runs 1 --warmup 1 \
+  --max-gpu-sample-age-ms 750 --max-swap-growth-mb 4 \
+  --output-root experiment_results/elastic_residency/llm_forge_colocated \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false --source-git-status-entry-count 0
+```
+
+smoke 的 manifest、summary、iteration、failure、PNG、child log、direct NVML、新鲜度、swap、KV、真实后端和 provenance 全部通过后，才运行 3 候选×5 轮正式矩阵；按预测安全余量从紧到松排列并默认 fail-fast：
+
+```bash
+/home/leslie/.venvs/mvp_core-cu128/bin/python \
+  experiments/elastic_residency/llm_forge_colocated.py \
+  --run-id llm_forge_colocated_h_d_<date>_direct_nvml_v1 \
+  --candidates 512:K6 4096:K4 2048:K4 --runs 5 --warmup 1 \
+  --max-gpu-sample-age-ms 750 --max-swap-growth-mb 4 \
+  --output-root experiment_results/elastic_residency/llm_forge_colocated \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false --source-git-status-entry-count 0
+```
+
+正式 15 条通过后，`analyze_forge_colocated_results.py` 合并已有 TTS freeze 与 Forge 共置正残差，重新检查 H_TTS 安全余量并冻结最终 `G_safe/H_TTS/H_D`。该分析仍写入 `experiment_results`，不会自动晋升 `paper/experiment_data/01_paper_main/`。
+
 WSL2 音频优先使用 WSLg Pulse；若当前会话无法枚举输出设备，可自动或显式回退到 Windows WASAPI：
 
 ```bash

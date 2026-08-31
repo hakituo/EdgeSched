@@ -649,8 +649,8 @@ def run_parent(args: argparse.Namespace) -> Path:
             "generation_tokens": args.generation_tokens,
             "performance_timing": "diagnostic_stage_time_only",
             "capacity_formula": (
-                "P_colocated + safety_margin <= gpu_total；"
-                "M_L 已含 KV buffer，容量裁决不重复叠加 KV"
+                "(P_colocated - B_idle) + G_safe <= gpu_total and "
+                "P_colocated <= gpu_total；M_L 已含 KV buffer"
             ),
             "kv_measurement_semantics": KV_MEASUREMENT_SEMANTICS,
         },

@@ -394,7 +394,9 @@ experiment_results/elastic_residency/_archive/
   3. [x] C4096/K20+T0 单组合 artifact smoke 已 1/1 通过：`P_colocated=6686.793 MiB`、T0 共置增量 2252 MiB、正残差 0、0 failure/fallback；
   4. [x] 6 个保留候选×5 轮正式 LLM+TTS 共置已完成 30/30，0 failure/fallback，全部 direct NVML 且新鲜度/swap 门禁通过；
   5. [x] `c3_h_tts_colocated_20260831_v1.json` 已冻结 `G_safe=501.282 MiB` 与 `H_TTS`；旧 artifact 中 15 条 FULL+T3 的 `capacity_admissible=false` 来自绝对峰值再次叠加完整 `G_safe` 的 idle 重复计数，原始峰值测量有效，无需重跑；
-  6. [ ] 真实 LLM+Forge 共置验证 512/K6、2048/K4、4096/K4，随后冻结 `H_D`，再进入 D 阶段。
+  6. [ ] LLM+Forge 共置入口、真实图像/KV/direct NVML/新鲜度/swap/provenance 门禁与最终冻结分析已实现；下一步先跑 512/K6 单组合 smoke，通过后对 512/K6、4096/K4、2048/K4 各跑 5 轮，核验后冻结 `H_D`，再进入 D 阶段。
+
+**LLM+Forge 共置实现记录（2026-08-31）**：新增 `llm_forge_colocated.py`、`llm_forge_parent.py`、`llm_forge_child.py`、`llm_forge_plan.py`、`forge_colocated_capacity.py` 与 `analyze_forge_colocated_results.py`。入口强制读取 `c3_h_direct_nvml_20260831_v1.json` 和同 run 的 Forge direct NVML summary，只接受逐 context 的 H_D 边界候选。父进程先用真实 Forge API warmup，随后每轮独立子进程在 Forge 常驻时加载 GGUF、填充 `context+128` KV 状态并请求 b=1 txt2img；保存真实图像、整卡时间线、同步快照、KV/affinity/资源归还与失败记录。容量统一使用 `(P_colocated-B_idle_reference)+G_safe<=V_GPU`，正残差为真实共置增量超过 `M_L+M_D` 的正部。静态/Mock 通过不代表真实容量可行；必须先 smoke 再正式 15 条矩阵。
 
 **C3 临界补测 v2 停止记录（2026-08-29）**：`c3_llm_critical_refinement_20260829_verified_v2` 完成 94/150 条后，在 C2048/K20/r5 因推理期 GPU 样本最大年龄 772.875 ms 超过 750 ms 有效性硬门而停止；其余有效性检查及该轮 jitter 性能目标均通过。94 条中所有记录的最大样本年龄均超过 500 ms，10 条超过 700 ms，第 91 条已达 749.570 ms。根因是周期 sampler 每次先查询整卡指标、再查询 WSL 驱动无法数值化返回的 compute-process 显存，后者不贡献正式曲线证据却显著拉长探针周期。修复仅在 LLM 周期 sampler 中关闭无效的进程显存查询；阶段性显存快照与整卡基线差值估算保持不变，750 ms 门槛不放宽。v2 保留为停止记录，不续跑、不用于完整曲线，现位于 `_archive/stopped/c3/`。
 

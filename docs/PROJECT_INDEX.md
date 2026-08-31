@@ -43,6 +43,10 @@
 | `experiments/elastic_residency/llm_tts_colocated.py` | LLM+TTS 真实共置显存测量 | direct NVML 整卡时间线、`B_idle/B_LLM/P_colocated`、正残差与扣除 idle 后的容量裁决；容量公式不重复叠加 idle 或 KV，正式组合支持 5 轮重复 |
 | `experiments/elastic_residency/colocated_capacity.py` | 共置容量纯计算口径 | `(P_colocated-B_idle)+G_safe`、物理峰值保护、正残差；供运行入口与离线复算共用 |
 | `experiments/elastic_residency/analyze_colocated_results.py` | 正式 LLM+TTS 共置离线复算 | 硬验正式重复矩阵、真实后端/direct NVML/新鲜度/swap/provenance，复算 G_safe 与按 context 冻结 H_TTS；H_D 保持待 LLM+Forge 共置 |
+| `experiments/elastic_residency/llm_forge_colocated.py` | LLM+Forge 真实共置入口 | 从 C3 screen 读取 H_D 候选和隔离画像；父进程预热真实 Forge，子进程加载精确 LLM/KV 状态并发起 b=1 请求；支持单候选 smoke、3 候选×5 轮正式矩阵、fail-fast 与严格 resume |
+| `experiments/elastic_residency/llm_forge_child.py` | 单轮 LLM+Forge 测量 | 保存真实 PNG、`B_Forge/B_LLM/P_colocated`、KV、direct NVML 时间线、新鲜度、swap、affinity、资源归还和容量裁决 |
+| `experiments/elastic_residency/llm_forge_plan.py` | H_D 候选/画像契约 | 解析 `CONTEXT:LLM`，拒绝 screen 边界外配置，绑定逐 context 的 M_L/M_D/G_safe/idle/GPU total |
+| `experiments/elastic_residency/analyze_forge_colocated_results.py` | H_D 正式冻结分析 | 硬验 3 候选×5 轮真实矩阵，合并 TTS/Forge colocated 正残差并重新检查 H_TTS，最终冻结 G_safe/H_TTS/H_D |
 | `experiments/elastic_residency/gpu_telemetry.py` | 论文 GPU 遥测 | 通过 ctypes 直接调用 NVML；正式路径禁止 CLI 子进程，显存末位查询保证时间戳语义，并记录设备级显存及 per-process unavailable 语义 |
 | `experiments/elastic_residency/forge_b1_reprofile.py` | Forge b=1 同日复测（C 阶段收尾） | 依赖已启动的 Forge HTTP API；产出空闲高水位、常驻基线、逐轮峰值与 `m_d_incremental_estimate_mb`，供 H_D 冻结 |
 | `experiments/elastic_residency/forge_runtime_evidence.py` | Forge 运行期有效性门禁 | 对所有参与容量计算的 idle/resident/measurement 窗口逐窗校验周期 GPU 样本年龄，并保留 Forge/WSL2 swap 增长容忍语义 |

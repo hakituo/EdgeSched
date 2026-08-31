@@ -87,39 +87,31 @@ experiment_results/elastic_residency/
 
 ## 5. 下一批产物
 
-下一批真实结果写入（C3 收尾正式共置矩阵）：
+下一批真实结果写入（C3 H_D 收尾）：
 
 ```text
-experiment_results/elastic_residency/llm_tts_colocated/
-  llm_tts_colocated_candidates_20260831_direct_nvml_v1/
+experiment_results/elastic_residency/llm_forge_colocated/
+  llm_forge_colocated_c512_k6_smoke_<date>_v1/
+  llm_forge_colocated_h_d_<date>_direct_nvml_v1/
 ```
 
-B2 direct v2、Forge direct NVML v1、完整 16 档筛选和 C4096/K20+T0 artifact smoke 均已完成技术核验。正式矩阵只运行 6 个筛选边界候选，每候选 5 轮，共 30 条；使用显式候选列表避免生成无关笛卡尔积。4096/FULL+T3 预测余量最小，放在第一位并保持默认 fail-fast；如果首轮加载或容量失败，整批立即停止并换新 run id 修复，不继续浪费后续轮次。
+B2、Forge 隔离校准、完整 16 档筛选和 LLM+TTS 正式共置均已完成。下一步先运行预测余量最小的 512/K6+Forge 单轮 smoke；通过后才运行 512/K6、4096/K4、2048/K4 各 5 轮，共 15 条。入口从 screen/Forge summary 读取 `M_L/M_D/G_safe/B_idle`，不允许手填另一口径；如果最紧候选失败则默认停止，不继续浪费矩阵。
 
-调用模板（WSL2，`mvp_core-cu128` venv；无需启动 Forge 服务；运行前以当时干净 Windows HEAD 替换 `<clean_commit>`）：
+Forge 服务必须在独立 `forge-cu128` 终端保持开启；实验命令使用 `mvp_core-cu128`：
 
 ```bash
 cd /home/leslie/mvp_core
 
 /home/leslie/.venvs/mvp_core-cu128/bin/python \
-  experiments/elastic_residency/llm_tts_colocated.py \
-  --run-id llm_tts_colocated_candidates_20260831_direct_nvml_v1 \
-  --candidates \
-    4096:FULL:T3 \
-    2048:FULL:T3 \
-    512:FULL:T3 \
-    4096:K20:T0 \
-    2048:K20:T0 \
-    512:K24:T0 \
-  --runs 5 \
-  --safety-margin-mb 501.2822265625 \
-  --tts-isolated-increment-mb T0=3255.03515625 T3=1979.09765625 \
+  experiments/elastic_residency/llm_forge_colocated.py \
+  --run-id llm_forge_colocated_c512_k6_smoke_<date>_v1 \
+  --candidates 512:K6 --runs 1 --warmup 1 \
   --max-gpu-sample-age-ms 750 \
   --max-swap-growth-mb 4 \
-  --output-root experiment_results/elastic_residency/llm_tts_colocated \
+  --output-root experiment_results/elastic_residency/llm_forge_colocated \
   --source-git-commit <clean_commit> \
   --source-git-dirty false \
   --source-git-status-entry-count 0
 ```
 
-入口会在 manifest 中固定完整 GGUF、TTS 模型树和参考音频哈希。运行后必须检查 30 条唯一 key、每候选 5 轮、manifest、summary、iterations、failures、WAV、direct NVML、周期与同步快照新鲜度、swap 增长、真实 LLM/TTS 后端、KV 状态和干净 Git provenance；不能只凭最后一行宣布完成。
+运行后必须检查 manifest、summary、iterations、failures、真实 PNG、child log、真实 LLM+Forge 后端、direct NVML、周期与同步快照新鲜度、swap、KV 状态、容量裁决和完整 Git provenance；不能只凭最后一行宣布完成。smoke 未通过前不得运行正式 15 条，也不得冻结 H_D。
