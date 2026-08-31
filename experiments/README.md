@@ -154,6 +154,59 @@ python -m experiments.elastic_residency.llm_residency_curve \
 
 配置在每个轮次内确定性轮转，降低固定顺序热漂移。意外中断时，只能用完全相同的参数、源码 commit、Python/平台和模型 manifest 加 `--resume`；已有 `(context, config, run)` 会跳过，矩阵外或重复记录会拒绝。子轮超时、进程失败或测量有效性验收失败默认立即停止，总汇总失败时命令返回非零。C2 的 jitter 阈值是待测性能目标而非证据有效性门，因此正式矩阵必须显式使用 `observe`：超标轮次写入 `performance_target_checks` 并保留在完整曲线中，不会被隐藏或改写为通过。若 `failures.jsonl` 非空，该 run 即使后来补齐也不能成为通过记录，修复后必须换新 run id。
 
+#### 10.1 4B 时代的 C2/C3 运行（2026-09-01）
+
+`--model` 默认值已从已删除的 `Qwen3.5-9B-Q4_K_M.gguf` 改为 `Qwen3.5-4B-Q4_K_M.gguf`，
+因此下列命令省略 `--model` 即走 4B。4B 与 9B 都是 32 层，档位集合可以保持与 9B 一致，
+便于形成跨模型尺度对比；但两者是各自独立的结论，禁止互相插值或改名沿用。9B 产物的
+归类见 [结果目录第 4 节](../docs/ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md)。
+
+先做一次 512 单点烟（约 1 分钟，用来确认入口、模型路径与门禁在新模型上正常）：
+
+```bash
+python -m experiments.elastic_residency.llm_residency_curve \
+  --run-id c1_llm_residency_4b_20260901_smoke_v1 \
+  --output-root experiment_results/elastic_residency/c1 \
+  --configs K0 FULL --runs 1 \
+  --context-tokens 512 --generation-tokens 128 \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false --source-git-status-entry-count 0
+```
+
+**C2 正式矩阵**（6 档 × 3 上下文 × 5 轮 = 90 条）：
+
+```bash
+python -m experiments.elastic_residency.llm_residency_curve \
+  --run-id c2_llm_residency_curve_20260901_4b_direct_nvml_v1 \
+  --output-root experiment_results/elastic_residency/c2 \
+  --configs K0 K8 K16 K24 K32 FULL \
+  --contexts 512 2048 4096 --runs 5 \
+  --generation-tokens 128 --jitter-gate-mode observe \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false --source-git-status-entry-count 0
+```
+
+**C3 临界细化**（10 档 × 3 上下文 × 5 轮 = 150 条，必须在 C2 之后跑）：
+
+```bash
+python -m experiments.elastic_residency.llm_residency_curve \
+  --run-id c3_llm_critical_refinement_20260901_4b_direct_nvml_v1 \
+  --output-root experiment_results/elastic_residency/c3 \
+  --configs K2 K4 K6 K10 K12 K14 K18 K20 K28 K30 \
+  --contexts 512 2048 4096 --runs 5 \
+  --generation-tokens 128 --jitter-gate-mode observe \
+  --source-git-commit <clean_commit> \
+  --source-git-dirty false --source-git-status-entry-count 0
+```
+
+档位集合与 `contexts/runs/generation-tokens/jitter-gate-mode` 必须严格等于上面两组取值，
+否则父进程会把证据范围退化为 `c1_smoke`（`_evidence_scope` 判定），产物就不能当作 C2/C3
+曲线使用。这一步仍是**纯文本**口径（固定 token 填充 prompt，不加载 `mmproj`）：4B 的
+多模态端点门已单独通过，视觉画像要等 C2/C3 文本基线与共置阶段之后再决定如何接入。
+
+时长提示：K0 走 CPU，4096 上下文下 decode 很慢，两个矩阵合计预计 1–3 小时；每个单元
+独立子进程，可中断后用完全相同的参数加 `--resume` 续跑。
+
 正式 GPU sampler 通过 ctypes 直接调用 NVML，不启动 `nvidia-smi` 子进程，也不做静默 CLI fallback；manifest、summary 和每轮验收必须记录 `gpu_telemetry_backend=direct_nvml` 与 `gpu_cli_subprocess_used=false`。GPU 数据最大年龄 750 ms 仍是测量有效性硬门。周期探针若越过下一采样 tick，完成后必须立即补采，禁止继续等待固定网格而人为放大陈旧窗口；`gpu_deadline_recovery_count` 记录这种恢复。驻留曲线的显存查询必须位于辅助 utilization/power/temperature 查询之后，使样本时间戳紧邻显存读数。WSL 若无法返回数值化的 compute-process 显存，必须保留 unavailable 原因；`gpu_card_delta_from_baseline_mb` 只表示隔离运行下的整卡差值，不得称为精确进程显存。TTS 另以 PyTorch allocated/reserved 峰值作为框架内主证据。
 更早的 B2/Forge/C2/C3 结果使用旧采样口径，只保留为工程基线和链路证据。C2 direct v2（90 条）、C3 direct v2（150 条）、B2 direct v2（30 条）与 Forge direct NVML v1（5 条）已完成同后端技术核验；下一步只用这些当前批次重新筛选候选，不能跨后端拼接为论文阈值。
 冻结的 10 档临界矩阵（K2/K4/K6/K10/K12/K14/K18/K20/K28/K30、3 上下文、5 轮、128 生成 token、observe）标记为 `c3_critical_refinement`；建议显式使用 `--output-root experiment_results/elastic_residency/c3`，避免与 C1 smoke 产物混放。有效性门失败时控制台会直接打印失败检查名。

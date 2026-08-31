@@ -1111,7 +1111,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--model",
-        default="/home/leslie/mvp_core/models/llm/Qwen3.5-9B-Q4_K_M.gguf",
+        default="/home/leslie/mvp_core/models/llm/Qwen3.5-4B-Q4_K_M.gguf",
     )
     parser.add_argument("--configs", nargs="+", default=["K0", "FULL"])
     parser.add_argument("--runs", type=int, default=1)

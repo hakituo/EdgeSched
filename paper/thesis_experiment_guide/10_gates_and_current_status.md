@@ -83,7 +83,7 @@ No-Go：
   3. [x] 环境能力已核验：`llama-cpp-python==0.3.35` 随包提供 `libmtmd.so` 与 `llama_cpp/mtmd_cpp.py`，`llama_chat_format` 已含通用 `MTMDChatHandler`，`mtmd_get_cap_from_file` 对该 `mmproj` 报告 `inp_vision=true`/`inp_audio=false`，media marker 为 `<__media__>`；**无需新增或修改依赖**；
   4. [x] 已实现多模态端点门代码链路 `experiments/elastic_residency/vision/`：artifact 门禁、确定性 448×448 固定图片（`pixel_payload_sha256=a1514034…43cb00`，期望 196 个视觉 token）、libmtmd projector warm/执行/释放、`TEXT_ONLY` / `TEXT_ONLY_CHAT` / `VISION_WARM_GPU` / `VISION_WARM_CPU` 四状态与 K0/FULL 端点 smoke 编排；Windows 静态与假后端测试 72 项通过，父进程门禁失败路径已在 WSL2 用合成 artifact 实跑；
   5. [x] **已通过**：WSL2 真实 GPU 视觉端点门，`run_id=v1_vision_endpoint_20260831_direct_nvml_v3`、commit `c9a75da`，四单元（`K0/FULL × TEXT_ONLY/VISION_WARM_GPU`，512+128 上下文）全部 `passed=true`、0 失败、swap 0、direct NVML 且无 GPU CLI fallback。projector 在 GPU 上真实执行：448×448 图片编码出 `[2560, 196, 1]` 嵌入，视觉 token 196（与 patch/merge 期望一致），M-RoPE 下塌缩为 14 个序列位置，KV 位置 167/167 精确匹配；模型文字输出正确描述固定图片（白底、居中红圆、左上蓝方块、右下绿方块、黑边框）。projector warm/释放 0.28–0.44 s / 0.008–0.011 s，warm GPU 增量 710–870 MiB、RSS +55.9 MB。FULL 档 decode 86–90 tok/s、prefill 文本 2579.9 / 视觉 119.6 tok/s；K0 档 decode 6.66–6.91 tok/s。
-  6. [ ] 端点通过后才重跑 4B 的 C2/C3、KV 与临界补测（下一步）；
+  6. [ ] **下一步**：重跑 4B 的 C2/C3 常驻画像与临界补测（`llm_residency_curve.py`，`--model` 默认值已切到 4B），再决定 KV 曲线沿用纯文本口径还是同时出视觉口径；
   7. [ ] 重算 4B 的 `G_safe/H_TTS/H_D`，分别保留 `TEXT_ONLY` 与 `VISION_WARM` 候选，并重跑真实 LLM+TTS/Forge 共置；TTS T0/T3 与 Forge b=1 的隔离结果在后端与环境不变时可复用为输入；
   8. [ ] 迁移完成前不得把任何 9B 阈值改名为 4B 结论，不得把 `mmproj` 文件大小加到旧 9B 曲线上冒充测量，也不得晋升到 `paper/experiment_data/01_paper_main/`。
 - [x] **SM-A：GPU 计算份额能力探针**：真实 WSL 记录 `sm_a_20260830_direct_nvml_v1` 已完成；MPS binary 在 WSL2 不存在，结论**暂定 NO_GO**。注意：这是环境能力门禁导致的「暂停」，不是永久取消——待具备可用的原生 Linux 启动环境后重做 SM-A，再决定是否进入 SM-B/C/D/E

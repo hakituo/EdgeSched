@@ -79,7 +79,54 @@ experiment_results/elastic_residency/
 
 归档区共 28 个批次，约 408.81 MiB、876 个文件。
 
-## 4. 当前禁止混用的口径
+## 4. 9B 产物在 4B 迁移后的归类（2026-09-01）
+
+主实验模型迁移到 `Qwen3.5-4B-Q4_K_M` + `mmproj-BF16.gguf` 后，9B 产物按下列三类处理。
+判定标准是**该结果是否依赖 LLM 模型身份**：不依赖的直接沿用，依赖的转为压力/负面/
+方法学证据，禁止改名为 4B 结论。
+
+### 4.1 A 类：与 LLM 无关，直接沿用
+
+| 产物 | 说明 |
+|---|---|
+| `b1/b1_tts_components_20260829_verified_v2/` | TTS 组件发现，纯 TTS 侧 |
+| `b2/b2_tts_pareto_matrix_20260831_direct_nvml_v2/` | T0/T3 隔离校准 30/30，**不含 LLM** |
+| `forge/forge_b1_reprofile_20260831_direct_nvml_v1/` | Forge 是独立服务，`M_D=5484 MiB` 与 LLM 无关 |
+| `a1/a1_smoke_20260829_verified_v7/` | 实验基础设施硬门 |
+| `sm_capability/sm_a_20260830_direct_nvml_v1/` | 环境能力结论（MPS binary 不存在 → SM-A NO_GO） |
+
+这三项（B2 + Forge + 方法学）即是容量筛选中与模型无关的输入，4B 阶段不需要重跑。
+
+### 4.2 B 类：转为压力 / 负面 / 方法学证据，不得改名为 4B 结论
+
+| 产物 | 迁移后的正确用法 |
+|---|---|
+| `c2/c2_llm_residency_curve_20260829_direct_nvml_v2/`（90/90） | **大模型压力基线**：证明该驻留画像方法在更大模型上同样可跑通 |
+| `c3/c3_llm_critical_refinement_20260829_direct_nvml_v2/`（150/150） | 同上；16 档合并后构成 9B 完整曲线 |
+| `kv_calibration/c3_kv_cache_calibration_20260830_direct_nvml_v1/`（48/48） | KV 语义纠正（`70.263/118.292/182.331 MiB`，不是 1–2 GiB）由 9B 批次完成，方法学结论继续有效 |
+| `c3_analysis/c3_h_tts_colocated_20260831_v1.json` | 冻结的是**9B 模型口径**的 `G_safe=501.282 MiB` 与 `H_TTS`，作为尺度对照保留 |
+| `llm_forge_colocated/llm_forge_colocated_c512_k6_smoke_20260831_v1/`、`..._k4_fallback_.../` | **最有价值的负面证据**：证明驻留筛选必须联合 GPU 与主机内存，只看显存会选错档位；该结论不依赖模型 |
+
+K4 把更多权重退回 DDR 后换页从约 290.44 MiB 恶化到约 2070.32 MiB，是论文可直接引用的
+方法论贡献，换模型不会失效。若后续同时完成 9B 与 4B 的同口径驻留画像，可形成**跨模型
+尺度对比**（同一方法、同一后端、同一门禁），比只报单一模型更强。
+
+### 4.3 C 类：作废，禁止沿用
+
+- 9B 的具体显存 / RSS / KV / TTFT / prefill / decode 数字；
+- 9B 的 `H_D`（本来就没冻结，两次 swap 门失败后正式矩阵已停止）；
+- 9B 的模型哈希、层数等 artifact 身份——4B 已独立核验（`qwen35.block_count=32`）；
+- 任何把 `mmproj` 文件大小加到 9B 曲线上冒充测量的做法。
+
+### 4.4 入口默认值变更
+
+`llm_residency_curve.py`、`llm_kv_cache_calibration.py`、`llm_tts_colocated.py`、
+`llm_forge_colocated.py` 的 `--model` 默认值已由已删除的 `Qwen3.5-9B-Q4_K_M.gguf`
+改为 `Qwen3.5-4B-Q4_K_M.gguf`。历史 9B 产物不受影响（它们记录了当次使用的模型路径
+与哈希）；但**所有显式引用旧路径的旧命令都不能再跑**，4B 运行请直接省略 `--model`
+或显式传新路径。
+
+## 5. 当前禁止混用的口径
 
 1. C2/C3 最终性能曲线只使用 `direct_nvml_v2` 两个批次。
 2. KV 容量只使用 `c3_kv_cache_calibration_20260830_direct_nvml_v1`。
@@ -87,7 +134,7 @@ experiment_results/elastic_residency/
 4. `_archive/stopped` 中的部分记录即使单轮 `passed=true`，整个矩阵仍不完整，禁止拼接。
 5. `timeline.jsonl` 和 `*_child.json` 是原始可追溯证据；清理磁盘前应整体压缩归档，不能只保留 summary 后删除原始轮次。
 
-## 5. 下一批产物
+## 6. 下一批产物
 
 旧 9B C3 H_D 路径已经在两个 smoke 后按 swap 门停止；现有确切 artifact 已列在上表，不再创建 9B 正式 H_D 目录。
 

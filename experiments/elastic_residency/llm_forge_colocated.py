@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--llm-model",
-        default="/home/leslie/mvp_core/models/llm/Qwen3.5-9B-Q4_K_M.gguf",
+        default="/home/leslie/mvp_core/models/llm/Qwen3.5-4B-Q4_K_M.gguf",
     )
     parser.add_argument("--forge-url", default="http://127.0.0.1:7860")
     parser.add_argument(
