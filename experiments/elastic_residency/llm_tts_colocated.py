@@ -57,6 +57,9 @@ from experiments.elastic_residency.colocated_runtime_evidence import (  # noqa: 
 from experiments.elastic_residency.colocated_capacity import (  # noqa: E402
     colocated_metrics,
 )
+from experiments.elastic_residency.colocated_audio_artifact import (  # noqa: E402
+    output_wav_artifact as _output_wav_artifact,
+)
 from experiments.elastic_residency.colocated_plan import (  # noqa: E402
     ColocatedCandidate,
     build_execution_plan,
@@ -382,6 +385,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         safety_margin_mb=args.safety_margin_mb,
         tts_isolated_increment_mb=isolated_map.get(spec.name),
     )
+    output_wav_artifact = _output_wav_artifact(output_wav, audio_duration_s)
 
     buffer_acceptance = buffer_report_acceptance(buffer_report)
     acceptance_checks = {
@@ -408,7 +412,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
             snapshot["torch_peak_allocated_bytes"] > 0
             for snapshot in stage_snapshots
         ),
-        "audio_written": output_wav.is_file() and audio_duration_s > 0,
+        **output_wav_artifact["checks"],
         "audio_waveform_finite": waveform_finite,
         "audio_waveform_non_silent": waveform_rms > 1e-5,
         "audio_waveform_peak_valid": 0 < waveform_peak <= 1.05,
@@ -489,7 +493,9 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "waveform_rms": waveform_rms,
         "waveform_peak": waveform_peak,
         "sample_rate": sample_rate,
-        "output_wav": str(output_wav),
+        "output_wav": output_wav_artifact["path"],
+        "output_wav_size_bytes": output_wav_artifact["size_bytes"],
+        "output_wav_sha256": output_wav_artifact["sha256"],
         "memory_baseline": memory_baseline,
         "b_llm_snapshot": b_llm_snapshot,
         "memory_tts_ready": memory_tts_ready,
@@ -954,6 +960,8 @@ def run_parent(args: argparse.Namespace) -> Path:
         "safe_capacity_used_mb",
         "capacity_headroom_mb",
         "capacity_admissible",
+        "output_wav_size_bytes",
+        "output_wav_sha256",
         "kv_gpu_buffer_mb",
         "kv_tokens_used",
         "kv_sequence_state_bytes",
@@ -997,6 +1005,8 @@ def run_parent(args: argparse.Namespace) -> Path:
                     "safe_capacity_used_mb": metrics["safe_capacity_used_mb"],
                     "capacity_headroom_mb": metrics["capacity_headroom_mb"],
                     "capacity_admissible": metrics["capacity_admissible"],
+                    "output_wav_size_bytes": record["output_wav_size_bytes"],
+                    "output_wav_sha256": record["output_wav_sha256"],
                     "kv_gpu_buffer_mb": record.get("kv_gpu_buffer_mb"),
                     "kv_tokens_used": record["kv_state"]["kv_tokens_used"],
                     "kv_sequence_state_bytes": record["kv_state"][

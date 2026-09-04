@@ -35,7 +35,8 @@
 - B2 已筛出 T0/T3，direct NVML v2 隔离矩阵已完成 30/30 技术核验。
 - Forge b=1 direct NVML v1 已完成 5/5，当前 `M_D=5484 MiB`。
 - Qwen3.5-9B 的 LLM+TTS 正式共置已完成 30/30，并冻结该模型口径的 `G_safe=501.282 MiB` 与 `H_TTS`。
-- 4B TEXT_ONLY 曲线与 B2 direct v2 已生成 `c3_h_4b_tts_direct_nvml_20260901_v1.json`：512/2048/4096 下 T0、T3 均筛到 FULL；这只是容量候选，`G_safe` 的 idle/colocated 残差仍 pending，尚未经过 4B 真实 LLM+TTS 共置，不能冻结为 4B `H_TTS`。
+- 4B TEXT_ONLY 曲线与 B2 direct v2 已生成 `c3_h_4b_tts_direct_nvml_20260901_v1.json`：512/2048/4096 下 T0、T3 均筛到 FULL；该离线结果本身仍只是容量候选，正式重复共置与安全余量校准未完成，不能冻结为 4B `H_TTS`。
+- 4B `C4096/FULL+T0` 真实共置 smoke 已 1/1 技术通过：`P_colocated=6406.699 MiB`、物理余量 1744.301 MiB、swap 0、正残差 0；该旧 smoke 未在 JSON 中持久化 WAV 哈希，只作正式矩阵前链路证据。入口已补非空 WAV 大小/SHA-256 硬门，正式矩阵须使用新 commit 与 run id。
 - Qwen3.5-9B 的 512/K6+Forge 与探索性 512/K4+Forge smoke 均只有 swap 门禁失败，增长分别约 290.44 MiB 和 2070.32 MiB；正式 H_D 矩阵已停止，`H_D` 未冻结。
 - 主实验 LLM 已迁移为 Qwen3.5-4B-Q4_K_M + `mmproj-BF16.gguf`，两者的 SHA-256、大小、架构、层数与对应关系（`projection_dim == embedding_length`）已核验；`llama-cpp-python==0.3.35` 随包的 `libmtmd` 具备该多模态执行能力，无需新增依赖。
 - 多模态端点门 `v1_vision_endpoint_20260831_direct_nvml_v3` 已在真实 GPU 上通过 4/4 单元，但仍只是端点可用性证据；VISION_WARM 多轮画像、图像后端重选和正式共置按当前顺序暂缓。

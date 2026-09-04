@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import sys
 from pathlib import Path
@@ -23,6 +24,7 @@ from experiments.elastic_residency.colocated_runtime_evidence import (  # noqa: 
     assess_colocated_runtime,
 )
 from experiments.elastic_residency.llm_tts_colocated import (  # noqa: E402
+    _output_wav_artifact,
     build_parser as build_colocated_parser,
     colocated_metrics,
     parse_isolated_increments,
@@ -68,6 +70,30 @@ class TestColocatedMatrixContract:
     def test_formal_repeat_count_is_accepted_by_parser(self) -> None:
         args = build_colocated_parser().parse_args(["--runs", "5"])
         assert args.runs == 5
+
+    def test_output_wav_artifact_records_hash_and_size(self, tmp_path: Path) -> None:
+        output = tmp_path / "sample.wav"
+        output.write_bytes(b"RIFF" + b"\x00" * 40)
+
+        artifact = _output_wav_artifact(output, audio_duration_s=1.0)
+
+        assert artifact["path"] == str(output)
+        assert artifact["size_bytes"] == 44
+        assert artifact["sha256"] == hashlib.sha256(b"RIFF" + b"\x00" * 40).hexdigest()
+        assert all(artifact["checks"].values())
+
+    @pytest.mark.parametrize("write_empty", [False, True])
+    def test_output_wav_artifact_rejects_missing_or_empty_file(
+        self, tmp_path: Path, write_empty: bool
+    ) -> None:
+        output = tmp_path / "missing-or-empty.wav"
+        if write_empty:
+            output.write_bytes(b"")
+
+        artifact = _output_wav_artifact(output, audio_duration_s=1.0)
+
+        assert artifact["sha256"] is None
+        assert not any(artifact["checks"].values())
 
 
 class TestParseIsolatedIncrements:

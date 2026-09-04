@@ -41,7 +41,8 @@
 | `experiments/elastic_residency/llm_residency_curve.py` | C1/C2 LLM 驻留 profiler | 真实层数、精确 prompt/decode、阶段资源和 KV；C2 支持多上下文轮转、严格续跑、checkpoint 与 fail-fast；v3 起新增 `full_state_serialized_bytes`/`kv_sequence_state_bytes`/`kv_position_*`/`kv_gpu_buffer_mb` 等字段（见 `kv_measurement.py`），历史 C2/C3 数据不含这些字段且仍然有效 |
 | `experiments/elastic_residency/kv_measurement.py` | KV 测量语义与采集共享模块 | 显式拆分 GPU 预分配 KV buffer / 已用 token 范围 / 单序列序列化状态 / `save_state()` 完整负载 / 整卡增量五个概念；`LlamaInitLogCapture` 解析 llama.cpp 初始化日志，缺字段保持 None 禁止填 0 |
 | `experiments/elastic_residency/llm_kv_cache_calibration.py` | KV 容量与语义校准（独立入口） | `c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 16 configs × 3 contexts × 1 run = 48/48 条；以 `n_ctx=context+128` 匹配 C2/C3 推理后状态，不做性能计时 |
-| `experiments/elastic_residency/llm_tts_colocated.py` | LLM+TTS 真实共置显存测量 | direct NVML 整卡时间线、`B_idle/B_LLM/P_colocated`、正残差与扣除 idle 后的容量裁决；容量公式不重复叠加 idle 或 KV，正式组合支持 5 轮重复 |
+| `experiments/elastic_residency/llm_tts_colocated.py` | LLM+TTS 真实共置显存测量 | direct NVML 整卡时间线、`B_idle/B_LLM/P_colocated`、正残差与扣除 idle 后的容量裁决；容量公式不重复叠加 idle 或 KV，每轮冻结非空 WAV 大小/SHA-256，正式组合支持 5 轮重复 |
+| `experiments/elastic_residency/colocated_audio_artifact.py` | 共置音频 artifact 门禁 | 独立负责输出 WAV 的非空检查、大小和 SHA-256；不引入 GPU 依赖，不代替 waveform 或听感验收 |
 | `experiments/elastic_residency/colocated_capacity.py` | 共置容量纯计算口径 | `(P_colocated-B_idle)+G_safe`、物理峰值保护、正残差；供运行入口与离线复算共用 |
 | `experiments/elastic_residency/analyze_colocated_results.py` | 正式 LLM+TTS 共置离线复算 | 硬验正式重复矩阵、真实后端/direct NVML/新鲜度/swap/provenance，复算 G_safe 与按 context 冻结 H_TTS；H_D 保持待 LLM+Forge 共置 |
 | `experiments/elastic_residency/llm_forge_colocated.py` | LLM+Forge 真实共置入口 | 从 C3 screen 读取 H_D 候选和隔离画像；父进程预热真实 Forge，子进程加载精确 LLM/KV 状态并发起 b=1 请求；支持单候选 smoke、3 候选×5 轮正式矩阵、fail-fast 与严格 resume |

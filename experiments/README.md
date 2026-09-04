@@ -261,7 +261,7 @@ python -m experiments.elastic_residency.llm_kv_cache_calibration \
 
 ### 12. LLM+TTS 真实共置显存测量（现有 9B 链路记录）
 
-`experiments/elastic_residency/llm_tts_colocated.py` 在同一进程加载真实 GGUF LLM（填充 context 后记录整卡基线 `B_LLM`）与 Qwen3-TTS（T0/T3 放置，分阶段 `torch.cuda.synchronize()` + reset peak），TTS 执行窗口内由 direct NVML 时间线和阶段快照取整卡峰值 `P_colocated`，并计算 `tts_colocated_increment_mb = P_colocated - B_LLM` 与 `colocated_positive_residual_mb = max(0, colocated_increment - isolated_increment)`（隔离增量由 `--tts-isolated-increment-mb CONFIG=value` 注入，缺失时保持 None，禁止估计）。`G_safe` 已包含 idle GPU baseline high water，因此容量裁决使用 `(P_colocated - B_idle) + G_safe <= gpu_total`，并另以 `P_colocated <= gpu_total` 检查物理峰值；直接对绝对峰值再加完整 `G_safe` 会重复计算 idle。`M_L(k, context)` 已包含该 LLM 配置的 KV buffer，容量计算不得再叠加一次 KV。下方命令只记录现有纯文本链路的调用契约，不是可直接执行的 4B+视觉正式命令；4B 入口扩展后，候选仍按“新曲线筛选 → smoke → 小矩阵”执行：
+`experiments/elastic_residency/llm_tts_colocated.py` 在同一进程加载真实 GGUF LLM（填充 context 后记录整卡基线 `B_LLM`）与 Qwen3-TTS（T0/T3 放置，分阶段 `torch.cuda.synchronize()` + reset peak），TTS 执行窗口内由 direct NVML 时间线和阶段快照取整卡峰值 `P_colocated`，并计算 `tts_colocated_increment_mb = P_colocated - B_LLM` 与 `colocated_positive_residual_mb = max(0, colocated_increment - isolated_increment)`（隔离增量由 `--tts-isolated-increment-mb CONFIG=value` 注入，缺失时保持 None，禁止估计）。每轮非空 WAV 的大小与 SHA-256 必须写入 child、iterations、summary 和 CSV，缺失或空文件直接使 artifact 门禁失败。`G_safe` 已包含 idle GPU baseline high water，因此容量裁决使用 `(P_colocated - B_idle) + G_safe <= gpu_total`，并另以 `P_colocated <= gpu_total` 检查物理峰值；直接对绝对峰值再加完整 `G_safe` 会重复计算 idle。`M_L(k, context)` 已包含该 LLM 配置的 KV buffer，容量计算不得再叠加一次 KV。下方命令只记录现有纯文本链路的调用契约，不是可直接执行的 4B+视觉正式命令；4B 入口扩展后，候选仍按“新曲线筛选 → smoke → 小矩阵”执行：
 
 ```bash
 python -m experiments.elastic_residency.llm_tts_colocated \
