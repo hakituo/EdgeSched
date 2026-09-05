@@ -43,6 +43,7 @@ experiment_results/elastic_residency/
 | 4B LLM+TTS smoke | `llm_tts_colocated/llm_tts_colocated_c4096_full_t0_4b_smoke_20260901_v1/` | C4096/FULL+T0 1/1 技术通过，真实后端/direct NVML/swap 0/完整 provenance；`P_colocated=6406.699 MiB`、物理余量 1744.301 MiB、正残差 0。该批次运行时尚未把 WAV SHA-256 写入 JSON，仅保留为正式矩阵前 smoke；正式矩阵使用新增哈希门禁的新 commit/run id |
 | 4B LLM+TTS formal | `llm_tts_colocated/llm_tts_colocated_4b_text_only_20260904_direct_nvml_v1/` | 6 候选×5 轮（512/2048/4096 × FULL × T0/T3），30/30、0 failure/fallback；真实后端/direct NVML/swap 增长 0/窗口内新鲜度 218–324 ms（<750 门禁）/30 个 WAV 大小与 SHA-256 全通过；manifest provenance 完整（commit `dc3974bf`，dirty=false）。已由 `analyze_colocated_results.py` 离线复算冻结 4B 文本口径 G_safe/H_TTS |
 | 4B LLM+TTS freeze | `c3_analysis/c3_h_4b_tts_colocated_20260906_v1.json` | 4B 文本共置离线复算：30/30 硬验、正残差 max=0，G_safe=501.282 MiB 校准后维持预设值并 `frozen_for_llm_tts`；H_TTS 在 512/2048/4096×T0/T3 全部 `frozen_real_colocated`（各 5 轮）；H_D 仍 `pending_real_llm_forge_colocation` |
+| 4B VISION_WARM 画像 | `vision_endpoint/v1_vision_endpoint_4b_warm_profile_20260906_direct_nvml_v1/` | FULL × VISION_WARM_GPU × 5 轮，5/5、0 failure/fallback；projector warm GPU 增量 mean 761.2 / min 710 / max 838 MiB（含 warmup 按 1472×1472 预留的 223.30 MiB，非 448×448 编码成本），release 增量 −888 MiB、RSS +约 55.8 MB；视觉 token 196→14 序列位置，KV roundtrip 167 token 成功；供 4B 视觉画像引用，不冻结任何 H |
 | Forge | `forge/forge_b1_reprofile_20260831_direct_nvml_v1/` | 当前 direct NVML 5/5 校准，全部门禁通过，`M_D=5484 MiB` |
 | 9B KV | `kv_calibration/c3_kv_cache_calibration_20260830_direct_nvml_v1/` | Qwen3.5-9B 48/48 KV 容量与语义证据 |
 | 9B LLM+TTS smoke | `llm_tts_colocated/llm_tts_colocated_c4096_k20_t0_smoke_20260831_v1/` | C4096/K20+T0 1/1 技术通过，0 failure/fallback；正残差 0，只作 9B 正式 artifact smoke |
@@ -149,4 +150,4 @@ B2、Forge 隔离校准、9B 完整 16 档筛选和 LLM+TTS 正式共置均已�
 
 下一批不是继续运行旧 9B 命令，而是建立 4B 多模态迁移门：固定主 GGUF/`mmproj` 的来源与哈希，真实执行固定图片，测量 projector GPU/RSS/warm/释放、图片 token、KV、direct NVML 和 swap，并先完成文本/视觉 K0/FULL 端点 smoke。入口、run-id 和正式目录命名尚未实现与冻结；实现前不写占位命令，禁止手工把 `mmproj` 文件大小加进旧曲线或复用 9B 的 H 值。
 
-4B 文本共置矩阵已冻结：`llm_tts_colocated_4b_text_only_20260904_direct_nvml_v1`（30/30）+ 离线复算 `c3_h_4b_tts_colocated_20260906_v1.json`，G_safe=501.282 MiB 校准维持、H_TTS 全部冻结。剩余工作聚焦多模态/图像侧：4B VISION_WARM 多轮画像、LLM+Forge 真实共置与 H_D 冻结（图像 H_D 是 4B 口径最后一个未冻结分量）。
+4B 文本共置矩阵已冻结：`llm_tts_colocated_4b_text_only_20260904_direct_nvml_v1`（30/30）+ 离线复算 `c3_h_4b_tts_colocated_20260906_v1.json`，G_safe=501.282 MiB 校准维持、H_TTS 全部冻结。4B VISION_WARM 多轮画像已完成（`v1_vision_endpoint_4b_warm_profile_20260906_direct_nvml_v1`，5/5）。剩余工作聚焦图像侧：Forge 同日复测（更新 4B screen 的 M_D/idle 输入）→ LLM+Forge 真实共置正式矩阵 → `analyze_forge_colocated_results.py` 冻结 H_D（图像 H_D 是 4B 口径最后一个未冻结分量）。
