@@ -42,9 +42,13 @@ experiment_results/elastic_residency/
 | 4B TEXT_ONLY TTS screen | `c3_analysis/c3_h_4b_tts_direct_nvml_20260901_v1.json` | 4B 完整 16 档 + B2 direct v2 离线容量筛选；T0/T3 在 512/2048/4096 下均为 FULL 可行候选；未含真实 4B 共置残差，不冻结 H_TTS，图像 H_D pending |
 | 4B LLM+TTS smoke | `llm_tts_colocated/llm_tts_colocated_c4096_full_t0_4b_smoke_20260901_v1/` | C4096/FULL+T0 1/1 技术通过，真实后端/direct NVML/swap 0/完整 provenance；`P_colocated=6406.699 MiB`、物理余量 1744.301 MiB、正残差 0。该批次运行时尚未把 WAV SHA-256 写入 JSON，仅保留为正式矩阵前 smoke；正式矩阵使用新增哈希门禁的新 commit/run id |
 | 4B LLM+TTS formal | `llm_tts_colocated/llm_tts_colocated_4b_text_only_20260904_direct_nvml_v1/` | 6 候选×5 轮（512/2048/4096 × FULL × T0/T3），30/30、0 failure/fallback；真实后端/direct NVML/swap 增长 0/窗口内新鲜度 218–324 ms（<750 门禁）/30 个 WAV 大小与 SHA-256 全通过；manifest provenance 完整（commit `dc3974bf`，dirty=false）。已由 `analyze_colocated_results.py` 离线复算冻结 4B 文本口径 G_safe/H_TTS |
-| 4B LLM+TTS freeze | `c3_analysis/c3_h_4b_tts_colocated_20260906_v1.json` | 4B 文本共置离线复算：30/30 硬验、正残差 max=0，G_safe=501.282 MiB 校准后维持预设值并 `frozen_for_llm_tts`；H_TTS 在 512/2048/4096×T0/T3 全部 `frozen_real_colocated`（各 5 轮）；H_D 仍 `pending_real_llm_forge_colocation` |
+| 4B LLM+TTS freeze | `c3_analysis/c3_h_4b_tts_colocated_20260906_v1.json` | 4B 文本共置离线复算：30/30 硬验、正残差 max=0，G_safe=501.282 MiB 校准后维持预设值并 `frozen_for_llm_tts`；H_TTS 在 512/2048/4096×T0/T3 全部 `frozen_real_colocated`（各 5 轮）；H_D 由 20260906 图像侧批次以负面边界证据收案（见下两行），该 JSON 内的 H_D 字段维持 pending 语义不再复算 |
 | 4B VISION_WARM 画像 | `vision_endpoint/v1_vision_endpoint_4b_warm_profile_20260906_direct_nvml_v1/` | FULL × VISION_WARM_GPU × 5 轮，5/5、0 failure/fallback；projector warm GPU 增量 mean 761.2 / min 710 / max 838 MiB（含 warmup 按 1472×1472 预留的 223.30 MiB，非 448×448 编码成本），release 增量 −888 MiB、RSS +约 55.8 MB；视觉 token 196→14 序列位置，KV roundtrip 167 token 成功；供 4B 视觉画像引用，不冻结任何 H |
-| Forge | `forge/forge_b1_reprofile_20260831_direct_nvml_v1/` | 当前 direct NVML 5/5 校准，全部门禁通过，`M_D=5484 MiB` |
+| Forge（9B screen 用） | `forge/forge_b1_reprofile_20260831_direct_nvml_v1/` | direct NVML 5/5 校准，全部门禁通过，`M_D=5484 MiB`；已由 20260906 同日复测替代为 4B screen 输入 |
+| 4B Forge 同日复测 | `forge/forge_b1_reprofile_20260906_direct_nvml_v1/` | direct NVML 5/5，全部门禁通过；同日口径 `M_D=5273.21 MiB`（idle 高水位 655.61、常驻基线 668.82、b=1 延迟 mean 6.207 s）；当前 4B screen 的 Forge 输入 |
+| 4B screen（Forge 口径） | `c3_analysis/c3_h_4b_tts_direct_nvml_20260906_v1.json` | 4B 16 档 + B2 direct v2 + Forge 20260906 的容量筛选；H_TTS 维持 FULL 候选，FULL 对 H_D 因 GPU 容量不可行（LLM 预算 2222 MiB），H_D 候选为 512/K16、2048/K14、4096/K14 |
+| 4B LLM+Forge 正式矩阵（16G 停止） | `llm_forge_colocated/llm_forge_colocated_4b_20260906_direct_nvml_v1/` | 基于干净 `a39778f` 的正式矩阵，首个 K16@C512 唯一失败门为 swap 增长 405.15 MiB（容忍 4 MiB），失败即停（1/15）；GPU 容量、新鲜度、KV、PNG、provenance 全部有效；与 9B K6/K4 同模式负面证据 |
+| 4B LLM+Forge 20G 归因诊断 | `llm_forge_colocated/llm_forge_colocated_4b_20260906_mem20g_diag_v1/` | 同代码、同候选、同参数，仅 `.wslconfig memory=20GB` 不同：K16/K14/K14 三候选各 1 轮全部通过，swap 增长 0.0–0.2 MiB，GPU 峰值 8122/8151 MiB；证明 16G 失败根因为主机内存容量，而非 K 档固有换页或 WSL2 特有行为。归因诊断证据，不进论文正文（论文环境为 16G） |
 | 9B KV | `kv_calibration/c3_kv_cache_calibration_20260830_direct_nvml_v1/` | Qwen3.5-9B 48/48 KV 容量与语义证据 |
 | 9B LLM+TTS smoke | `llm_tts_colocated/llm_tts_colocated_c4096_k20_t0_smoke_20260831_v1/` | C4096/K20+T0 1/1 技术通过，0 failure/fallback；正残差 0，只作 9B 正式 artifact smoke |
 | 9B LLM+TTS formal | `llm_tts_colocated/llm_tts_colocated_candidates_20260831_direct_nvml_v1/` | 6 候选×5 轮，30/30、0 failure/fallback；真实后端/direct NVML/新鲜度/swap/provenance 全通过；原始运行版容量字段有 idle 重复计数，测量无需重跑，以离线复算为准；不得直接代表 4B+视觉口径 |
@@ -150,4 +154,8 @@ B2、Forge 隔离校准、9B 完整 16 档筛选和 LLM+TTS 正式共置均已�
 
 下一批不是继续运行旧 9B 命令，而是建立 4B 多模态迁移门：固定主 GGUF/`mmproj` 的来源与哈希，真实执行固定图片，测量 projector GPU/RSS/warm/释放、图片 token、KV、direct NVML 和 swap，并先完成文本/视觉 K0/FULL 端点 smoke。入口、run-id 和正式目录命名尚未实现与冻结；实现前不写占位命令，禁止手工把 `mmproj` 文件大小加进旧曲线或复用 9B 的 H 值。
 
-4B 文本共置矩阵已冻结：`llm_tts_colocated_4b_text_only_20260904_direct_nvml_v1`（30/30）+ 离线复算 `c3_h_4b_tts_colocated_20260906_v1.json`，G_safe=501.282 MiB 校准维持、H_TTS 全部冻结。4B VISION_WARM 多轮画像已完成（`v1_vision_endpoint_4b_warm_profile_20260906_direct_nvml_v1`，5/5）。剩余工作聚焦图像侧：Forge 同日复测（更新 4B screen 的 M_D/idle 输入）→ LLM+Forge 真实共置正式矩阵 → `analyze_forge_colocated_results.py` 冻结 H_D（图像 H_D 是 4B 口径最后一个未冻结分量）。
+4B 文本共置矩阵已冻结：`llm_tts_colocated_4b_text_only_20260904_direct_nvml_v1`（30/30）+ 离线复算 `c3_h_4b_tts_colocated_20260906_v1.json`，G_safe=501.282 MiB 校准维持、H_TTS 全部冻结。4B VISION_WARM 多轮画像已完成（`v1_vision_endpoint_4b_warm_profile_20260906_direct_nvml_v1`，5/5）。
+
+图像侧 `H_D` 已按 16G 论文环境以负面边界证据收案：Forge 同日复测（`M_D=5273.21 MiB`）注入 4B screen 后 FULL 因 GPU 容量不可行、H_D 候选为 K16/K14/K14；正式矩阵首个 K16@C512 即触发真实 swap（405.15 MiB）失败即停，与 9B K6/K4 同模式；20G 归因诊断（同代码 3/3 通过、swap 0.0–0.2 MiB）证明根因为 16G 主机内存容量。4B `H_D` 不冻结，与 9B 构成跨尺度负面证据：8GB GPU + 16GB 主机下 LLM+Diffusion 无任何可共置档位（FULL 被 GPU 容量排除、K 档被主机内存排除）；该结论直接支撑图像期采用迁移/逐出而非共驻留的设计，`.wslconfig` 的 `memory=20GB` 诊断配置须恢复默认。
+
+下一批工作离开图像侧，转向 CPU 核数画像：实现 `auxiliary_core_budget.py` 正式入口（物理核拓扑、affinity 与租约基础设施已就绪），先跑辅助任务 BGE/Whisper 的 1/2/4 核曲线与 `R_sys={0,1,2,4}`，必要时补 LLM/TTS 核数扩展曲线；SM-A 仍等待原生 Ubuntu，SM-B/C/D/E 维持暂停。

@@ -28,18 +28,18 @@
 | [09 证据与论文组织](09_evidence_and_paper_plan.md) | 写论文或决定数据能否使用 | 当前数据边界、必须重跑项、章节与图表规划、局限性 |
 | [10 门禁与当前状态](10_gates_and_current_status.md) | 每个新会话必读 | Go/No-Go、完成项、暂停项、下一批实验、完成标准 |
 
-## 当前真值摘要（2026-09-01）
+## 当前真值摘要（2026-09-06）
 
 - Qwen3.5-9B 的 C2+C3 direct NVML 已完成 16 个 LLM 驻留档位，共 240 条性能记录；KV 容量与语义校准已完成 48/48 条，均保留为大模型压力与模型特定历史证据。
 - Qwen3.5-4B 的 C2 90/90、C3 150/150 与纯文本 KV 校准 48/48 已完成并通过；C2+C3 在每个 context 合并为完整 16 档。C2/C3 artifact 保存的是短 commit `a35d4f5`，可唯一解析到完整提交 `a35d4f5f9b17b01b5d90bd6fd0db794cfdb54eb2`，晋升前仍须补独立 provenance 审计记录；KV artifact 已保存完整提交。
 - B2 已筛出 T0/T3，direct NVML v2 隔离矩阵已完成 30/30 技术核验。
-- Forge b=1 direct NVML v1 已完成 5/5，当前 `M_D=5484 MiB`。
+- Forge b=1 direct NVML：20260831 批次 `M_D=5484 MiB`（9B screen 用）；20260906 同日复测 `M_D=5273.21 MiB`，为当前 4B screen 输入。
 - Qwen3.5-9B 的 LLM+TTS 正式共置已完成 30/30，并冻结该模型口径的 `G_safe=501.282 MiB` 与 `H_TTS`。
-- 4B TEXT_ONLY 曲线与 B2 direct v2 已生成 `c3_h_4b_tts_direct_nvml_20260901_v1.json`：512/2048/4096 下 T0、T3 均筛到 FULL；该离线结果本身仍只是容量候选，正式重复共置与安全余量校准未完成，不能冻结为 4B `H_TTS`。
+- 4B 文本共置正式矩阵已完成并冻结 4B 文本口径：`llm_tts_colocated_4b_text_only_20260904_direct_nvml_v1` 30/30 + 离线复算 `c3_h_4b_tts_colocated_20260906_v1.json`，G_safe=501.282 MiB 校准维持、H_TTS 在 T0/T3×512/2048/4096 全部 FULL。
 - 4B `C4096/FULL+T0` 真实共置 smoke 已 1/1 技术通过：`P_colocated=6406.699 MiB`、物理余量 1744.301 MiB、swap 0、正残差 0；该旧 smoke 未在 JSON 中持久化 WAV 哈希，只作正式矩阵前链路证据。入口已补非空 WAV 大小/SHA-256 硬门，正式矩阵须使用新 commit 与 run id。
 - Qwen3.5-9B 的 512/K6+Forge 与探索性 512/K4+Forge smoke 均只有 swap 门禁失败，增长分别约 290.44 MiB 和 2070.32 MiB；正式 H_D 矩阵已停止，`H_D` 未冻结。
 - 主实验 LLM 已迁移为 Qwen3.5-4B-Q4_K_M + `mmproj-BF16.gguf`，两者的 SHA-256、大小、架构、层数与对应关系（`projection_dim == embedding_length`）已核验；`llama-cpp-python==0.3.35` 随包的 `libmtmd` 具备该多模态执行能力，无需新增依赖。
-- 多模态端点门 `v1_vision_endpoint_20260831_direct_nvml_v3` 已在真实 GPU 上通过 4/4 单元，但仍只是端点可用性证据；VISION_WARM 多轮画像、图像后端重选和正式共置按当前顺序暂缓。
+- 多模态端点门 `v1_vision_endpoint_20260831_direct_nvml_v3` 已通过 4/4 单元；VISION_WARM 多轮画像 `v1_vision_endpoint_4b_warm_profile_20260906_direct_nvml_v1` 已完成 5/5（warm GPU 增量 mean 761.2 MiB，含 warmup 预留 223.30 MiB）。4B `H_D` 已按 16G 论文环境以负面边界证据收案：Forge 同日复测 `M_D=5273.21 MiB` 后 FULL 因 GPU 容量不可行，16G 下首个 K16@C512 即 swap 增长 405.15 MiB 失败即停，20G 同代码归因诊断 3/3 通过证明根因为主机内存容量；与 9B K6/K4 构成跨尺度负面证据（8GB GPU + 16GB 主机下 LLM+Diffusion 无任何可共置档位）。
 - SM-A 在 WSL2 中因 MPS binary 不存在暂定 NO_GO；待原生 Ubuntu 恢复验证，不伪造 SM-B/C 曲线。
 - CPU 物理核拓扑、affinity 与租约基础设施已完成；正式 `auxiliary_core_budget.py` 和核数矩阵尚未实现。
 - `paper/experiment_data/01_paper_main/` 当前没有已晋升的新版正文数据。
