@@ -204,3 +204,16 @@ def test_small_rejects_unprofiled_candidate() -> None:
             manifest=_manifest(),
             screen_schema=schema,
         )
+
+
+def test_h_tts_keys_disambiguate_multiple_llm_configs() -> None:
+    """同一 TTS 配置下多个 llm 档都必须保留，后写不得覆盖先写。"""
+    screen, schema = load_screen(_small_screen())
+    colocated = _colocated()
+    colocated["records"].extend(_record("T0", 5435.41, "K18") for _ in range(5))
+    colocated["actual_records"] = colocated["expected_records"] = 15
+    result = analyze_colocated(
+        screen=screen, colocated=colocated, manifest=_manifest(), screen_schema=schema
+    )
+    keys = set(result["h_tts"]["512"])
+    assert {"T0_at_K24", "T0_at_K18", "T3"} <= keys

@@ -1,6 +1,6 @@
 # EdgeSched / MVP Core 项目索引
 
-small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30 仅为容量候选，长上下文余量不足 16 MiB。C512 共置兼容性已在真实后端跑通 K18/K20/K24 × T0/T3 共 6 条（0 failure、swap 0）：T3 加载期峰值高于推理期，最坏时刻口径下实测上界为 K24，K28/K30 不再自动安排。C512/K24 × T0/T3 五轮正式矩阵 `20260907_225155_3728828` 已 10/10，离线复算 `small_9b_tts_colocated_20260907_225155_v1.json` 冻结 `G_safe=915.015625 MiB` 与 C512 的 `H_TTS`（T0/T3 均为 K24，正残差 168.90 MiB）；`H_D` 仍 pending，见 [验收与命令](SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
+small 9B 离线筛选 `20260907_204516_653987` 已复算一致，实测修正 C512 上界为 K24（T3 最坏时刻在加载期），K28/K30 不再自动安排。**S0 静态放置基线已完成并冻结**（2026-09-08）：正式 5 轮 ×4 配置（K24:T0、K24:T3、K0:T0、K24:T4）共 20 条全部通过，K0:T4 全 CPU 降级负面边界收案；合并复算 `small_9b_s0_colocated_20260908_v1.json`（`colocated_batch_merge.py` + `--colocated-summaries`）冻结 `G_safe=915.015625 MiB` 与四候选 `H_TTS`。C512 的 LLM+TTS 容量/可行性口径收案；`H_D` 仍 pending，Go/No-Go 前仅剩端到端流水线证据，见 [验收与命令](SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
 
 small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/预热 0.481 s、编码 0.147 s、释放 0.011 s，见 [阶段画像](SMALL_9B_VISION_PROFILE_20260907.md)。这是独立进程画像，保温/提前释放策略仍待验证。
 

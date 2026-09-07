@@ -102,9 +102,7 @@ def analyze_colocated(
 ) -> dict[str, Any]:
     """复算有效共置记录；不修改原始 artifact。
 
-    `screen_schema="small"` 用于 small 9B 离线筛选产物：候选判据放宽到
-    “已画像档位内”，因为该 screen 的 H_TTS 边界本身待实测修正。
-    `inputs_extra` 由多批次合并模式传入（如批次清单），原样并入输出 inputs。
+    small schema 把候选判据放宽到已画像档位；inputs_extra 并入输出 inputs。
     """
 
     records = colocated.get("records", [])
@@ -165,6 +163,10 @@ def analyze_colocated(
 
     candidates: dict[str, Any] = {}
     h_tts: dict[str, dict[str, Any]] = defaultdict(dict)
+    # 同一 (context, tts) 出现多个 llm 档时，键追加 llm 档名，避免后写覆盖先写。
+    llm_by_context_tts: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for context, llm_config, tts_config in grouped:
+        llm_by_context_tts[(str(context), tts_config)].add(llm_config)
     for key in sorted(grouped):
         context, llm_config, tts_config = key
         corrected = []
@@ -212,7 +214,9 @@ def analyze_colocated(
         }
         if not candidates[name]["all_capacity_admissible"]:
             raise ValueError(f"修正口径后候选仍不满足安全容量: {name}")
-        h_tts[str(context)][tts_config] = {
+        many_llm = len(llm_by_context_tts[(str(context), tts_config)]) > 1
+        tts_key = f"{tts_config}_at_{llm_config}" if many_llm else tts_config
+        h_tts[str(context)][tts_key] = {
             "llm_config": llm_config,
             "status": "frozen_real_colocated",
             "validated_runs": len(corrected),
@@ -286,9 +290,7 @@ def main() -> None:
     parser.add_argument("--screen-analysis", required=True)
     parser.add_argument("--colocated-summary", help="单批次 summary.json；与 --colocated-summaries 二选一。")
     parser.add_argument(
-        "--colocated-summaries",
-        nargs="+",
-        help="多批次合并模式：每个路径为一个正式批次的 summary.json。",
+        "--colocated-summaries", nargs="+", help="多批次合并：各正式批次的 summary.json。"
     )
     parser.add_argument("--output", required=True)
     parser.add_argument(
