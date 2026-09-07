@@ -4,14 +4,14 @@
 
 ## 9. 当前实现差距
 
-截至 2026-08-31，当前代码与目标机制之间至少存在以下差距：
+截至 2026-09-06，当前代码与目标机制之间至少存在以下差距：
 
 1. `services/phase_aware/phase_model.py`
    - LLM 仍是 GPU_NORMAL / CPU_DEGRADED / RESTORING 三态。
    - TTS 预设默认 CPU，不会动态比较完整流水线。
-   - C2/C3、KV、LLM+TTS 与 LLM+Forge 入口仍只执行纯文本 `Llama(model_path=...)`，不加载 `mmproj`；4B 统一文本/视觉路径目前只存在于独立的端点门子包 `experiments/elastic_residency/vision/`，尚未回灌到这些正式入口。
+   - C2/C3、KV、LLM+TTS 与 LLM+Forge 入口仍只执行纯文本 `Llama(model_path=...)`，不加载 `mmproj`；9B/4B 统一文本/视觉路径目前只存在于独立的端点门子包 `experiments/elastic_residency/vision/`，尚未回灌到这些正式入口。
    - 现有 `data/adapters/vl_adapter.py` 是独立 Qwen2-VL Transformers 路径，不能冒充新主模型的 llama.cpp/libmtmd 多模态证据。
-   - 端点门子包已实现真实 libmtmd 执行（projector warm/编码/释放、视觉 token 统计、`TEXT_ONLY`/`VISION_WARM_*` 状态分离），但**只通过了静态与假后端验证**；真实 GPU 视觉 smoke 未跑前不得据此宣称多模态可用。
+   - 端点门子包已实现真实 libmtmd 执行（projector warm/编码/释放、视觉 token 统计、`TEXT_ONLY`/`VISION_WARM_*` 状态分离），4B 真实端点已通过，9B 用户 FULL 文本/视觉端点也已 2/2 通过；这不代表多轮视觉画像或视觉与 TTS 共置完成。
 2. `services/phase_aware/gpu_lease.py`
    - Resident 和 Burst 仍按重任务独占处理。
    - SHARED lease 尚未进入真实执行路径。
@@ -31,7 +31,7 @@
    - 当前源码已包含真实 Qwen3-TTS worker、GPU 句长 profiling、CPU/GPU smoke、确定性断句、有界队列与取消/顺序测试；这些结果仍属于 `experiment_results/` 探索数据。
    - 2026-08-28 的 GPU 句长画像中 45/45 条 RTF 均大于 1；当前后端尚不能支持持续实时播放，不能声称稳态无 underrun。
    - GPU句长 profiling 使用未限制 CPU affinity 的主机基线；还需要补充保留系统核心后的对照。
-   - TTS 尚未接入 Phase-Aware；T0/T3 direct NVML 隔离矩阵与 Qwen3.5-9B 的正式 LLM+TTS 共置均已完成，但模型迁移后必须重算新主模型的候选并重跑相关共置矩阵。
+   - TTS 尚未接入 Phase-Aware；T0/T3 direct NVML 隔离矩阵与 Qwen3.5-9B 的正式 LLM+TTS 共置均已完成，但 9B 视觉状态仍须重新筛选候选并测量共置，旧文本结果不能代替。
 8. N 阶段实验
    - `experiments/phase_aware/exp2_*` 和 `exp3_*` 主要使用 `asyncio.sleep`，只能验证调度语义。
 9. 辅助任务与播放环境
@@ -112,7 +112,7 @@ P0 的独立 worker、adapter、smoke、原始 GPU 句长迭代和 manifest 已�
 
 #### P1-B / 执行阶段 C：LLM `n_gpu_layers` 驻留曲线（C1 smoke，C2 正式曲线）
 
-历史 Qwen3.5-9B GGUF 已核验 `qwen35.block_count=32`，并完成 direct NVML 画像；这些结果转为模型特定压力基线。新主实验计划使用 Qwen3.5-4B-Q4_K_M 与对应 BF16/F16 `mmproj`，官方结构同为 32 层，但必须在本地 GGUF 中重新核验，不能沿用 9B 的显存、RSS、KV 或性能数字。固定 \(R_{sys}=2\) 和 \(c_L=14\)，进行粗粒度扫描：
+当前主模型为 Qwen3.5-9B + F16 `mmproj`，本地 32 层及 4096 维对应关系已核验，用户 FULL 文本/视觉端点 2/2 通过；旧 9B TEXT_ONLY 曲线仍按原身份保存，不能替代视觉画像。4B 为跨尺度对照。固定 \(R_{sys}=2\) 和 \(c_L=14\)，后续按驻留状态分别扫描：
 
 \[
 k\in\{0,\lceil0.25N\rceil,\lceil0.5N\rceil,
@@ -121,7 +121,7 @@ k\in\{0,\lceil0.25N\rceil,\lceil0.5N\rceil,
 
 当前模型展开为 `k={0,8,16,24,32,FULL}`。`FULL` 与 `k=32` 分开保留，因为 llama.cpp 的完整 offload 还可能包含非 block 张量。
 
-新模型进入正式曲线前增加多模态迁移门（入口：`experiments/elastic_residency/vision/vision_endpoint_smoke.py`）：
+历史 4B 多模态迁移门记录如下（当前 9B 的验收范围见 [复核记录](../../docs/VISION_9B_PROBE_20260906.md)，不得沿用以下 2560 维与显存数值；入口：`experiments/elastic_residency/vision/vision_endpoint_smoke.py`）：
 
 1. **已完成**：固定主 GGUF 与对应 `mmproj` 的来源、版本、SHA-256、量化方式和文件大小；对应关系由 `clip.vision.projection_dim == <arch>.embedding_length` 与 `general.basename`/`general.base_model.0.*` 一致证明，`mmproj` 声明 `clip.has_vision_encoder=true` 且 `mtmd_get_cap_from_file` 报告 `inp_vision=true`。本地 4B GGUF 的 `qwen35.block_count=32` 已重新核验，与 9B 的 32 层是各自独立结论，不互相沿用；
 2. **已通过**：用 libmtmd 对固定真实图片执行 projector。`split_encode` 模式先 `mtmd_encode_chunk` 再核对 `mtmd_get_output_embd` 非空，然后 `mtmd_helper_decode_image_chunk` 把视觉嵌入送进同一个语言模型上下文；真实运行输出 `[2560, 196, 1]` 嵌入。`chunk_single` 模式与上游 `MTMDChatHandler` 调用一致（作为备用路径保留）。两种模式都没有静默文本 fallback；

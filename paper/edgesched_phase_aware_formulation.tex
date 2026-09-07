@@ -149,7 +149,12 @@ $\mathbf q_t$ contains per-phase queues and running states; $\mathbf K_t$
 contains phase state sizes such as LLM context and KV; $\mathbf d_t$ contains
 deadlines; and $h_t$ contains recent durations, arrivals, interference, and
 transitions.  In the current workload, $\mathbf q_t$ includes the diffusion-job
-queue and TTS-chunk queue.  Decisions occur at arrivals, completions, queue or
+queue, visual-encoding queue with its LLM dependencies, and TTS-chunk queue.
+The vision encoder/projector $V$ is a separately managed component of the
+vision-language model $V+L$, not an additional language model.  Its design
+states are unloaded, CPU-warm, and GPU-warm; only validated states enter the
+executable candidate set.  Releasing $V$ does not imply releasing visual KV
+already held by $L$.  Decisions occur at arrivals, completions, queue or
 session changes, completed reconfigurations, resource-boundary violations, and
 backend failures---not after every token or utilization fluctuation.
 
@@ -164,6 +169,15 @@ S_2 &: \text{the burst queue is nonempty: avoid restore--evict oscillation}.
 Diffusion instantiates the GPU-required burst in the present experiments; the
 mode definitions also apply to another profiled burst phase with the same
 service obligations.
+
+Visual encoding is an upstream phase of LLM inference and does not inherit
+Diffusion's requirement to evict the LLM.  Component residency and burst modes
+are separate decisions.  The current endpoint experiment releases $V$ after
+answer generation; queue-aware retention and release immediately after visual
+prefill remain design candidates requiring lifecycle and correctness tests.
+Visual-request latency must include queueing, required loads, encoding, LLM
+prefill, and generation.  A joint $V+L$ memory measurement already includes $V$
+and must not be charged for its weights or workspace twice.
 
 The joint action is
 

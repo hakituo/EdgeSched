@@ -1,8 +1,34 @@
 # EdgeSched 实验指南
 
+small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/预热 0.481 s、编码 0.147 s、释放 0.011 s，见 [阶段画像](../docs/SMALL_9B_VISION_PROFILE_20260907.md)。这是独立进程画像，保温/提前释放策略仍待验证。
+
+完整曲线批次 `20260907_143917` 已离线逐条核验，288/288、swap 0，见 [16 档曲线与 KV 验收](../docs/SMALL_9B_CURVES_20260907.md)。
+
+> **2026-09-07 9B 版本选定**：后续主模型为 small `1a35ab89…` + F16 projector `e36da9b9…`。纯文本对比 12/12、small 视觉 Answer 1/1 通过，固定图形内容描述完整；专用视觉启动器默认 Small，Large 可显式复测。新版本 C2 90/90、C3 150/150、KV 48/48 已通过，4B 对照与旧哈希证据保留。单图不是完整质量评测或 TTS 共置结论。详见 [选型与验收](../docs/NINE_B_MODEL_COMPARISON.md)。
+
 本目录包含实验框架、论文主实验、语义验证、压力测试和图表生成脚本。实验的第一原则是区分 Mock、真实 LLM、真实 Forge 和论文正文数据。
 
 ## 目录索引
+
+阶段组合离线筛选：`scripts/experiments/run_small_9b_screen.ps1` → `screen_small_9b.py`，不加载模型；先 LLM+TTS，再分别进入视觉/生成图像分支，四组件重叠按容量和工作流需要选择，见 [计划](../docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md)。WSL large 9B 已删除，历史双版本对比不能直接重跑。
+
+small 9B 完整曲线手动入口：`scripts/experiments/run_9b_small_curves.ps1`，依次 C2 90、C3 150、KV 48；固定模型哈希、三上下文、共享源码快照，失败即停。命令见 [说明](../docs/NINE_B_MODEL_COMPARISON.md)。
+
+两份 9B 的纯文本端点选型：Windows 手动运行 `scripts/experiments/run_9b_comparison.ps1`，
+自动准备 small 的 WSL 独立副本并比较 FULL/K0 各 3 轮，使用既有驻留测量器；
+输出位于 `experiment_results/elastic_residency/model_comparison/<run_id>/comparison.md`。
+不代表视觉配对或完整 16 档已通过，见 [运行协议](../docs/NINE_B_MODEL_COMPARISON.md)。
+用户批次 `compare_9b_20260907_023703` 已 12/12 通过并完成离线复核；small FULL 显存峰值少 90 MiB、decode +2.05%，small 视觉 Answer 随后已独立通过。
+small 视觉先运行 `run_vision_9b_smoke.ps1 -ModelVariant Small -Stage Answer`：一轮 FULL、1024-token 回答，使用 WSL 独立副本及固定哈希，独立 run id；文件头配对和真实 Answer 已通过。省略 ModelVariant 现为 Small，Large 须显式指定。
+
+9B 专用手动入口 `scripts/experiments/run_vision_9b_smoke.ps1` 已指向 WSL 原生模型目录
+`/home/leslie/mvp_core/models/llm/` 中的 `Qwen3.5-9B-q4_k_m.gguf` 和 `Qwen3.5-9B-f16.mmproj`。
+两份文件已于 2026-09-06 复制并核验 SHA-256；后续执行由用户启动，历史 D: 端点结果保持原存储口径。
+
+已执行的手动协议：`-Stage Answer`（真实视觉 1 轮，固定 1024 tokens，主要内容正确但漏黑边），
+以及 `-Stage Profile`（真实视觉 5 轮，每轮 128 tokens，5/5 通过）。后续先离线筛容量候选，不重复本组画像。默认 `-Stage Smoke` 维持原两单元试跑。
+三阶段使用不同 run id；Answer 仍忽略 EOS，不能作为固定 128-token 性能数据。
+完整参数与验收边界见 [9B 补测协议](../docs/VISION_9B_PROBE_20260906.md)。
 
 | 目录 | 内容 |
 |---|---|
@@ -283,7 +309,7 @@ Qwen3.5-9B 正式 6 候选×5 轮矩阵 `llm_tts_colocated_candidates_20260831_d
 
 `llm_forge_colocated.py` 已为 Qwen3.5-9B 实现 screen/Forge summary 同源校验、真实 Forge warmup、独立 LLM/KV child、真实 PNG、direct NVML、新鲜度、swap、affinity、资源归还和容量裁决。512/K6 与探索性 512/K4 smoke 的 GPU 容量都通过，但 swap 分别增长约 290.44 MiB 与 2070.32 MiB，故两者整体失败；降低 GPU 层数把更多权重压回 DDR 后明显恶化。9B 正式 15 条矩阵已停止，不再运行 K2，也不冻结 `H_D`。
 
-主实验现迁移到 Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`。真实 GPU 多模态端点门已通过；4B TEXT_ONLY C2 90/90、C3 150/150 与纯文本 KV 校准 48/48 也已完成。`c3_h_4b_tts_direct_nvml_20260901_v1.json` 将完整 16 档与 B2 direct v2 合并后，T0/T3 在三个 context 下均筛到 FULL，但这仍只是容量候选：必须经 4B LLM+TTS 真实共置补齐 colocated 残差后才能冻结 `G_safe/H_TTS`。VISION_WARM 多轮画像、图像后端选择与 `H_D` 暂缓；禁止把 projector 文件大小直接加到 TEXT_ONLY 曲线上冒充测量。
+历史 4B 阶段曾采用 Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`，后续已改为 9B+视觉（见页首复核记录）。真实 GPU 多模态端点门已通过；4B TEXT_ONLY C2 90/90、C3 150/150 与纯文本 KV 校准 48/48 也已完成。`c3_h_4b_tts_direct_nvml_20260901_v1.json` 将完整 16 档与 B2 direct v2 合并后，T0/T3 在三个 context 下均筛到 FULL，但这仍只是容量候选：必须经 4B LLM+TTS 真实共置补齐 colocated 残差后才能冻结 `G_safe/H_TTS`。VISION_WARM 多轮画像、图像后端选择与 `H_D` 暂缓；禁止把 projector 文件大小直接加到 TEXT_ONLY 曲线上冒充测量。
 
 Forge 服务终端：
 
@@ -597,3 +623,11 @@ paper/archive/pre_rewrite_20260830/      旧论文、图表、工具和数据快
 ```
 
 真实实验请在 `/home/leslie/mvp_core` 中激活 `/home/leslie/.venvs/mvp_core-cu128` 后运行，并保存完整日志和 manifest。
+
+
+## 辅助任务 CPU 核数画像
+
+参见 [实现、运行协议及 D3 边界](../docs/AUXILIARY_CORE_BUDGET.md)。入口为 `python -m experiments.elastic_residency.auxiliary_core_budget`；纯 CPU 真实画像在 WSL2 执行，独立于 GPU/Forge 门禁，不自动切换 4B/9B。
+
+
+BGE 新增独立 `bge_cached` 候选缓存画像：模型加载、候选预计算、query+排序分别记录，保留原 `bge` 模式及旧结果。用户完成的 R_sys=2 曲线已 40/40 通过有效性复算，新缓存模式仅做静态/假后端验证、等待用户补测；一条 PowerShell 启动命令见 [运行说明](../docs/AUXILIARY_CORE_BUDGET.md)。

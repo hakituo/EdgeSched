@@ -1,5 +1,11 @@
 # EdgeSched / MVP Core 项目索引
 
+small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/预热 0.481 s、编码 0.147 s、释放 0.011 s，见 [阶段画像](SMALL_9B_VISION_PROFILE_20260907.md)。这是独立进程画像，保温/提前释放策略仍待验证。
+
+完整曲线批次 `20260907_143917` 已离线逐条核验，288/288、swap 0，见 [16 档曲线与 KV 验收](SMALL_9B_CURVES_20260907.md)。
+
+> **2026-09-07 9B 版本选定**：后续主模型为 small `1a35ab89…` + F16 projector `e36da9b9…`。纯文本对比 12/12、small 视觉 Answer 1/1 通过，固定图形内容描述完整；专用视觉启动器默认 Small，Large 可显式复测。新版本 C2 90/90、C3 150/150、KV 48/48 已通过，4B 对照与旧哈希证据保留。单图不是完整质量评测或 TTS 共置结论。详见 [选型与验收](NINE_B_MODEL_COMPARISON.md)。
+
 **用途**：给 Codex 和维护者提供低成本导航。  
 **最后核对**：2026-08-31（以当前目录实际文件为准）
 
@@ -12,8 +18,8 @@
 | 准入/背压 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/admission_controller.py`, `presentation/websocket/handler.py` | `experiments/admission/`, `tests/test_chat_service.py` |
 | 显存迁移 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#5-关键运行数据流) | `services/resource_manager.py`, `services/cpp_scheduler_engine.py`（门面）+ `cpp_engine_migration.py` / `cpp_engine_llm.py` / `cpp_engine_image.py` / `cpp_engine_utils.py` | `experiments/migration/` |
 | 独立 TTS | [TTS_SUBSYSTEM.md](TTS_SUBSYSTEM.md)、[GPU 句长画像](TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md) | `services/tts/`, `data/adapters/qwen3_tts_adapter.py` | `tests/tts/`, `experiments/tts/` |
-| 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md)、[结果目录](ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md)、[论文实验指南索引](../paper/thesis_experiment_guide/README.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/`；9B 压力基线保留；4B 多模态端点门、TEXT_ONLY C2 90/90、C3 150/150、KV 48/48 已通过，完整 16 档+B2 筛出 T0/T3 均可 FULL；4B 文本共置 30/30（`llm_tts_colocated_4b_text_only_20260904_direct_nvml_v1`）已冻结 G_safe/H_TTS；4B VISION_WARM 多轮画像 5/5 已记录；H_D 已按 16G 论文环境以负面边界证据收案（16G 下 K16 swap 405.15 MiB 失败，20G 同代码诊断 3/3 证明根因为主机内存容量），与 9B 构成跨尺度负面证据；下一步为实现 CPU 核数画像入口 `auxiliary_core_budget.py` 与辅助任务核数曲线 | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，9B 与新模型证据分开且不得自动晋升正文 |
-| 多模态端点门（4B + `mmproj`） | [实现路线 P1-B](../paper/thesis_experiment_guide/06_implementation_and_roadmap.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/vision/` 子包；入口 `vision/vision_endpoint_smoke.py` | `tests/elastic_residency/test_vision_*.py`（静态/假后端 72 项通过）；真实端点门已通过（`v1_vision_endpoint_20260831_direct_nvml_v3`，4/4 单元）；`TEXT_ONLY` 与 `VISION_WARM_*` 证据必须分开，且这不是 4B 常驻画像或共置结论 |
+| 弹性驻留可行性 | [执行计划](ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md)、[结果目录](ELASTIC_RESIDENCY_RESULT_CATALOG_20260830.md)、[论文实验指南索引](../paper/thesis_experiment_guide/README.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/`；9B 为后续主模型，FULL 文本/视觉端点 2/2 已通过；历史 4B 多模态端点门、TEXT_ONLY C2 90/90、C3 150/150、KV 48/48 已通过，完整 16 档+B2 筛出 T0/T3 均可 FULL；4B 文本共置 30/30（`llm_tts_colocated_4b_text_only_20260904_direct_nvml_v1`）已冻结 G_safe/H_TTS；4B VISION_WARM 多轮画像 5/5 已记录；H_D 已按 16G 论文环境以负面边界证据收案（16G 下 K16 swap 405.15 MiB 失败，20G 同代码诊断 3/3 证明根因为主机内存容量），与 9B 构成跨尺度负面证据；CPU 核数画像入口 `auxiliary_core_budget.py` 已实现，用户执行 R_sys=2 曲线已完成 40/40；新增 BGE 候选缓存模式待用户补测，D3 并发验收待完成 | `tests/elastic_residency/`、`experiment_results/elastic_residency/`，9B 与新模型证据分开且不得自动晋升正文 |
+| 多模态端点门（9B 主模型 / 4B 对照 + `mmproj`） | [实现路线 P1-B](../paper/thesis_experiment_guide/06_implementation_and_roadmap.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/vision/` 子包；入口 `vision/vision_endpoint_smoke.py` | `tests/elastic_residency/test_vision_*.py`（静态/假后端 72 项通过）；真实端点门已通过（`v1_vision_endpoint_20260831_direct_nvml_v3`，4/4 单元）；`TEXT_ONLY` 与 `VISION_WARM_*` 证据必须分开，且这不是 4B 常驻画像或共置结论 |
 | Phase-Aware | `.trae/skills/xiaoyou-mvp-core/SKILL.md` | `services/phase_aware/`, `cpp_scheduler/core/phase_strategy.*` | `tests/test_phase_aware_quick.py`, `experiments/phase_aware/` |
 | GPU 计算份额（SM-A） | [CPU/SM 分配方法](../paper/thesis_experiment_guide/05_cpu_and_gpu_allocation.md)、[实现路线](../paper/thesis_experiment_guide/06_implementation_and_roadmap.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/sm/` 子包；入口 `sm/sm_capability.py` | WSL 正式记录 `sm_a_20260830_direct_nvml_v1`：基线成功、36 SM、0 failure/fallback/cleanup failure，但 MPS binary 不存在，暂定 NO_GO；SM-B/C 暂停，等待原生 Linux 恢复验证 |
 | 崩溃恢复 | `docs/PROJECT_CONTEXT.md` | `services/state_backplane.py`, `services/task_scheduler.py` | `experiments/recovery/`, `experiments/semantic_validation/` |
@@ -23,6 +29,25 @@
 | WSL2 同步/环境 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#7-环境与同步边界) | `scripts/sync_to_wsl2_safe.ps1`, `cpp_scheduler/build_wsl2.sh` | WSL2 实际运行日志 |
 
 ## 入口速查
+
+下一步组合筛选：`scripts/experiments/run_small_9b_screen.ps1`（Windows 离线，无模型），见 [双任务/两条三任务分支与条件性四任务计划](SMALL_9B_NEXT_COMBINATIONS_20260907.md)。WSL 大版 9B 已按用户要求删除，小版及视觉文件保留。
+
+视觉按需驻留的论文口径：指南 [01 工作流](../paper/thesis_experiment_guide/01_research_scope_and_workloads.md)、[02 状态](../paper/thesis_experiment_guide/02_state_and_runtime_modes.md)、[03 画像](../paper/thesis_experiment_guide/03_profiles_and_constraints.md)、[04 代价](../paper/thesis_experiment_guide/04_cost_and_plan_contract.md)。V 为 VL 前端组件，独立计加载/编码/释放；q_V 与 Diffusion 队列分开。当前回答后释放已实现，队列保温/提前释放仍待验证。
+
+选定 small 9B 后重建完整曲线：`scripts/experiments/run_9b_small_curves.ps1`，依次 C2 90 + C3 150 + KV 48，手动运行、失败即停；见 [命令与口径](NINE_B_MODEL_COMPARISON.md)。
+
+两份 9B 选型对比：`scripts/experiments/run_9b_comparison.ps1` → `compare_9b_models.py` / `compare_9b_support.py`。
+默认两模型 × FULL/K0 × 3 轮，只测纯文本；运行时将 small 安全复制到 WSL 独立目录，见 [协议](NINE_B_MODEL_COMPARISON.md)。
+用户批次 `compare_9b_20260907_023703` 已 12/12 并经离线原始记录复核；small FULL 显存峰值少 90 MiB、decode +2.05%，随后 small 视觉 Answer 已 1/1 通过，专用视觉入口默认切换为 Small。
+small 视觉候选试测：现有视觉脚本加 `-ModelVariant Small -Stage Answer`，固定 WSL 独立副本及 SHA；文件头配对与用户真实 Answer 均通过，见 [试测说明](NINE_B_MODEL_COMPARISON.md)。
+
+LLM_GPU/TTS_CPU 与 LLM_CPU/TTS_GPU 的旧结果定位、TTS 核数证据缺口及 GPU 兼容性/SM 性能分阶段口径，见 [放置复核](LLM_TTS_PLACEMENT_REVIEW_20260906.md)。
+
+9B 文本/视觉手动入口：`scripts/experiments/run_vision_9b_smoke.ps1`，模型读取 WSL 原生目录
+`/home/leslie/mvp_core/models/llm/`；两份文件已复制并通过 SHA-256 核验。
+`-PrintOnly` 仅检查生成命令，实际实验由用户启动。
+入口支持 `-Stage Answer`（1024-token 完整回答补测）和 `-Stage Profile`（128-token 视觉画像 5 轮）；
+各阶段单独 run id，详见 [协议](VISION_9B_PROBE_20260906.md)。静态检查入口为 `tests/elastic_residency/test_vision_9b_launcher.ps1`。
 
 | 入口 | 作用 | 备注 |
 |---|---|---|
@@ -81,3 +106,11 @@
 - Windows 文件存在，不等于 WSL2 运行副本和模型目录已同步。
 - 父仓库 `.gitignore` 当前忽略整个 `/legacy/`；本目录修改默认不会出现在父仓库 Git 状态中。
 - Python 文件超过 300 行即违反 `AGENTS.md` 的规模上限；应按职责拆模块，而不是继续在同一文件里追加。
+
+
+## 辅助任务 CPU 核数画像入口
+
+辅助任务 CPU 核数画像入口已实现：`experiments/elastic_residency/auxiliary_core_budget.py`，复用物理核租约与采样器，支持 JSON RAG 1/2 核、BGE/Whisper 1/2/4 核和 `R_sys=0/1/2/4` 隔离敏感性。模块职责、运行方法和 D3 正式并发验收边界见 [辅助核数画像](AUXILIARY_CORE_BUDGET.md)。
+
+
+BGE 画像已按职责拆出 `experiments/elastic_residency/auxiliary_bge.py`：保留 `bge` 全量重编码，新增 `bge_cached` 候选预计算模式，准备成本与请求耗时分别记录，任务名分组避免混用。`scripts/experiments/run_auxiliary_cached.ps1` 供用户从任意目录手动启动 15 次 BGE 补测；具体协议与已完成的 40/40 结果见 [辅助核数画像](AUXILIARY_CORE_BUDGET.md)。真实实验由用户执行。

@@ -1,5 +1,13 @@
 # EdgeSched（MVP Core）
 
+下一步运行 [阶段组合离线筛选](docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md)：`scripts/experiments/run_small_9b_screen.ps1`。WSL 大版 9B 已按用户要求删除，小版和视觉文件保留；历史 large 复测入口需要恢复原文件。
+
+small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/预热 0.481 s、编码 0.147 s、释放 0.011 s，见 [阶段画像](docs/SMALL_9B_VISION_PROFILE_20260907.md)。这是独立进程画像，保温/提前释放策略仍待验证。
+
+完整曲线批次 `20260907_143917` 已离线逐条核验，288/288、swap 0，见 [16 档曲线与 KV 验收](docs/SMALL_9B_CURVES_20260907.md)。
+
+> **2026-09-07 9B 版本选定**：后续主模型为 small `1a35ab89…` + F16 projector `e36da9b9…`。纯文本对比 12/12、small 视觉 Answer 1/1 通过，固定图形内容描述完整；专用视觉启动器默认 Small，Large 可显式复测。新版本 C2 90/90、C3 150/150、KV 48/48 已通过，4B 对照与旧哈希证据保留。单图不是完整质量评测或 TTS 共置结论。详见 [选型与验收](docs/NINE_B_MODEL_COMPARISON.md)。
+
 EdgeSched 是 Xiaoyou Core 的本地多模态调度研究原型，目录名沿用 `mvp_core`。项目围绕单 GPU/有限显存场景中的 LLM 常驻、图像突发、CPU backfill、迁移代价、准入控制和崩溃恢复开展实现与实验。
 
 第一次进入项目，请从以下两份文档开始：
@@ -130,3 +138,9 @@ C++ 绑定、真实 GGUF、迁移和 Forge 测试必须在对应 WSL2 环境单�
 ## 版本管理提示
 
 父仓库 `.gitignore` 当前忽略整个 `/legacy/`，所以本目录修改默认不会显示在父仓库 Git 状态中。需要正式纳入版本管理时，应先决定独立仓库方案或有意识地调整父仓库忽略策略。
+
+
+辅助任务 CPU 核数画像入口已实现：`experiments/elastic_residency/auxiliary_core_budget.py`，复用物理核租约与采样器，支持 JSON RAG 1/2 核、BGE/Whisper 1/2/4 核和 `R_sys=0/1/2/4` 隔离敏感性。模块职责、运行方法和 D3 正式并发验收边界见 [辅助核数画像](docs/AUXILIARY_CORE_BUDGET.md)。
+
+
+BGE 新增独立 `bge_cached` 候选缓存画像：模型加载、候选预计算、query+排序分别记录，保留原 `bge` 模式及旧结果。用户完成的 R_sys=2 曲线已 40/40 通过有效性复算，新缓存模式仅做静态/假后端验证、等待用户补测；一条 PowerShell 启动命令见 [运行说明](docs/AUXILIARY_CORE_BUDGET.md)。

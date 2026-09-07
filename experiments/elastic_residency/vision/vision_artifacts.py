@@ -1,4 +1,4 @@
-"""Qwen3.5-4B 主 GGUF 与 mmproj 的 artifact 画像、哈希与对应关系核验。
+"""Qwen3.5 主 GGUF 与 mmproj 的 artifact 画像、哈希与对应关系核验。
 
 本模块只做不加载模型的静态核验，用于在任何 GPU 运行之前回答：
 两个文件是否互相匹配、层数与架构是否与论文口径一致、声明的大小/哈希是否成立。
@@ -8,7 +8,9 @@
 1. mmproj 的 ``general.architecture`` 为 ``clip`` 且 ``general.type`` 为 ``mmproj``；
 2. mmproj 声明 ``clip.has_vision_encoder``；
 3. mmproj 的 ``clip.vision.projection_dim`` 等于主模型 ``<arch>.embedding_length``；
-4. 两者的 ``general.basename`` 与 ``general.base_model.0.*`` 一致。
+4. 两者的 ``general.basename`` 与 ``general.base_model.0.*`` 一致；缺少 basename
+   时要求非空名称、基础模型名称和来源 URL 匹配。单侧缺失允许名称的空格/连字符差异，
+   双侧缺失保持精确名称匹配；两侧 basename 均存在但矛盾时仍拒绝。
 
 只有第 3 条是结构性硬约束（投影输出维度必须等于语言模型隐藏维度），
 其余为来源一致性证据。任何一条不成立都不得继续做真实视觉测量。
@@ -17,6 +19,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any
 
 from experiments.elastic_residency.vision.gguf_reader import (
@@ -187,6 +190,28 @@ def verify_artifact_pair(
             and projector["base_model_repo_url"] == main["base_model_repo_url"]
         ),
     }
+    if main["general_basename"] is None and projector["general_basename"] is None:
+        # 某些量化发布物省略 basename；使用独立的具名门禁记录来源核验分支。
+        del checks["projector_basename_matches_main_model"]
+        checks["projector_name_and_source_match_without_basename"] = bool(
+            main["general_name"] and main["general_name"] == projector["general_name"]
+            and main["base_model_name"]
+            and main["base_model_name"] == projector["base_model_name"]
+            and main["base_model_repo_url"]
+            and main["base_model_repo_url"] == projector["base_model_repo_url"]
+        )
+    elif main["general_basename"] is None or projector["general_basename"] is None:
+        # 不同量化发布物可能只有一侧提供 basename；只归一化名称分隔符，不模糊匹配型号。
+        del checks["projector_basename_matches_main_model"]
+        main_name = re.sub(r"[\s-]+", "", main["general_name"] or "")
+        projector_name = re.sub(r"[\s-]+", "", projector["general_name"] or "")
+        checks["projector_normalized_name_and_source_match_with_partial_basename"] = bool(
+            main_name and main_name == projector_name
+            and main["base_model_name"]
+            and main["base_model_name"] == projector["base_model_name"]
+            and main["base_model_repo_url"]
+            and main["base_model_repo_url"] == projector["base_model_repo_url"]
+        )
     if expected_block_count is not None:
         checks["main_model_block_count_matches_expected"] = (
             main["block_count"] == expected_block_count

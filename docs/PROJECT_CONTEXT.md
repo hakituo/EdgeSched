@@ -1,5 +1,11 @@
 # EdgeSched / MVP Core 项目上下文
 
+small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/预热 0.481 s、编码 0.147 s、释放 0.011 s，见 [阶段画像](SMALL_9B_VISION_PROFILE_20260907.md)。这是独立进程画像，保温/提前释放策略仍待验证。
+
+完整曲线批次 `20260907_143917` 已离线逐条核验，288/288、swap 0，见 [16 档曲线与 KV 验收](SMALL_9B_CURVES_20260907.md)。
+
+> **2026-09-07 9B 版本选定**：后续主模型为 small `1a35ab89…` + F16 projector `e36da9b9…`。纯文本对比 12/12、small 视觉 Answer 1/1 通过，固定图形内容描述完整；专用视觉启动器默认 Small，Large 可显式复测。新版本 C2 90/90、C3 150/150、KV 48/48 已通过，4B 对照与旧哈希证据保留。单图不是完整质量评测或 TTS 共置结论。详见 [选型与验收](NINE_B_MODEL_COMPARISON.md)。
+
 **文档版本**：1.0  
 **最后核对**：2026-08-31
 **核对范围**：当前 Windows 工作副本中的源码、测试、实验入口、论文数据目录和 WSL2 脚本。
@@ -308,6 +314,29 @@ GPU burst arrives
 
 ## 7. 环境与同步边界
 
+用户已授权并完成删除 WSL `Qwen3.5-9B-q4_k_m.gguf`（large `423fb3e5…`，约 5.56 GiB）；small 独立副本和 mmproj 保留。
+历史 Large 入口需恢复原哈希文件才能复测，不能把路径存在性当作当前事实。
+后续离线入口 `run_small_9b_screen.ps1` / `screen_small_9b.py` 联合整理文本、FULL 视觉及 Diffusion GPU 候选，保留 16G 主机门；组合路线见 [计划](SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
+
+论文明确将视觉编码/投影组件 V 纳入通用阶段与驻留状态，V+L 构成 VL 模型，不再视为 L 永久附加的显存项。
+q_V、r_V 和加载/释放代价见指南 01–04；S0/S1/S2 的现有图像队列指 Diffusion，视觉请求不自动触发 LLM 逐出。
+当前实验是每轮加载 V、回答后释放；跨请求保温与编码后提前释放尚未接入调度器。此轮只修订论文模型和证据边界，未改运行代码。
+
+small 9B 完整画像手动入口 `scripts/experiments/run_9b_small_curves.ps1`：固定独立模型路径/SHA，保存共享源码快照，依次运行 C2/C3/KV（90/150/48）；只重建纯文本画像，失败即停，实际实验由用户启动。
+
+9B 换版本前的手动选型入口为 `scripts/experiments/run_9b_comparison.ps1`。
+由 `compare_9b_models.py` 复用原驻留测量器，`compare_9b_support.py` 管理安全复制与汇总；
+新 small 副本放在 `models/llm/comparison_1a35ab89/model.gguf`，不覆盖 large 或 4B。
+两模型均在 WSL 原生盘做 FULL/K0 纯文本比较，完整协议与哈希见 [对比说明](NINE_B_MODEL_COMPARISON.md)。
+用户完成 `compare_9b_20260907_023703`：12/12、swap 0、原始记录离线复核一致。
+small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；仅为三轮选型诊断，small 视觉 Answer 随后已通过，专用视觉入口默认 Small。
+视觉手动入口支持 `-ModelVariant Small -Stage Answer`，读取已准备的独立副本并校验固定 SHA。
+单侧 basename 缺失时按分隔符归一化的名称与非空精确基础来源核验，结构/哈希门禁保留；small 真实文件头和用户实际视觉 Answer 均通过（20260907_142945）。
+
+9B 原生目录复跑 `v1_vision_9b_probe_20260906_204035` 已 2/2 通过；用户随后完成 Answer 补测（1/1 技术通过，漏黑边）
+和 Profile 五轮画像（5/5 全通过）。当前先离线筛容量与阶段切换候选，不重复运行基础画像。
+两个阶段生成预算与 n_ctx 不同，分别保存，不能混为同一性能曲线；详见 [协议](VISION_9B_PROBE_20260906.md)。
+
 | 用途 | 路径/环境 |
 |---|---|
 | Windows 编辑副本 | `D:\AI\xiaoyou-core\legacy\mvp_core` |
@@ -316,6 +345,7 @@ GPU burst arrives
 | 主实验环境 | `/home/leslie/.venvs/mvp_core-cu128` |
 | Forge 环境 | `/home/leslie/.venvs/forge-cu128` |
 | GGUF 模型 | `/home/leslie/mvp_core/models/llm` |
+| 当前 9B + 视觉副本 | 上述原生目录中的 `Qwen3.5-9B-q4_k_m.gguf` / `Qwen3.5-9B-f16.mmproj`；2026-09-06 从 D: 复制并核验两侧 SHA-256，见 [复核记录](VISION_9B_PROBE_20260906.md) |
 | 辅助模型 | `/home/leslie/mvp_core/models/auxiliary`（Faster-Whisper Small、BGE-small-zh-v1.5） |
 | 图像模型 | `/home/leslie/mvp_core/models/Image` |
 | Forge 服务 | `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/` |
@@ -342,7 +372,7 @@ GPU burst arrives
 - 2026-08-30 KV 口径补强已完成正式校准：`c3_kv_cache_calibration_20260830_direct_nvml_v1` 基于干净 commit `820ee0f` 完成 48/48 条、0 failure，模型哈希与 C2/C3 相同。`kv_state_bytes` 是含 logits、embedding 与 KV memory 的完整序列化迁移负载，不是纯 GPU KV 显存；`n_ctx/KV tokens=640/2176/4224` 时，KV buffer 总量为 `24/72/136 MiB`，完整序列化状态为 `70.263/118.292/182.331 MiB`。历史 C2/C3 的 240 条 direct NVML 曲线无需重跑；论文旧稿的 1–2 GiB 数值已证伪并删除。
 - 2026-08-31 Qwen3.5-9B LLM+TTS 正式共置 `llm_tts_colocated_candidates_20260831_direct_nvml_v1` 基于干净 commit `d1009158ed03a906933106b500d91d34a1d3ad3c` 完成 6 候选×5 轮，30/30、0 failure/fallback，真实后端、direct NVML、GPU 新鲜度、swap 与 provenance 全部通过。运行版把绝对 `P_colocated` 再加完整 `G_safe`，对 15 条 FULL+T3 记录重复计入 idle；原始测量仍有效，离线 `c3_h_tts_colocated_20260831_v1.json` 按 `(P_colocated-B_idle)+G_safe` 复算后六组均可行，正残差 max=0，冻结 9B `G_safe=501.282 MiB` 与 H_TTS（T0: 512/K24、2048/K20、4096/K20；T3: 全部 FULL）。随后 K6/K4+Forge 均触发 swap 门，9B `H_D` 不冻结；这些阈值不得复用为 4B+视觉结论。
 - 2026-08-31 已实现独立的 LLM+Forge 共置实验链。Qwen3.5-9B 的 512/K6 smoke 与探索性 512/K4 smoke 均只有 swap 门失败，增长分别约 290.44 MiB 与 2070.32 MiB；两者的真实后端、PNG、direct NVML、新鲜度、KV、GPU 容量和 provenance 有效。降低 GPU 层数使主机换页显著恶化，因此不再继续 K2，也不运行 9B 正式 15 条矩阵；这些 artifact 保留为模型特定负面证据，`H_D` 未冻结。
-- 2026-08-31 主实验 LLM 决定迁移到 Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`，用统一模型真实执行文本与图片理解；9B 保留为压力/NO_GO 对照。旧 `VLAdapter` 是独立 Qwen2-VL Transformers 路径，不能代表新链路；C2/C3、KV、LLM+TTS、LLM+Forge 入口仍是纯文本 `Llama(model_path=...)`。
+- 历史选型（已由 2026-09-06 的 9B+视觉决定取代）：2026-08-31 主实验 LLM 决定迁移到 Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`，用统一模型真实执行文本与图片理解；9B 保留为压力/NO_GO 对照。旧 `VLAdapter` 是独立 Qwen2-VL Transformers 路径，不能代表新链路；C2/C3、KV、LLM+TTS、LLM+Forge 入口仍是纯文本 `Llama(model_path=...)`。
 - 2026-08-31 WSL2 只读核验：`llama-cpp-python==0.3.35` 随包提供 `libmtmd.so` 与 `llama_cpp/mtmd_cpp.py` 绑定，`llama_chat_format` 已含通用 `MTMDChatHandler`，因此当前环境**具备**该 Qwen3.5 多模态执行能力，无需新增依赖。
 - 2026-08-31 4B artifact 门禁已通过（只读、未加载语言模型）：主 GGUF `general.architecture=qwen35`、`block_count=32`、`context_length=262144`、`embedding_length=2560`、`file_type=15`、426 张量、SHA-256 `00fe7986…ef11a4`、2740937888 B；`mmproj-BF16.gguf` 为 `general.architecture=clip`、`general.type=mmproj`、`clip.projector_type=qwen3vl_merger`、`clip.has_vision_encoder=true`、24 层视觉块、`image_size=768`、`patch_size=16`、`spatial_merge_size=2`、`projection_dim=2560`、298 张量、SHA-256 `302b92d5…21f3a6`、675569344 B。`projection_dim == embedding_length` 与 `general.basename`/`base_model.0.*` 一致构成对应关系证据；`mtmd_get_cap_from_file` 报告 `inp_vision=true`、`inp_audio=false`，media marker 为 `<__media__>`。
 - 2026-08-31 已实现 `experiments/elastic_residency/vision/` 多模态端点门链路：artifact 门禁、固定 448×448 确定性图片（`pixel_payload_sha256=a1514034…43cb00`，`spec_sha256=d4c6fc1c…a0efb8`，按 patch/merge 期望 196 个视觉 token）、libmtmd projector warm/执行/释放、`TEXT_ONLY`/`TEXT_ONLY_CHAT`/`VISION_WARM_GPU`/`VISION_WARM_CPU` 四状态与 K0/FULL 端点 smoke 编排。Windows 侧静态与假后端测试 72 项通过，父进程门禁失败路径已在 WSL2 用合成 artifact 实跑验证。
@@ -412,3 +442,11 @@ GPU burst arrives
 - 实验口径、正文数据目录或晋升流程变化：更新第 6 节、`experiments/README.md`、`paper/experiment_data/README.md`。
 - 环境、模型或同步方法变化：更新第 7-8 节和局部 `AGENTS.md`。
 - 每次文档更新运行 `tests/scripts/verify_project_context.py`，并对变更路径做最小可用测试。
+
+
+## 辅助任务 CPU 核数画像入口
+
+辅助任务 CPU 核数画像入口已实现：`experiments/elastic_residency/auxiliary_core_budget.py`，复用物理核租约与采样器，支持 JSON RAG 1/2 核、BGE/Whisper 1/2/4 核和 `R_sys=0/1/2/4` 隔离敏感性。模块职责、运行方法和 D3 正式并发验收边界见 [辅助核数画像](AUXILIARY_CORE_BUDGET.md)。
+
+
+BGE 画像已按职责拆出 `experiments/elastic_residency/auxiliary_bge.py`：保留 `bge` 全量重编码，新增 `bge_cached` 候选预计算模式，准备成本与请求耗时分别记录，任务名分组避免混用。`scripts/experiments/run_auxiliary_cached.ps1` 供用户从任意目录手动启动 15 次 BGE 补测；具体协议与已完成的 40/40 结果见 [辅助核数画像](AUXILIARY_CORE_BUDGET.md)。真实实验由用户执行。

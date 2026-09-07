@@ -1,5 +1,11 @@
 # 弹性驻留运行结果目录
 
+small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/预热 0.481 s、编码 0.147 s、释放 0.011 s，见 [阶段画像](SMALL_9B_VISION_PROFILE_20260907.md)。这是独立进程画像，保温/提前释放策略仍待验证。
+
+完整曲线批次 `20260907_143917` 已离线逐条核验，288/288、swap 0，见 [16 档曲线与 KV 验收](SMALL_9B_CURVES_20260907.md)。
+
+> **2026-09-07 9B 版本选定**：后续主模型为 small `1a35ab89…` + F16 projector `e36da9b9…`。纯文本对比 12/12、small 视觉 Answer 1/1 通过，固定图形内容描述完整；专用视觉启动器默认 Small，Large 可显式复测。新版本 C2 90/90、C3 150/150、KV 48/48 已通过，4B 对照与旧哈希证据保留。单图不是完整质量评测或 TTS 共置结论。详见 [选型与验收](NINE_B_MODEL_COMPARISON.md)。
+
 **盘点日期**：2026-08-30  
 **工作产物根目录**：`experiment_results/elastic_residency/`  
 **用途**：区分当前候选证据、历史停止记录、已替代结果和 debug/smoke，防止跨测量后端或跨口径混用。
@@ -25,6 +31,16 @@ experiment_results/elastic_residency/
 
 | 阶段 | 当前路径 | 状态与用途 |
 |---|---|---|
+| small 9B 五轮视觉生命周期 | `vision_endpoint/v1_vision_9b_small_profile_20260907_171635/` | 5/5、swap 0、逐轮原始记录核验通过。V 加载/预热 0.481 s、编码 0.147 s、释放 0.011 s；整卡峰值 7462.38 MiB，释放读数减少 1148 MiB。独立进程画像，非策略对照，见 [报告](SMALL_9B_VISION_PROFILE_20260907.md) |
+| small 9B C2 | `c2/c2_9b_small_20260907_143917/` | 90/90 全通过，swap 0、固定 small SHA、共享源码快照；已逐条核验，见 [完整验收](SMALL_9B_CURVES_20260907.md) |
+| small 9B C3 | `c3/c3_9b_small_20260907_143917/` | 150/150 全通过，swap 0、固定 small SHA、共享源码快照；已逐条核验，见 [完整验收](SMALL_9B_CURVES_20260907.md) |
+| small 9B KV | `kv_calibration/kv_9b_small_20260907_143917/` | 48/48 全通过，swap 0、固定 small SHA、共享源码快照；已逐条核验，见 [完整验收](SMALL_9B_CURVES_20260907.md) |
+| small 9B 视觉 Answer | `vision_endpoint/v1_vision_9b_small_answer_20260907_142945/` | 1/1、34 项门禁通过、swap 0；固定图五项内容描述完整。TTFT 0.4251 s、decode 58.738 tokens/s、峰值 7501.02 MiB（含 48 MiB GPU KV），n_ctx=1536。纯单轮回答验收；选定 small 为后续版本，新完整曲线待建，见 [详情](NINE_B_MODEL_COMPARISON.md) |
+| 两份 9B 选型对比 | `model_comparison/compare_9b_20260907_023703/` | 12/12、swap 0，六组配对 prompt 一致，原始 child/iterations/源码快照离线复核与 summary 一致。small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；纯文本三轮诊断，small 视觉未验收、默认模型未切换，见 [详细对比](NINE_B_MODEL_COMPARISON.md) |
+| 9B 视觉重启后复核 | `vision_endpoint/v1_vision_9b_profile_20260907_012723/` | 5/5、swap 0；与 20260906_204939 参数/实验代码一致。decode mean −0.72%、TTFT mean −3.37%；整卡基线及峰值均减少 86.30 MiB，峰值减基线不变。未见旧批严重性能污染证据，分批保留，详见 [重启对照](VISION_9B_PROBE_20260906.md) |
+| 9B 回答补测 | `vision_endpoint/v1_vision_9b_answer_20260906_204651/` | 1/1 技术通过，1024 tokens / n_ctx=1536；主要图形正确、漏黑边，9 个 EOS 后仍固定生成；不是质量全通过或 128-token 性能数据 |
+| 9B 五轮视觉画像 | `vision_endpoint/v1_vision_9b_profile_20260906_204939/` | 5/5、swap 0；峰值 7542.47 MiB（已含 24 MiB GPU KV），TTFT mean 0.5128 s、decode mean 55.7562 tokens/s；只证明独立资源画像，下一步先离线筛容量，见复核记录 |
+| 9B FULL 文本/视觉端点 | `vision_endpoint/v1_vision_9b_probe_20260906_201923/` | 用户实跑 2/2 通过；196 视觉 tokens、嵌入 4096 维、swap 0、整卡采样峰值 7542.47 MiB；128-token 输出截断，仅单轮链路证据，详见 [复核记录](VISION_9B_PROBE_20260906.md) |
 | A1 | `a1/a1_smoke_20260829_verified_v7/` | 当前实验基础设施硬门证据 |
 | Audio | `audio_compat/audio_compat_20260829*/` | WSLg/Windows 播放兼容性记录 |
 | B1 | `b1/b1_tts_components_20260829_verified_v2/` | T0--T3 单文本组件放置 smoke |
@@ -91,7 +107,7 @@ experiment_results/elastic_residency/
 
 归档区共 28 个批次，约 408.81 MiB、876 个文件。
 
-## 4. 9B 产物在 4B 迁移后的归类（2026-09-01）
+## 4. 历史归类：9B 产物在 4B 迁移后（2026-09-01，主模型选型已更新）
 
 主实验模型迁移到 `Qwen3.5-4B-Q4_K_M` + `mmproj-BF16.gguf` 后，9B 产物按下列三类处理。
 判定标准是**该结果是否依赖 LLM 模型身份**：不依赖的直接沿用，依赖的转为压力/负面/
@@ -150,12 +166,21 @@ K4 把更多权重退回 DDR 后换页从约 290.44 MiB 恶化到约 2070.32 MiB
 
 旧 9B C3 H_D 路径已经在两个 smoke 后按 swap 门停止；现有确切 artifact 已列在上表，不再创建 9B 正式 H_D 目录。
 
-B2、Forge 隔离校准、9B 完整 16 档筛选和 LLM+TTS 正式共置均已完成。9B 的 512/K6 与探索性 512/K4+Forge 都因真实 swap 增长失败，正式 15 条矩阵已停止，`H_D` 未冻结。主实验模型迁移到 Qwen3.5-4B-Q4_K_M + 对应 BF16/F16 `mmproj`；9B 产物保留为模型特定压力与负面证据，不能混入 4B 曲线。
+B2、Forge 隔离校准、9B 完整 16 档筛选和 LLM+TTS 正式共置均已完成。9B 的 512/K6 与探索性 512/K4+Forge 都因真实 swap 增长失败，正式 15 条矩阵已停止，`H_D` 未冻结。后续主模型改为 9B+真实视觉，FULL 文本/视觉端点已 2/2 通过；4B 作为跨尺度对照。旧 9B 文本与新视觉产物仍须按哈希、环境和驻留状态分开，不能混为一条曲线。
 
-下一批不是继续运行旧 9B 命令，而是建立 4B 多模态迁移门：固定主 GGUF/`mmproj` 的来源与哈希，真实执行固定图片，测量 projector GPU/RSS/warm/释放、图片 token、KV、direct NVML 和 swap，并先完成文本/视觉 K0/FULL 端点 smoke。入口、run-id 和正式目录命名尚未实现与冻结；实现前不写占位命令，禁止手工把 `mmproj` 文件大小加进旧曲线或复用 9B 的 H 值。
+此前计划的 4B 多模态端点门与 VISION_WARM 画像已完成，具体结果见下文。其 artifact 身份、真实 projector 执行与资源证据保持独立，不手工把 `mmproj` 文件大小加进旧曲线或复用 9B 的 H 值。
 
 4B 文本共置矩阵已冻结：`llm_tts_colocated_4b_text_only_20260904_direct_nvml_v1`（30/30）+ 离线复算 `c3_h_4b_tts_colocated_20260906_v1.json`，G_safe=501.282 MiB 校准维持、H_TTS 全部冻结。4B VISION_WARM 多轮画像已完成（`v1_vision_endpoint_4b_warm_profile_20260906_direct_nvml_v1`，5/5）。
 
 图像侧 `H_D` 已按 16G 论文环境以负面边界证据收案：Forge 同日复测（`M_D=5273.21 MiB`）注入 4B screen 后 FULL 因 GPU 容量不可行、H_D 候选为 K16/K14/K14；正式矩阵首个 K16@C512 即触发真实 swap（405.15 MiB）失败即停，与 9B K6/K4 同模式；20G 归因诊断（同代码 3/3 通过、swap 0.0–0.2 MiB）证明根因为 16G 主机内存容量。4B `H_D` 不冻结，与 9B 构成跨尺度负面证据：8GB GPU + 16GB 主机下 LLM+Diffusion 无任何可共置档位（FULL 被 GPU 容量排除、K 档被主机内存排除）；该结论直接支撑图像期采用迁移/逐出而非共驻留的设计，`.wslconfig` 的 `memory=20GB` 诊断配置须恢复默认。
 
-下一批工作离开图像侧，转向 CPU 核数画像：实现 `auxiliary_core_budget.py` 正式入口（物理核拓扑、affinity 与租约基础设施已就绪），先跑辅助任务 BGE/Whisper 的 1/2/4 核曲线与 `R_sys={0,1,2,4}`，必要时补 LLM/TTS 核数扩展曲线；SM-A 仍等待原生 Ubuntu，SM-B/C/D/E 维持暂停。
+CPU 核数入口现已实现，用户完成 R_sys=2 曲线后，下一步由用户执行 BGE 候选缓存补测（见第 7 节）；完整 R_sys 敏感性及正式并发验收仍待完成。SM-A 仍等待原生 Ubuntu，SM-B/C/D/E 维持暂停。
+
+
+## 7. 辅助 CPU 核数结果与缓存口径修正（2026-09-06）
+
+- 用户执行 `auxiliary_core_budget/d1_auxiliary_manual_v1/`：R_sys=2，40/40 次、240 个事件；离线复算通过，0 failure、0 swap growth，线程绑定及租约归还通过。
+- JSON RAG 1 核 p95=2.35 ms；Whisper 1 核 p95 RTF=0.691，均满足冻结 SLA。BGE 全量重编码 1/2/4 核 p95=1073/667/696 ms，均未达 150 ms；4 核均值改善但尾延迟未稳定改善。
+- 旧 BGE 每次重编码 query+32 候选并 padding=128；其 infeasible 不外推到候选已缓存的检索。新增 `bge_cached`，候选准备另计、请求只编码 query 并排序，维持 padding=128 和 SLA=150 ms；静态与假后端验证已通过，真实补测尚未执行。
+- 此前助手启动的 `d1_auxiliary_rsys_curve_20260906_v1` 已按用户要求中止，保留 STOPPED_BY_USER 标记，不能拼接为完整四档 R_sys 证据。后续真实模型实验均由用户执行。
+- 源码职责、手动命令及指标边界见 [辅助核数画像](AUXILIARY_CORE_BUDGET.md)。

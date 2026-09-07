@@ -51,6 +51,14 @@ d_i,\rho_i,g_i,\chi_i,role_i,preempt_i,queue_i,deps_i
 - 真实图片预处理、编码、投影和首 token 延迟；
 - 视觉阶段结束后 projector warm/释放两种状态的恢复成本。
 
+#### 视觉组件 V 的独立阶段画像
+
+V 虽属于同一视觉语言模型，仍单独记录未加载/CPU warm/GPU warm 状态、加载与预热、编码、同步、释放和下一次重新加载代价。
+输入包括图片分辨率/数量、视觉 token 数、L 的驻留档位与 KV 规模；资源记录区分 idle warm 权重、编码临时缓冲峰值和释放后的残留。
+请求到首 token 的端到端延迟必须包含排队、必要的 L/V 加载与转换、图像预处理/编码、LLM prefill 和首 token 采样。
+当前视觉记录的 `inference.ttft_s` 不含 L/V 加载，不能直接作为按需加载策略的端到端 TTFT。
+与常驻对照时，两边使用相同图片、上下文、正确性门、EOS 策略和请求序列，并完整计入其实际资源占用和切换成本。
+
 ### 5.2 TTS 画像
 
 输入特征：
@@ -117,7 +125,10 @@ M_L(r_L,K)+M_V(r_V,u)+M_T(r_T)+M_D(b)+G_{safe}
 
 其中 \(M_V\) 是对应 Qwen3.5 模型的真实 `mmproj` 常驻与图片编码增量，\(u\) 包含图片分辨率、视觉 token 数和 warm/cold 状态。只有 projector 实际执行时才能进入正式画像；文本阶段可以保留 `VISION_WARM` 作为低延迟配置，也可以释放 projector 形成更低驻留档。
 
-\(M_V\) 的可采集口径已由端点门实现固定为：projector warm 前后的 direct NVML 整卡显存差值（`projector_gpu_card_delta_mb`）与进程 RSS 差值（`projector_rss_delta_bytes`），另加 `projector_load_s` / `projector_free_s` 描述转换成本。`use_gpu=false` 时增量主要落在 RSS 上。禁止用 `mmproj` 文件大小（约 0.67 GB）代入 \(M_V\)，也禁止把它加到旧 9B 曲线上冒充测量。
+\(M_V\) 的可采集口径包括 projector warm 前后的 direct NVML 整卡显存差值与进程 RSS 差值，以及真实编码窗口的峰值；warm 增量不能代替编码峰值。另用 `projector_load_s` / `projector_free_s` 描述转换成本。`use_gpu=false` 时仍应实测 GPU/RSS 分量。禁止用 mmproj 文件大小代入 \(M_V\)，也禁止把它加到不同哈希的 LLM 曲线上冒充测量。
+
+V 未加载时其独立权重/编码工作区预算可为零，但已产生的视觉 KV 或缓存表示仍分别计入 L/KV 或独立缓存项。
+若直接使用实测 V+L 联合峰值，该联合量已包含 V，不得再加一次 \(M_V\)。逐阶段估算要遵循真实重叠关系，最终仍以目标生命周期的实测峰值验证。
 
 安全余量 \(G_{safe}\) 必须根据 idle GPU 高水位、`reserved-allocated` allocator slack、单模型峰值相加与真实共置峰值之间的正残差，以及重复运行峰值漂移共同校准，不能只写死为一个未经验证的比例。由于 \(G_{safe}\) 已包含 idle 高水位，使用真实整卡绝对峰值 \(P_{colocated}\) 验证时必须按 \((P_{colocated}-B_{idle})+G_{safe}\le V_{GPU}\) 统一到增量口径，并另验 \(P_{colocated}\le V_{GPU}\)；不得把绝对峰值与完整 \(G_{safe}\) 直接相加而重复计入 idle。容量公式只用于筛选，最终可行性必须由目标组合真实同时加载并运行证明。
 
@@ -132,7 +143,7 @@ M_L(r_L,K)+M_V(r_V,u)+M_T(r_T)+M_D(b)+G_{safe}
 
 其中 \(H_{effective}\) 是实验进程实际可见的 WSL2 `MemTotal`，不是只报告 Windows 物理内存；\(\hat H_i\) 包含 CPU/DDR 权重、mmap 驻留页、KV、projector、Forge 进程 RSS 与临时缓冲。manifest 必须保存 `MemTotal/SwapTotal`，每轮保存起点、峰值、终点与增长。
 
-Qwen3.5-9B 的 512/K6+Forge 与 512/K4+Forge 虽通过 GPU 容量门，但 swap 分别增长约 290.44 MiB 与 2070.32 MiB；K4 把更多权重退回 DDR 后反而恶化。这两次真实 smoke 证明驻留筛选必须联合 GPU 与主机内存，不得靠放宽 swap 门禁宣布可行。主实验迁移到 4B+`mmproj` 后仍须重新校准该约束。
+Qwen3.5-9B 的 512/K6+Forge 与 512/K4+Forge 虽通过 GPU 容量门，但 swap 分别增长约 290.44 MiB 与 2070.32 MiB；K4 把更多权重退回 DDR 后反而恶化。这两次真实 smoke 证明驻留筛选必须联合 GPU 与主机内存，不得靠放宽 swap 门禁宣布可行。后续 9B+真实 `mmproj` 必须独立校准视觉状态约束；4B 对照数据及 20G 诊断不解除 16G 下的停止条件。
 
 ### 6.3 CPU 约束
 
