@@ -36,7 +36,9 @@ T0–T3 是 TTS 组件的设备放置，T3 仍有 GPU talker，也不等于完�
 FULL 分别 56.3526/55.6561/55.2438 tokens/s；K0 TTFT mean 8.5765/35.8923/73.4526 s。
 
 **身份限制**：旧 9B GGUF SHA-256 为 `de10bfef1d344e454439e66c19922af7ca3b00636da3fe21adae91ac7bd8e0a3`，
-当前为 `423fb3e5fe2c98df616159b7cd1bd04765f67667f5f8712a81e8f63f4e7ee1ef`。
+2026-09-06 复核时为 `423fb3e5fe2c98df616159b7cd1bd04765f67667f5f8712a81e8f63f4e7ee1ef`；该大版 WSL 文件已删除。
+2026-09-07 当前选定 small `1a35ab892c0c4eec814d6594d34461193593a19110cd1d1285414efceb8a26ab`，
+其 288 条曲线/KV 已通过，见 [新曲线验收](SMALL_9B_CURVES_20260907.md)；成对端到端基线仍待测。
 旧曲线只能提供模型特定线索，不能直接冻结当前 9B+视觉的 CPU 性能或放置结论。
 
 - LLM_GPU + TTS_CPU：文本生成快，但现有 CPU TTS smoke 很慢，可能成为语音瓶颈。

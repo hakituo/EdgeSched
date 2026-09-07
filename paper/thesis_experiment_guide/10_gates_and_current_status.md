@@ -1,8 +1,10 @@
 # Go/No-Go 门禁与当前任务状态
 
+small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30 仅为容量候选，长上下文余量不足 16 MiB。下一步用户运行 `scripts/experiments/run_small_9b_tts_compat.ps1`，C512/K18 配 T0/T3 各 1 轮；加载期另需验证，不冻结阈值，见 [验收与命令](../../docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
+
 > **small 视觉画像补齐**：`20260907_171635` 五轮 5/5，swap 0；加载/预热、编码、回答后释放阶段成本已采集。独立进程画像不证明跨请求保温或编码后提前释放；见 [验收](../../docs/SMALL_9B_VISION_PROFILE_20260907.md)。
 
-> **2026-09-07 small 9B 更新**：后续版本固定 `1a35ab89…`；纯文本完整曲线 C2 90/90、C3 150/150、KV 48/48 已核验，swap 0。small 视觉 Answer 1/1 已通过；旧 large 五轮视觉画像仍属 `423fb3e5…`，不可混用。下一步离线重算容量候选，再做兼容性/放置验证；新模型 G_safe/H_TTS 未冻结，SM-A 等原生 Ubuntu。见 [完整验收](../../docs/SMALL_9B_CURVES_20260907.md)。
+> **2026-09-07 small 9B 更新**：后续版本固定 `1a35ab89…`；纯文本完整曲线 C2 90/90、C3 150/150、KV 48/48 已核验，swap 0。small 视觉 Answer 1/1 已通过；旧 large 五轮视觉画像仍属 `423fb3e5…`，不可混用。离线容量候选已复算，下一步做兼容性/放置验证；新模型 G_safe/H_TTS 未冻结，SM-A 等原生 Ubuntu。见 [完整验收](../../docs/SMALL_9B_CURVES_20260907.md)。
 
 > 导航：[总索引](README.md) · 兼容入口：[THESIS_EXPERIMENT_GUIDE_DRAFT.md](../THESIS_EXPERIMENT_GUIDE_DRAFT.md)
 
@@ -110,7 +112,7 @@ No-Go：
 - [x] **9B+视觉主模型端点**：`v1_vision_9b_probe_20260906_201923`，FULL × TEXT_ONLY_CHAT/VISION_WARM_GPU 各 1 轮，2/2 通过；196 视觉 tokens、非空 4096 维嵌入、swap 0。输出正确识别蓝方块与红圆但在 128 tokens 截断；仅完成链路验收。
 - [x] **9B 五轮视觉画像完成**：`v1_vision_9b_profile_20260906_204939`，5/5、0 failure、swap 0；整卡峰值 7542.47 MiB 已包含 n_ctx=640 的 24 MiB GPU KV，余量 608.53 MiB 尚未扣安全余量。
 - [x] **9B 回答补测完成**：`v1_vision_9b_answer_20260906_204651`，1/1 技术通过，三种主要图形/颜色/位置及白底正确；漏黑边，不能登记全部细节质量通过。
-- [ ] **先离线筛容量与阶段切换候选**：核对旧画像身份，排除明显不成立组合后才决定补测；编码后释放 projector 并继续 decode 尚未实测，视觉与 TTS 共置及长上下文未验收，不能直接用旧 TEXT_ONLY H_TTS 替代。
+- [x] **small 离线 GPU 容量候选已验收**：`small_stage_screen_20260907_204516_653987.json` 复算一致；完整阶段切换策略仍待验证；编码后释放 projector 并继续 decode 尚未实测，视觉与 TTS 共置及长上下文未验收，不能直接用旧 TEXT_ONLY H_TTS 替代。
 - [ ] S0 无图像真实重叠静态放置实验：保留 LLM_GPU+TTS_CPU 与 LLM_CPU+TTS_GPU 两种基线；已有 CPU/GPU TTS smoke 和 GPU 句长画像先复用，当前 9B CPU 性能及成对端到端证据仍缺。GPU 共存阶段先做兼容性验收，保存耗时但不作为 SM 优化后的最终优劣；SM 受控平衡仍等原生 Linux。详见 [放置复核](../../docs/LLM_TTS_PLACEMENT_REVIEW_20260906.md)。
 - [ ] 根据真实结果判断弹性驻留 Go / No-Go
 - [ ] Go 后才实现 `PlacementPlan` 与新代价模型，再开展 S1 和正式策略评测
