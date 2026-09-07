@@ -4,6 +4,7 @@ import pytest
 import torch
 
 from experiments.elastic_residency.tts_component_offload import (
+    DEFAULT_CONFIG_NAMES,
     _actual_devices,
     _module_inventory,
     _nvidia_memory_snapshot,
@@ -12,13 +13,29 @@ from experiments.elastic_residency.tts_component_offload import (
 )
 
 
-def test_frozen_t0_t3_placement_contract() -> None:
+def test_frozen_t0_t4_placement_contract() -> None:
     assert placement_for("T0").speech_codec_device == "cuda:0"
     assert placement_for("t1").speech_codec_device == "cpu"
     assert placement_for("T2").speaker_device == "cpu"
     assert placement_for("T3").unload_speaker_after_prompt is True
+    # T4 是唯一 talker 也在 CPU 的配置，S0 的 TTS 全 CPU 基线依赖它。
+    t4 = placement_for("T4")
+    assert (t4.talker_device, t4.speech_codec_device, t4.speaker_device) == (
+        "cpu",
+        "cpu",
+        "cpu",
+    )
+    # T0–T3 的 talker 必须仍在 GPU：否则 T2 会被误当成 CPU 基线。
+    for name in ("T0", "T1", "T2", "T3"):
+        assert placement_for(name).talker_device == "cuda:0"
     with pytest.raises(ValueError):
-        placement_for("T4")
+        placement_for("T5")
+
+
+def test_default_matrix_excludes_cpu_only_t4() -> None:
+    """默认矩阵保持 T0–T3，避免历史重跑被 CPU talker 拖慢。"""
+    assert DEFAULT_CONFIG_NAMES == ("T0", "T1", "T2", "T3")
+    assert "T4" not in DEFAULT_CONFIG_NAMES
 
 
 def test_module_inventory_reports_real_parameter_device_and_size() -> None:

@@ -44,7 +44,11 @@ from experiments.tts.profiling_utils import (  # noqa: E402
 )
 
 
-CONFIG_NAMES = ("T0", "T1", "T2", "T3")
+# T4 是 TTS 全 CPU 放置（talker 也在 CPU），只服务 S0 反向基线：
+# 它必须出现在 CONFIG_NAMES 里，否则 --child-config 的 choices 会拒绝；
+# B1/B2 的 --configs 默认已显式固定为 T0–T3，历史默认矩阵不受影响。
+CONFIG_NAMES = ("T0", "T1", "T2", "T3", "T4")
+DEFAULT_CONFIG_NAMES = ("T0", "T1", "T2", "T3")
 
 
 @dataclass(frozen=True)
@@ -61,6 +65,8 @@ PLACEMENTS = {
     "T1": PlacementSpec("T1", "cuda:0", "cpu", "cuda:0"),
     "T2": PlacementSpec("T2", "cuda:0", "cpu", "cpu"),
     "T3": PlacementSpec("T3", "cuda:0", "cpu", "cuda:0", True),
+    # 字段顺序为 (name, talker, codec, speaker)：T4 是唯一 talker 也在 CPU 的配置。
+    "T4": PlacementSpec("T4", "cpu", "cpu", "cpu"),
 }
 
 
@@ -745,7 +751,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--text", default="你好，这是组件放置验证。")
     parser.add_argument("--language", default="Chinese")
-    parser.add_argument("--configs", nargs="+", default=list(CONFIG_NAMES))
+    parser.add_argument("--configs", nargs="+", default=list(DEFAULT_CONFIG_NAMES))
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--repetition-penalty", type=float, default=1.05)
     parser.add_argument("--seed", type=int, default=42)

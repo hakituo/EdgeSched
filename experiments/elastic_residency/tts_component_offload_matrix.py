@@ -32,6 +32,7 @@ from experiments.elastic_residency.contracts import (  # noqa: E402
 )
 from experiments.elastic_residency.tts_component_offload import (  # noqa: E402
     CONFIG_NAMES,
+    DEFAULT_CONFIG_NAMES,
     _actual_devices,
     _apply_placement,
     _build_xvector_prompt,
@@ -752,7 +753,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="/home/leslie/mvp_core/models/tts_refs/ref_calm.wav",
     )
     parser.add_argument("--language", default="Chinese")
-    parser.add_argument("--configs", nargs="+", default=list(CONFIG_NAMES))
+    parser.add_argument("--configs", nargs="+", default=list(DEFAULT_CONFIG_NAMES))
     parser.add_argument("--rounds", type=int, default=5)
     parser.add_argument("--max-new-tokens", type=int, default=512)
     parser.add_argument("--repetition-penalty", type=float, default=1.05)

@@ -163,6 +163,36 @@ cd 'D:\AI\xiaoyou-core\legacy\mvp_core'
   两者并存，人工裁决取更严的后者。
 - 未验证 LLM 与 TTS 同时计算、SM 份额、TTS 后 LLM 继续回答、视觉/Forge 共置。
 
+## S0 反向静态放置基线（进行中）
+
+两个 smoke 批次（2026-09-07 23:13/23:14，均 1 轮、全门禁通过、swap 0）：
+
+- `512:K24:T2`（`20260907_231256_7638174`）**不构成 TTS_CPU 基线**。`PlacementSpec`
+  字段顺序为 `(talker, codec, speaker)`，T2 的 talker 仍在 `cuda:0`；实测 `P=7481.41`、
+  时间线峰值 7589.41，与 K24:T3 实质相同。T0–T3 没有任何配置把 talker 放到 CPU。
+- `512:K0:T0`（`20260907_231359_6390285`）是有效的 LLM_CPU+TTS_GPU 一侧：LLM 全 CPU
+  （`B_LLM=1079.41`，减 idle 后 127.10 与 C3 曲线 K0 一致），`P=3333.41`、峰值 3331.41、
+  物理余量 4817.59 MiB；RSS 峰值 8.36 GiB（比 GPU 侧高 2.07 GiB）、系统可用最低 11.71 GiB、swap 0；
+  WAV 与 GPU 侧逐字节一致（TTS 输入是固定文本，不接 LLM 输出）。
+
+为此新增 **T4（talker/codec/speaker 全 CPU）**：`tts_component_offload.py` 的 `PLACEMENTS`
+加入 T4，`CONFIG_NAMES` 扩为 T0–T4 以便 `--child-config` 接受；B1/B2 的 `--configs` 默认显式固定为
+T0–T3，历史默认矩阵与既有数据不受影响。colocated 入口显式传 `T4` 即可用。
+
+S0 补全步骤（每步失败即停）：
+
+```powershell
+# 1) T4 隔离 smoke：采集 GPU 隔离增量与 CPU talker 耗时量级
+& 'D:\AI\xiaoyou-core\legacy\mvp_core\scripts\experiments\run_small_9b_t4_isolate.ps1'
+
+# 2) 从 B1 产物 summary.json 读 T4 的 max_card_delta_mb，代入共置 smoke
+& 'D:\AI\xiaoyou-core\legacy\mvp_core\scripts\experiments\run_small_9b_tts_compat.ps1' -KConfig 'K24' -TtsConfigs 'T4' -Isolated 'T4=<B1 实测值>'
+```
+
+预期与口径提醒：CPU talker 预计显著慢于 GPU（B2 全部配置 RTF>1），慢本身就是“全 CPU 降级不可用”
+的论据；T4 未在 B2 direct NVML v2 里画像，其隔离增量来自 B1 单文本 smoke，登记时必须标注口径差异；
+K0:T0 与将来的 K24:T4 都只是 1 轮 smoke，作基线证据须补 5 轮正式矩阵，且 S0 完整形态仍缺端到端流水线。
+
 ## 组合按两条任务路径展开
 
 | 阶段 | 组合 | 先回答的问题 |
