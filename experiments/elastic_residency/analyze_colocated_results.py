@@ -17,6 +17,10 @@ if str(PROJECT_ROOT) not in sys.path:
 from experiments.elastic_residency.colocated_capacity import (  # noqa: E402
     colocated_metrics,
 )
+from experiments.elastic_residency.small_screen_view import (  # noqa: E402
+    SMALL,
+    load_screen,
+)
 
 
 REAL_BACKEND = "real_llama_cpp_gguf_plus_qwen3_tts"
@@ -35,6 +39,35 @@ def _expected_tts_candidates(screen: dict[str, Any]) -> set[tuple[int, str, str]
             )
             expected.add((int(context), llm_config, tts_config))
     return expected
+
+
+def _validate_measured_candidates(
+    screen: dict[str, Any],
+    grouped: dict[tuple[int, str, str], list[dict[str, Any]]],
+) -> None:
+    """small screen 只给容量预算与已画像档位，实测候选不能凭空出现。
+
+    离线筛选的 H_TTS 边界本身待修正，因此这里不要求候选等于边界，
+    只要求档位在已画像集合内，边界与实测的差异另行列出口供人工核对。
+    """
+    allowed = {
+        int(context): set(entry.get("profiled_llm_configs", ()))
+        for context, entry in screen["per_context"].items()
+    }
+    for context, llm_config, _tts_config in grouped:
+        if llm_config not in allowed.get(context, set()):
+            raise ValueError(f"共置候选 {llm_config} 不在 C{context} 已画像档位内")
+
+
+def _screen_boundary(screen: dict[str, Any], context: int, tts_config: str) -> str | None:
+    entry = screen["per_context"].get(str(context), {})
+    h_tts = entry.get("h_tts", {}).get(tts_config)
+    if not h_tts:
+        return None
+    if h_tts.get("full_feasible"):
+        return "FULL"
+    layers = h_tts.get("h_layers")
+    return None if layers is None else f"K{layers}"
 
 
 def _validate_record(record: dict[str, Any]) -> None:
@@ -61,8 +94,13 @@ def analyze_colocated(
     colocated: dict[str, Any],
     manifest: dict[str, Any],
     expected_runs_per_candidate: int = 5,
+    screen_schema: str = "legacy",
 ) -> dict[str, Any]:
-    """复算有效共置记录；不修改原始 artifact。"""
+    """复算有效共置记录；不修改原始 artifact。
+
+    `screen_schema="small"` 用于 small 9B 离线筛选产物：候选判据放宽到
+    “已画像档位内”，因为该 screen 的 H_TTS 边界本身待实测修正。
+    """
 
     records = colocated.get("records", [])
     if not colocated.get("passed") or colocated.get("failure_count") != 0:
@@ -97,9 +135,15 @@ def analyze_colocated(
         )
         grouped[key].append(record)
 
-    expected = _expected_tts_candidates(screen)
-    if set(grouped) != expected:
-        raise ValueError(f"正式共置候选与筛选 H_TTS 不一致: {set(grouped)} != {expected}")
+    if screen_schema == SMALL:
+        _validate_measured_candidates(screen, grouped)
+        expected = set(grouped)
+    else:
+        expected = _expected_tts_candidates(screen)
+        if set(grouped) != expected:
+            raise ValueError(
+                f"正式共置候选与筛选 H_TTS 不一致: {set(grouped)} != {expected}"
+            )
     if any(len(items) != expected_runs_per_candidate for items in grouped.values()):
         raise ValueError("每个共置候选的重复轮数不符合冻结要求")
 
@@ -155,6 +199,11 @@ def analyze_colocated(
             "colocated_positive_residual_max_mb": max(
                 item["colocated_positive_residual_mb"] for item in corrected
             ),
+            "screen_boundary": _screen_boundary(screen, context, tts_config),
+            "measured_beyond_screen_boundary": _screen_boundary(
+                screen, context, tts_config
+            )
+            != llm_config,
         }
         if not candidates[name]["all_capacity_admissible"]:
             raise ValueError(f"修正口径后候选仍不满足安全容量: {name}")
@@ -167,17 +216,30 @@ def analyze_colocated(
             ],
         }
 
-    h_d = {
-        context: {
-            "screened_h_layers": entry["h_d"].get("h_layers"),
-            "screened_full_feasible": entry["h_d"].get("full_feasible"),
-            "status": "pending_real_llm_forge_colocation",
+    if screen_schema == SMALL:
+        # small screen 的 Diffusion 只有主机内存诊断，没有可复核的 H_D 档位。
+        h_d = {
+            context: {
+                "screened_h_layers": None,
+                "screened_full_feasible": None,
+                "status": "pending_real_llm_forge_colocation",
+                "note": "small screen 只有 Diffusion 主机内存诊断，未给出 H_D 档位。",
+            }
+            for context in screen["per_context"]
         }
-        for context, entry in screen["per_context"].items()
-    }
+    else:
+        h_d = {
+            context: {
+                "screened_h_layers": entry["h_d"].get("h_layers"),
+                "screened_full_feasible": entry["h_d"].get("full_feasible"),
+                "status": "pending_real_llm_forge_colocation",
+            }
+            for context, entry in screen["per_context"].items()
+        }
     return {
         "schema_version": "edgesched.elastic_residency.v1",
         "analysis_name": "c3_llm_tts_colocated_offline_reanalysis",
+        "screen_schema": screen_schema,
         "status": "h_tts_frozen_h_d_pending",
         "inputs": {
             "screen_analysis_name": screen.get("analysis_name"),
@@ -218,12 +280,20 @@ def main() -> None:
     parser.add_argument("--screen-analysis", required=True)
     parser.add_argument("--colocated-summary", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--screen-schema",
+        choices=("auto", "legacy", "small"),
+        default="auto",
+        help="auto 按结构判别；small 适配 small 9B 离线筛选产物。",
+    )
     args = parser.parse_args()
     summary_path = Path(args.colocated_summary)
+    screen, schema = load_screen(load_json(args.screen_analysis), args.screen_schema)
     result = analyze_colocated(
-        screen=load_json(args.screen_analysis),
+        screen=screen,
         colocated=load_json(summary_path),
         manifest=load_json(summary_path.with_name("manifest.json")),
+        screen_schema=schema,
     )
     result["inputs"]["screen_analysis_path"] = str(Path(args.screen_analysis).resolve())
     result["inputs"]["colocated_summary_path"] = str(summary_path.resolve())

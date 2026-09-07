@@ -1,6 +1,6 @@
 # EdgeSched / MVP Core 项目索引
 
-small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30 仅为容量候选，长上下文余量不足 16 MiB。C512 共置兼容性已在真实后端跑通 K18/K20/K24 × T0/T3 共 6 条（0 failure、swap 0）：T3 加载期峰值高于推理期，最坏时刻口径下实测上界为 K24，K28/K30 不再自动安排；每档仅 1 轮，不冻结阈值，见 [验收与命令](SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
+small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30 仅为容量候选，长上下文余量不足 16 MiB。C512 共置兼容性已在真实后端跑通 K18/K20/K24 × T0/T3 共 6 条（0 failure、swap 0）：T3 加载期峰值高于推理期，最坏时刻口径下实测上界为 K24，K28/K30 不再自动安排。C512/K24 × T0/T3 五轮正式矩阵 `20260907_225155_3728828` 已 10/10，离线复算 `small_9b_tts_colocated_20260907_225155_v1.json` 冻结 `G_safe=915.015625 MiB` 与 C512 的 `H_TTS`（T0/T3 均为 K24，正残差 168.90 MiB）；`H_D` 仍 pending，见 [验收与命令](SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
 
 small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/预热 0.481 s、编码 0.147 s、释放 0.011 s，见 [阶段画像](SMALL_9B_VISION_PROFILE_20260907.md)。这是独立进程画像，保温/提前释放策略仍待验证。
 
@@ -71,7 +71,7 @@ LLM_GPU/TTS_CPU 与 LLM_CPU/TTS_GPU 的旧结果定位、TTS 核数证据缺口�
 | `experiments/elastic_residency/llm_tts_colocated.py` | LLM+TTS 真实共置显存测量 | direct NVML 整卡时间线、`B_idle/B_LLM/P_colocated`、正残差与扣除 idle 后的容量裁决；容量公式不重复叠加 idle 或 KV，每轮冻结非空 WAV 大小/SHA-256，正式组合支持 5 轮重复 |
 | `experiments/elastic_residency/colocated_audio_artifact.py` | 共置音频 artifact 门禁 | 独立负责输出 WAV 的非空检查、大小和 SHA-256；不引入 GPU 依赖，不代替 waveform 或听感验收 |
 | `experiments/elastic_residency/colocated_capacity.py` | 共置容量纯计算口径 | `(P_colocated-B_idle)+G_safe`、物理峰值保护、正残差；供运行入口与离线复算共用 |
-| `experiments/elastic_residency/analyze_colocated_results.py` | 正式 LLM+TTS 共置离线复算 | 硬验正式重复矩阵、真实后端/direct NVML/新鲜度/swap/provenance，复算 G_safe 与按 context 冻结 H_TTS；H_D 保持待 LLM+Forge 共置 |
+| `experiments/elastic_residency/analyze_colocated_results.py` | 正式 LLM+TTS 共置离线复算 | 硬验正式重复矩阵、真实后端/direct NVML/新鲜度/swap/provenance，复算 G_safe 与按 context 冻结 H_TTS；`--screen-schema small` 经 `small_screen_view.py` 适配 small 9B 离线筛选产物，候选判据为“已画像档位内”并输出与离线边界的差异；H_D 保持待 LLM+Forge 共置 |
 | `experiments/elastic_residency/llm_forge_colocated.py` | LLM+Forge 真实共置入口 | 从 C3 screen 读取 H_D 候选和隔离画像；父进程预热真实 Forge，子进程加载精确 LLM/KV 状态并发起 b=1 请求；支持单候选 smoke、3 候选×5 轮正式矩阵、fail-fast 与严格 resume |
 | `experiments/elastic_residency/llm_forge_child.py` | 单轮 LLM+Forge 测量 | 保存真实 PNG、`B_Forge/B_LLM/P_colocated`、KV、direct NVML 时间线、新鲜度、swap、affinity、资源归还和容量裁决 |
 | `experiments/elastic_residency/llm_forge_plan.py` | H_D 候选/画像契约 | 解析 `CONTEXT:LLM`；正式模式只接受 screen 边界，显式探索模式仅接受 screen 已画像的更低驻留档，并绑定逐 context 的 M_L/M_D/G_safe/idle/GPU total |

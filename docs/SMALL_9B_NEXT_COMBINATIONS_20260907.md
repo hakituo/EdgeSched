@@ -118,6 +118,51 @@ KV 位置与 640 token 精确、租约与物理核全部归还、音频非静音
 2. 补 S0 反向静态放置基线（LLM_CPU/TTS_GPU、LLM_GPU/TTS_CPU），当前 9B CPU 侧证据仍缺；
 3. K28 边界负面证据需显式决定并另开口径，当前启动器拒绝 K24 以上档位。
 
+## C512/K24 五轮正式矩阵与 H_TTS 冻结
+
+正式批次 `small_9b_tts_compat_20260907_225155_3728828`：C512/K24 × T0/T3 各 5 轮，10/10 `passed=true`、
+0 failure，`evidence_scope` 为 `llm_tts_colocated_formal_repeated_matrix`，源码提交 `e0f1779` 且工作树干净。
+
+```powershell
+& 'D:\AI\xiaoyou-core\legacy\mvp_core\scripts\experiments\run_small_9b_tts_compat.ps1' -KConfig 'K24' -Runs 5
+```
+
+五轮几乎零漂移：`B_idle=952.31`、`B_LLM=5335.41` 全 10 条一致；T0 的 `P_colocated=7619.41` 五轮相同，
+时间线峰值 7619.41（一轮 7617.41）；T3 推理期 `P_colocated=7483.41` 五轮相同，加载期时间线峰值 7589.41 五轮相同。
+WAV 五轮 SHA-256 一致（T0 `abf2cfeb…`、T3 `2306e941…`），3.28 s、非静音；swap 增长 0，全部 `acceptance_checks` 为真。
+
+复算入口原先只认历史 `per_context`/`g_safe` 结构，本轮按职责拆出适配层
+`experiments/elastic_residency/small_screen_view.py`（只做结构映射，不做容量计算），
+`analyze_colocated_results.py` 新增 `--screen-schema auto|legacy|small`：small 模式把候选判据从
+“必须等于筛选 H_TTS 边界”放宽为“落在已画像档位内”，并输出 `screen_boundary` 与 `measured_beyond_screen_boundary` 供人工核对。
+
+```powershell
+cd 'D:\AI\xiaoyou-core\legacy\mvp_core'
+& 'D:\AI\xiaoyou-core\venv_core\Scripts\python.exe' -m experiments.elastic_residency.analyze_colocated_results `
+  --screen-analysis 'experiment_results/elastic_residency/c3_analysis/small_stage_screen_20260907_204516_653987.json' `
+  --colocated-summary 'experiment_results/elastic_residency/llm_tts_colocated/small_9b_tts_compat_20260907_225155_3728828/summary.json' `
+  --output 'experiment_results/elastic_residency/c3_analysis/small_9b_tts_colocated_20260907_225155_v1.json'
+```
+
+产物 `c3_analysis/small_9b_tts_colocated_20260907_225155_v1.json` 的结论：
+
+- **`G_safe=915.015625 MiB` 已冻结**（`frozen_for_llm_tts`）：分量为 idle 高水位 915.015625、
+  allocator slack 501.28、重复漂移 0.0、共置正残差 168.90，取最大值。
+- **共置正残差首次非零**：T3 的共置增量 2148.00 大于隔离先验 1979.10，残差 168.90 MiB；T0 仍为 0。
+  该值已计入 G_safe 分量，但未超过 idle 高水位，所以 G_safe 数值不变。
+- **`H_TTS`(C512) 冻结**：T0/T3 均为 K24，`frozen_real_colocated`、5 轮，安全余量下界 568.89 / 704.89 MiB。
+- **`H_D` 仍为 pending**：small screen 只有 Diffusion 主机内存诊断，没有可复核档位，映射后档位保持 `None`（不填 0）。
+- 两个候选都标记 `measured_beyond_screen_boundary=true`（离线边界 T0=K20、T3=K30），即实测修正了离线筛选口径。
+
+必须一起读的边界：
+
+- 只验证了 **K24 这一档**，不等于“C512 上界是 K24”。K28/K30 未实测，K30 按实测外推在加载期超出总容量约 188–218 MiB。
+- 只对 **C512**；2048/4096 未做共置，长上下文余量仍按离线筛选的小余量处理。
+- T3 一律按最坏时刻（加载期 7589.41）而非推理期（7483.41）裁决：复算产物的
+  `physical_headroom_min_mb` 仍按同步 `P_colocated` 给出（T3 667.59 MiB），按加载期峰值则为 561.59 MiB，
+  两者并存，人工裁决取更严的后者。
+- 未验证 LLM 与 TTS 同时计算、SM 份额、TTS 后 LLM 继续回答、视觉/Forge 共置。
+
 ## 组合按两条任务路径展开
 
 | 阶段 | 组合 | 先回答的问题 |

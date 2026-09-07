@@ -30,5 +30,12 @@ try {
     $BadRuns = $false
     try { & $Launcher -PrintOnly -Runs 0 | Out-Null } catch { $BadRuns = $true }
     if (-not $BadRuns) { throw '非法轮次未被拒绝。' }
+    # S0 反向放置：TTS 侧换到 CPU 主体配置时，候选与隔离增量必须同时生效。
+    $T2 = (& $Launcher -PrintOnly -KConfig 'K24' -TtsConfigs 'T2' -Isolated 'T2=1986.0') -join "`n"
+    if (-not $T2.Contains('--candidates 512:K24:T2')) { throw 'TTS 配置参数未生效。' }
+    if (-not $T2.Contains('--tts-isolated-increment-mb T2=1986.0')) { throw '隔离增量未生效。' }
+    $MissingPrior = $false
+    try { & $Launcher -PrintOnly -TtsConfigs 'T2' | Out-Null } catch { $MissingPrior = $true }
+    if (-not $MissingPrior) { throw '缺少同配置隔离增量的批次未被拒绝。' }
     Write-Output 'PASS：非项目目录、固定 small/screen 身份、两单元、LF、fail-fast 与驻留档上限；未运行 WSL。'
 } finally { Pop-Location }
