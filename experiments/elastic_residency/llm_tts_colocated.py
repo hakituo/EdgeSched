@@ -408,7 +408,9 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "b_llm_recorded_before_tts_load": b_llm_mb is not None,
         "p_colocated_not_below_b_llm": p_colocated_mb >= b_llm_mb,
         "component_placement_matches": _placement_matches(spec, actual_devices),
-        "torch_phase_peaks_available": all(
+        # 纯 CPU 放置没有 CUDA 活动峰值，torch GPU 峰值检查只对 GPU talker 有意义。
+        "torch_phase_peaks_available": spec.talker_device == "cpu"
+        or all(
             snapshot["torch_peak_allocated_bytes"] > 0
             for snapshot in stage_snapshots
         ),

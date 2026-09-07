@@ -449,7 +449,9 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
                 codec_decode_s,
             )
         ),
-        "torch_phase_peaks_available": all(
+        # 纯 CPU 放置没有 CUDA 活动峰值，torch GPU 峰值检查只对 GPU talker 有意义。
+        "torch_phase_peaks_available": spec.talker_device == "cpu"
+        or all(
             snapshot["torch_peak_allocated_bytes"] > 0
             for snapshot in (
                 memory_talker_peak,
