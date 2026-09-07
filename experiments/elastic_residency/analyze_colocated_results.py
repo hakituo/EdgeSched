@@ -14,6 +14,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from experiments.elastic_residency.colocated_batch_merge import (  # noqa: E402
+    load_colocated_input,
+)
 from experiments.elastic_residency.colocated_capacity import (  # noqa: E402
     colocated_metrics,
 )
@@ -95,11 +98,13 @@ def analyze_colocated(
     manifest: dict[str, Any],
     expected_runs_per_candidate: int = 5,
     screen_schema: str = "legacy",
+    inputs_extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """复算有效共置记录；不修改原始 artifact。
 
     `screen_schema="small"` 用于 small 9B 离线筛选产物：候选判据放宽到
     “已画像档位内”，因为该 screen 的 H_TTS 边界本身待实测修正。
+    `inputs_extra` 由多批次合并模式传入（如批次清单），原样并入输出 inputs。
     """
 
     records = colocated.get("records", [])
@@ -245,6 +250,7 @@ def analyze_colocated(
             "screen_analysis_name": screen.get("analysis_name"),
             "colocated_run_id": manifest.get("run_id"),
             "source_git_commit": source.get("commit"),
+            **(inputs_extra or {}),
         },
         "evidence_validation": {
             "passed": True,
@@ -278,7 +284,12 @@ def analyze_colocated(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--screen-analysis", required=True)
-    parser.add_argument("--colocated-summary", required=True)
+    parser.add_argument("--colocated-summary", help="单批次 summary.json；与 --colocated-summaries 二选一。")
+    parser.add_argument(
+        "--colocated-summaries",
+        nargs="+",
+        help="多批次合并模式：每个路径为一个正式批次的 summary.json。",
+    )
     parser.add_argument("--output", required=True)
     parser.add_argument(
         "--screen-schema",
@@ -287,16 +298,23 @@ def main() -> None:
         help="auto 按结构判别；small 适配 small 9B 离线筛选产物。",
     )
     args = parser.parse_args()
-    summary_path = Path(args.colocated_summary)
     screen, schema = load_screen(load_json(args.screen_analysis), args.screen_schema)
+    colocated, manifest, inputs_extra = load_colocated_input(
+        args.colocated_summary, args.colocated_summaries
+    )
     result = analyze_colocated(
         screen=screen,
-        colocated=load_json(summary_path),
-        manifest=load_json(summary_path.with_name("manifest.json")),
+        colocated=colocated,
+        manifest=manifest,
         screen_schema=schema,
+        inputs_extra=inputs_extra,
     )
     result["inputs"]["screen_analysis_path"] = str(Path(args.screen_analysis).resolve())
-    result["inputs"]["colocated_summary_path"] = str(summary_path.resolve())
+    # 多批次时逐批次路径已在 merged_batches 清单里，不再重复单值字段。
+    if args.colocated_summary:
+        result["inputs"]["colocated_summary_path"] = str(
+            Path(args.colocated_summary).resolve()
+        )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
