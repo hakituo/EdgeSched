@@ -19,5 +19,16 @@ try {
     foreach ($Forbidden in @('--continue-on-failure', '--resume', '--mmproj', 'K30', 'K28', '4B')) {
         if ($Command.Contains($Forbidden)) { throw "错误范围：$Forbidden" }
     }
-    Write-Output 'PASS：非项目目录、固定 small/screen 身份、两单元、LF 和 fail-fast；未运行 WSL。'
+    $K20 = (& $Launcher -PrintOnly -KConfig 'K20') -join "`n"
+    if (-not $K20.Contains('--candidates 512:K20:T0 512:K20:T3')) { throw '驻留档参数未生效。' }
+    if ($K20.Contains('512:K18')) { throw '默认档位未被替换。' }
+    $Rejected = $false
+    try { & $Launcher -PrintOnly -KConfig 'K30' | Out-Null } catch { $Rejected = $true }
+    if (-not $Rejected) { throw '超过 K24 的驻留档未被拒绝。' }
+    $FiveRuns = (& $Launcher -PrintOnly -KConfig 'K24' -Runs 5) -join "`n"
+    if (-not $FiveRuns.Contains('--candidates 512:K24:T0 512:K24:T3 --runs 5')) { throw '正式轮次参数未生效。' }
+    $BadRuns = $false
+    try { & $Launcher -PrintOnly -Runs 0 | Out-Null } catch { $BadRuns = $true }
+    if (-not $BadRuns) { throw '非法轮次未被拒绝。' }
+    Write-Output 'PASS：非项目目录、固定 small/screen 身份、两单元、LF、fail-fast 与驻留档上限；未运行 WSL。'
 } finally { Pop-Location }

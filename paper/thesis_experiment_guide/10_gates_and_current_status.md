@@ -1,6 +1,6 @@
 # Go/No-Go 门禁与当前任务状态
 
-small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30 仅为容量候选，长上下文余量不足 16 MiB。下一步用户运行 `scripts/experiments/run_small_9b_tts_compat.ps1`，C512/K18 配 T0/T3 各 1 轮；加载期另需验证，不冻结阈值，见 [验收与命令](../../docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
+small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30 仅为容量候选，长上下文余量不足 16 MiB。C512 共置兼容性已在真实后端完成 K18/K20/K24 × T0/T3 共 6 条（0 failure、swap 0）：T3 最坏时刻在加载期而非推理期，实测上界为 K24，K28/K30 不再自动安排；每档 1 轮 smoke，不冻结阈值，下一步为正式重复或 S0 反向基线，见 [验收与命令](../../docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
 
 > **small 视觉画像补齐**：`20260907_171635` 五轮 5/5，swap 0；加载/预热、编码、回答后释放阶段成本已采集。独立进程画像不证明跨请求保温或编码后提前释放；见 [验收](../../docs/SMALL_9B_VISION_PROFILE_20260907.md)。
 
@@ -113,6 +113,7 @@ No-Go：
 - [x] **9B 五轮视觉画像完成**：`v1_vision_9b_profile_20260906_204939`，5/5、0 failure、swap 0；整卡峰值 7542.47 MiB 已包含 n_ctx=640 的 24 MiB GPU KV，余量 608.53 MiB 尚未扣安全余量。
 - [x] **9B 回答补测完成**：`v1_vision_9b_answer_20260906_204651`，1/1 技术通过，三种主要图形/颜色/位置及白底正确；漏黑边，不能登记全部细节质量通过。
 - [x] **small 离线 GPU 容量候选已验收**：`small_stage_screen_20260907_204516_653987.json` 复算一致；完整阶段切换策略仍待验证；编码后释放 projector 并继续 decode 尚未实测，视觉与 TTS 共置及长上下文未验收，不能直接用旧 TEXT_ONLY H_TTS 替代。
+- [x] **small C512 LLM/TTS 共置兼容性 smoke**：K18/K20/K24 × T0/T3 共 6/6 `passed=true`、0 failure、swap 0、真实后端无 fallback、音频 WAV 跨批次 SHA 一致；T3 最坏时刻在加载期（高于推理期 106–424 MiB），最坏时刻口径下实测上界为 K24，K28/K30 不再自动安排。每档每配置仅 1 轮，属 smoke/pilot 而非正式重复，`G_safe/H_TTS` 仍未冻结。
 - [ ] S0 无图像真实重叠静态放置实验：保留 LLM_GPU+TTS_CPU 与 LLM_CPU+TTS_GPU 两种基线；已有 CPU/GPU TTS smoke 和 GPU 句长画像先复用，当前 9B CPU 性能及成对端到端证据仍缺。GPU 共存阶段先做兼容性验收，保存耗时但不作为 SM 优化后的最终优劣；SM 受控平衡仍等原生 Linux。详见 [放置复核](../../docs/LLM_TTS_PLACEMENT_REVIEW_20260906.md)。
 - [ ] 根据真实结果判断弹性驻留 Go / No-Go
 - [ ] Go 后才实现 `PlacementPlan` 与新代价模型，再开展 S1 和正式策略评测
