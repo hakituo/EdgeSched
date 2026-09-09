@@ -1,5 +1,7 @@
 # Go/No-Go 门禁与当前任务状态
 
+**2026-09-09 pilot 更新（用户提供的代码侧汇总）**：K24:T0、K24:T3、K0:T0、K24:T4 的生成→分句→排队→合成 pilot 四配置通过，报告 `all_passed=true`，生成×合成重叠、背压及 swap 门禁通过。报告的提交标识为 `e5f9a43`，当前工作区未独立核验原始产物或该提交。播放路径尚未接入，实际播放和零 underrun 仍 pending；输出思考正文与纯格式片段暴露输入契约问题，先修正并复验，再冻结正式协议。完整记录见第 07 模块 E2；本次不是正式性能或弹性驻留 Go。
+
 small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30 仅为容量候选，长上下文余量不足 16 MiB；实测修正为 C512 已验证候选 K24（T3 加载期最坏，非最大可行档位证明），K28/K30 不再自动安排。**S0 静态放置基线已完成并冻结**：正式 5 轮 ×4 配置（K24:T0、K24:T3、K0:T0、K24:T4）共 20 条全部通过，K0:T4 全 CPU 降级负面边界收案；合并复算 `small_9b_s0_colocated_20260908_v1.json` 冻结 `G_safe=915.015625 MiB` 与四候选 `H_TTS`（K0:T0、K24:T0/T3/T4）。C512 的 LLM+TTS 容量/可行性口径就此收案；`H_D` 仍 pending，实现准入 Go/No-Go 前仅剩 S0 端到端流水线证据，见 [验收与命令](../../docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md)。产物名称保留原批次标识，不表示本次文档同步重新运行或审计了实验。
 
 > **small 视觉画像补齐**：`20260907_171635` 五轮 5/5，swap 0；加载/预热、编码、回答后释放阶段成本已采集。独立进程画像不证明跨请求保温或编码后提前释放；见 [验收](../../docs/SMALL_9B_VISION_PROFILE_20260907.md)。
@@ -124,7 +126,10 @@ No-Go：
 - [x] **small C512/K24 五轮正式共置矩阵与阈值冻结**：`small_9b_tts_compat_20260907_225155_3728828` 10/10、0 failure、swap 0、direct NVML、真实后端无 fallback、Git provenance 干净（`e0f1779`）；五轮零漂移（idle/B_LLM/P 全一致，时间线峰值漂移仅 2 MiB），WAV 五轮 SHA 一致。离线复算 `small_9b_tts_colocated_20260907_225155_v1.json` 冻结 **C512 口径** `G_safe=915.015625 MiB`（含首次非零的共置正残差 168.90 MiB）与 `H_TTS`（T0/T3 均为 K24，安全余量下界 568.89/704.89 MiB）。复算入口新增 `small_screen_view.py` 与 `--screen-schema small`，候选判据为“已画像档位内”，两个候选均标记 `measured_beyond_screen_boundary=true`。边界：只验证 K24 一档（非上界证明）、只覆盖 C512、T3 按加载期最坏时刻裁决、`H_D` 仍 pending。
 - [x] **S0 无图像真实重叠静态放置实验（容量/可行性口径）**：正式 5 轮 ×4 配置（K24:T0、K24:T3、K0:T0、K24:T4）共 20 条全部通过且五轮漂移极小；K0:T4 全 CPU 降级以负面边界收案（正式矩阵 r2 swap 增长 53.3 MiB 失败，加 RTF 6.2 与 RSS 11.4 GiB，三重论据支撑“全 CPU 不可用”）；新增 T4 全 CPU 放置与纯 CPU 门禁豁免。多批次合并复算 `small_9b_s0_colocated_20260908_v1.json`（`colocated_batch_merge.py` + `--colocated-summaries`）冻结 `G_safe` 与四候选 `H_TTS`；关键发现：K24 下最坏时刻由 TTS 权重加载过 GPU 决定（T0/T3/T4 加载期峰值 7619/7589/7611 MiB 几乎相同）。详见 [S0 证据](../../docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md) 与 [放置复核](../../docs/LLM_TTS_PLACEMENT_REVIEW_20260906.md)。
 - [ ] S0 端到端协议确认：第 07 模块已补草案，建议 LLM 流式输出 → 固定分句 → 逐句完整波形 → 连续播放；启动缓冲、首句就绪/实际播放截止、underrun 采集分辨率及比较容差待冻结。
-- [ ] S0 端到端流水线证据：先四配置 pilot 验证时间线，再独立正式成对测量首句就绪、实际播放、chunk deadline 与真实 underrun；这是实现准入 Go/No-Go 前的最后一块，不重复已收案容量矩阵。
+- [x] S0 生成与合成链路 pilot（代码侧报告通过，原始证据待本工作区复核）：四配置重叠、背压及 swap 门禁通过；第 07 模块记录本批数值和异常输入，不作为正式性能结论。
+- [ ] S0 输出契约修正与小规模复验：处理无标签思考正文及纯格式片段，明确 prompt、格式适配和失败规则；统一应用于四配置，不静默删除异常结果。
+- [ ] S0 播放链路验收：播放路径未接入，需补连续播放、句级边界、时钟映射与实际 underrun；不能把合成间隙当播放 gap。
+- [ ] S0 正式端到端流水线证据：输出契约与播放验收完成并冻结协议后，独立正式成对测量首句就绪、实际播放、chunk deadline 与真实 underrun；不重复已收案容量矩阵，尚不登记实现准入 Go。
 - [ ] 根据真实结果判断弹性驻留 Go / No-Go
 - [ ] Go 后才实现 `PlacementPlan` 与新代价模型，再开展 S1 和正式策略评测
 - [ ] **队列视界 predictor/planner（GATED）**：C3 校准、真实共置 smoke/矩阵、colocated 残差和 S0 Go/No-Go 完成前不实现。Go 后先用 calibration split 建立“画像插值 + 有界 EWMA 残差”，再冻结 queue horizon、转换安全余量与 minimum residency window；正式 evaluation 比较 Pareto-only、仅转换成本、queue-horizon-aware EdgeSched 与 oracle

@@ -219,6 +219,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
                 "gpu_baseline_mb": baseline,
                 "resource_summary": resource_summary,
                 "swap_report": swap_report,
+                "output_contract": run_result.text_contract,
                 "run": run_result.to_dict(),
             }
     except Exception as exc:  # noqa: BLE001 - child 失败必须落盘
@@ -263,7 +264,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--ref-audio", default="/home/leslie/mvp_core/models/tts_refs/ref_calm.wav"
     )
     parser.add_argument("--prompt", default="请用三到五句话介绍边缘计算的优势。")
-    parser.add_argument("--system-prompt", default="")
+    parser.add_argument(
+        "--system-prompt",
+        default=(
+            "直接回答用户问题。不要输出思考过程、分析步骤或计划；"
+            "不要使用 Markdown 列表、加粗或标题。"
+            "用完整自然的中文句子回答。"
+        ),
+    )
     parser.add_argument("--max-new-tokens", type=int, default=128)
     parser.add_argument("--repetition-penalty", type=float, default=1.05)
     parser.add_argument("--model-layers", type=int, default=32)

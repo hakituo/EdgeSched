@@ -28,6 +28,10 @@ from experiments.elastic_residency.s0_pipeline.events import (
     execution_intervals,
     semantics_coverage,
 )
+from experiments.elastic_residency.s0_pipeline.text_contract import (
+    StreamingTextNormalizer,
+    assess_output_contract,
+)
 
 
 @dataclass
@@ -45,6 +49,7 @@ class PipelineRunResult:
     tts_execution_intervals: list[dict[str, Any]] = field(default_factory=list)
     semantics: dict[str, Any] = field(default_factory=dict)
     clock_resolution_ns: int = 0
+    text_contract: dict[str, Any] = field(default_factory=dict)
     events: list[dict[str, Any]] = field(default_factory=list)
     clock_mappings: list[dict[str, Any]] = field(default_factory=list)
 
@@ -61,6 +66,7 @@ class PipelineRunResult:
             "tts_execution_intervals": self.tts_execution_intervals,
             "semantics": self.semantics,
             "clock_resolution_ns": self.clock_resolution_ns,
+            "text_contract": self.text_contract,
             "clock_mappings": self.clock_mappings,
             "event_count": len(self.events),
         }
@@ -87,8 +93,23 @@ class PipelineRunner:
         self.player = player
         self.request_id = request_id
         self.voice_profile_id = voice_profile_id
+        self.normalizer = StreamingTextNormalizer()
         if getattr(self.synthesizer, "recorder", None) is None:
             self.synthesizer.recorder = self.recorder
+
+    def _normalized_token_stream(self) -> Any:
+        """输入适配层：token 进入分句器之前完成确定性格式规范化。"""
+
+        async def gen() -> Any:
+            async for token in self.token_source.stream():
+                out = self.normalizer.feed(token)
+                if out:
+                    yield out
+            tail = self.normalizer.finish()
+            if tail:
+                yield tail
+
+        return gen()
 
     def _snapshot_attributes(self, pipeline: TTSPipeline) -> dict[str, Any]:
         return {
@@ -134,7 +155,7 @@ class PipelineRunner:
             await pipeline.start()
             stream = pipeline.stream_synthesize(
                 self.request_id,
-                self.token_source.stream(),
+                self._normalized_token_stream(),
                 voice_profile_id=self.voice_profile_id,
                 language=self.config.language,
                 output_mode=TTSOutputMode.BYTES,
@@ -169,11 +190,16 @@ class PipelineRunner:
                 if self.player.is_opened:
                     self.player.wait_finished(timeout_s=120.0)
             await pipeline.stop()
+            contract = assess_output_contract(
+                normalizer_stats=self.normalizer.stats(),
+                sentences=[item["text"] for item in sentences],
+            )
             self.recorder.emit(
                 Stage.REQUEST_END,
                 attributes={
                     "sentence_count": len(sentences),
                     "error": error,
+                    "output_contract_failed": bool(contract["failed"]),
                 },
             )
 
@@ -181,7 +207,7 @@ class PipelineRunner:
         return PipelineRunResult(
             request_id=self.request_id,
             placement=self.config.placement,
-            finished=not error,
+            finished=not error and not contract["failed"],
             error=error,
             sentence_count=len(sentences),
             sentences=sentences,
@@ -202,6 +228,7 @@ class PipelineRunner:
             ],
             semantics=semantics_coverage(events),
             clock_resolution_ns=resolution_ns,
+            text_contract=contract,
             events=[item.to_dict() for item in events],
             clock_mappings=[item.to_dict() for item in self.recorder.mappings()],
         )

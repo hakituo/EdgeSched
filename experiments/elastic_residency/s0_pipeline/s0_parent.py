@@ -92,6 +92,9 @@ def _gate_checks(record: dict[str, Any]) -> dict[str, bool]:
         "no_proxy_only_evidence": (
             semantics.get("execution_event_count", 0) > 0
         ),
+        "output_contract_ok": (
+            run.get("text_contract", {}).get("failed") is not True
+        ),
     }
 
 

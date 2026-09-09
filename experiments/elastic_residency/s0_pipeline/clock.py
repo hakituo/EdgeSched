@@ -12,13 +12,22 @@ import time
 _CACHED_RESOLUTION_NS: int | None = None
 
 
-def measure_clock_resolution_ns(*, max_samples: int = 2000) -> int:
-    """连续采样 ``monotonic_ns``，返回观测到的最小非零步进。"""
+def measure_clock_resolution_ns(
+    *,
+    max_samples: int = 1_000_000,
+    max_seconds: float = 0.05,
+) -> int:
+    """连续采样 ``monotonic_ns``，返回观测到的最小非零步进。
+
+    Windows 粒度约 15.6 ms，固定次数的采样可能全部落在同一 tick 内
+    而误报 0；因此同时按墙钟时间预算采样，保证至少跨过一个 tick。
+    """
 
     global _CACHED_RESOLUTION_NS
     if _CACHED_RESOLUTION_NS is not None:
         return _CACHED_RESOLUTION_NS
     last = time.monotonic_ns()
+    wall_deadline = time.monotonic() + max_seconds
     minimum = 0
     for _ in range(max(1, max_samples)):
         current = time.monotonic_ns()
@@ -28,6 +37,8 @@ def measure_clock_resolution_ns(*, max_samples: int = 2000) -> int:
             if minimum <= 1000:
                 break
         last = current
+        if time.monotonic() > wall_deadline and minimum > 0:
+            break
     _CACHED_RESOLUTION_NS = minimum
     return minimum
 
