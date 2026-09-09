@@ -132,7 +132,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
 
     config = S0PipelineConfig(
         placement=args.placement,
-        max_output_tokens=args.max_output_tokens,
+        max_output_tokens=args.max_new_tokens,
         llm_cores=args.llm_cores,
         system_cores=args.system_cores,
     )

@@ -96,6 +96,13 @@ def _gate_checks(record: dict[str, Any]) -> dict[str, bool]:
 
 
 def run_parent(args: argparse.Namespace) -> Path:
+    for label, path in (
+        ("llm_model", args.llm_model),
+        ("tts_model", args.tts_model),
+        ("ref_audio", args.ref_audio),
+    ):
+        if not Path(path).exists():
+            raise FileNotFoundError(f"{label} 不存在: {path}")
     writer = ExperimentArtifactWriter(args.output_root, args.run_id)
     config = ExperimentRunConfig(
         experiment_name="s0_pipeline",
