@@ -75,18 +75,24 @@ RTF_T^{p95}(r_T,s)\le0.8
 
 若当前后端在完整 GPU 上仍无法达到 \(RTF^{p95}\le0.8\)，则同时报告 \(RTF<1\) 的可持续边界和有限回复通过预缓冲实现零 underrun 时所需的额外 TTFA。不得因为 CPU LLM 产生文本较慢就把 TTS 的持续实时性判为通过。
 
-LLM 与 TTS 共运行时，资源平衡以端到端流水线为准：
+LLM 与 TTS 共运行时，资源平衡以端到端流水线为准。当前非增量 TTS 的首句波形就绪延迟，
+仅在所列阶段串行时为：
 
 \[
-TTFA=T_{transition}+T_{LLM}^{first\ sentence}(r_L,c_L,s_L)
-+T_{TTS}^{first\ chunk}(r_T,c_T,s_T),
+T_{sentence\ ready}=T_{transition}+T_{LLM}^{first\ sentence}(r_L,c_L,s_L)
++T_{TTS}^{first\ sentence}(r_T,c_T,s_T),
 \]
 
-并对每个后续 chunk 检查：
+重叠时使用真实关键路径；首次实际播放另行计时，并计入播放器等待与预缓冲。
+此处 chunk 指当前非增量 TTS 的句级合成任务及其完整波形，不指句内增量音频块，
+与第 02、08 模块的口径一致。无既往断流且忽略设备供给提前量时，对每个后续 chunk 检查：
 
 \[
 t_{j+1}^{ready}\le t_j^{playback\_end}.
 \]
+
+正式验收使用第 08 模块固定的连续播放 deadline、设备供给提前量和实际 underrun 采集口径，
+不在发生断流后移动 deadline。当前 S0 截止阈值仍待确认；本节的 SM 设计目标不等于 S0 已通过。
 
 第一版 SM 管理只实现离散静态 profile，不实现 kernel 执行中的任意连续缩放：
 

@@ -150,20 +150,26 @@ $\eta$ 是预测误差与测量噪声的安全余量，$\tau_{min}$ 是最小驻
 
 ### 7.6 当前实现顺序与停止条件
 
-上述算法是 **C3 真实性与可行性门禁通过后的实现路线**，不是当前立即编码的功能。
-在 T0/T3 与 Forge 的 direct NVML 校准、16 档候选重筛、LLM+TTS 单组合 smoke、正式共置矩阵
-和 colocated 正残差完成前，不实现在线 predictor，不冻结转换阈值，也不把 Pareto planner
-描述为已验证的核心算法。
+上述算法是 **对应工作流真实性、可行性与实现准入 Go 之后的路线**，不是当前立即编码的功能。
+small C512 的画像、KV 校准、LLM+TTS smoke、正式共置矩阵和 colocated 残差已收案；
+当前等待 S0 端到端协议冻结、正式流水线证据与第 10 模块 Gate B 判定。
+此前不实现在线 predictor，不冻结转换阈值，也不把 Pareto planner 描述为已验证的核心算法。
 
 当前阶段只要求实验产物保留未来建模所需的原始事实：输入规模、context/KV、当前/候选配置、
 phase、queue depth、co-runner、冷热状态、实测执行时间、转换时间、显存峰值、SLO 结果与失败原因。
-在 `G_safe/H_TTS/H_D` 冻结且真实共置 smoke 通过后，才能：
+门禁按工作流应用，而不是要求 `G_safe/H_TTS/H_D` 全部同时冻结：S0 仅使用已冻结的
+`G_safe/H_TTS` 四候选；`H_D` pending 时，未经验证的 Forge 共置候选不得进入规划，
+16G 环境的负面边界继续保留，但不阻塞 S0。视觉、长上下文和受控 SM 各自另过门禁。
+S0 端到端形成实现准入 Go 后，才实现 `PlacementPlan` 与代价模型，并按以下顺序推进：
 
 1. 用 calibration split 拟合画像插值与 EWMA 初值；
 2. 冻结候选配置、$\eta$、$\tau_{min}$ 和视界上限；
 3. 用独立 evaluation trace 比较 Pareto-only、instantaneous、transition-aware、
    queue-horizon-aware 与 oracle；
 4. 若真实共置或转换收益无法覆盖成本，主动收缩算法与论文主张，不用复杂 predictor 包装 No-Go。
+
+静态 S0 的 Go 不替代动态验收：后续仍须计入真实状态转换、正确性和队列摊销，
+证明相对最佳静态放置及二元完整迁移的收益；不能将静态端到端改善直接写成弹性转换收益。
 
 ### 7.7 泛化验证边界
 

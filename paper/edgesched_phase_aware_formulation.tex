@@ -277,15 +277,22 @@ T_{\mathrm{sentence\ ready}}=t_1^{\mathrm{ready}}-t_{\mathrm{request}}.
 
 When transition, LLM generation, and TTS execution are serialized, this equals
 their sum; when they overlap, EdgeSched measures the actual critical path rather
-than adding overlapping intervals.  Playback feasibility requires
+than adding overlapping intervals.  In the absence of prior playback gaps and
+ignoring device feed lead time, playback feasibility requires
 
 \begin{equation}
 t_{j+1}^{\mathrm{ready}}\le t_j^{\mathrm{playback\ end}},
 \qquad j\ge 1.
 \end{equation}
 
-The metric may be renamed first-audio latency only after an incremental audio
-backend exposes the first playable samples.
+Waveform readiness is not actual playback onset.  Request-to-first-device-sample
+latency is recorded separately when device timestamps and their clock mapping
+are validated, including playback buffering.  Neither waveform readiness nor
+submission to a playback queue alone establishes actual first-audio latency.
+For formal playback evaluation, deadlines follow the uninterrupted audio
+timeline from playback onset, with a calibrated device feed lead time; a gap
+must not shift later deadlines and hide accumulated delay.  Actual device
+underruns are measured separately from waveform-readiness deadline misses.
 
 \section*{6. Hysteresis and Safe Reconfiguration}
 

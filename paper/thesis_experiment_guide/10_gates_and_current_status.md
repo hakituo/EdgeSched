@@ -1,10 +1,10 @@
 # Go/No-Go 门禁与当前任务状态
 
-small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30 仅为容量候选，长上下文余量不足 16 MiB；实测修正为 C512 上界 K24（T3 加载期最坏），K28/K30 不再自动安排。**S0 静态放置基线已完成并冻结**（2026-09-08）：正式 5 轮 ×4 配置（K24:T0、K24:T3、K0:T0、K24:T4）共 20 条全部通过，K0:T4 全 CPU 降级负面边界收案；合并复算 `small_9b_s0_colocated_20260908_v1.json` 冻结 `G_safe=915.015625 MiB` 与四候选 `H_TTS`（K0:T0、K24:T0/T3/T4）。C512 的 LLM+TTS 容量/可行性口径就此收案；`H_D` 仍 pending，弹性驻留 Go/No-Go 前仅剩端到端流水线证据（TTFA/underrun），见 [验收与命令](../../docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
+small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30 仅为容量候选，长上下文余量不足 16 MiB；实测修正为 C512 已验证候选 K24（T3 加载期最坏，非最大可行档位证明），K28/K30 不再自动安排。**S0 静态放置基线已完成并冻结**：正式 5 轮 ×4 配置（K24:T0、K24:T3、K0:T0、K24:T4）共 20 条全部通过，K0:T4 全 CPU 降级负面边界收案；合并复算 `small_9b_s0_colocated_20260908_v1.json` 冻结 `G_safe=915.015625 MiB` 与四候选 `H_TTS`（K0:T0、K24:T0/T3/T4）。C512 的 LLM+TTS 容量/可行性口径就此收案；`H_D` 仍 pending，实现准入 Go/No-Go 前仅剩 S0 端到端流水线证据，见 [验收与命令](../../docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md)。产物名称保留原批次标识，不表示本次文档同步重新运行或审计了实验。
 
 > **small 视觉画像补齐**：`20260907_171635` 五轮 5/5，swap 0；加载/预热、编码、回答后释放阶段成本已采集。独立进程画像不证明跨请求保温或编码后提前释放；见 [验收](../../docs/SMALL_9B_VISION_PROFILE_20260907.md)。
 
-> **2026-09-07 small 9B 更新**：后续版本固定 `1a35ab89…`；纯文本完整曲线 C2 90/90、C3 150/150、KV 48/48 已核验，swap 0。small 视觉 Answer 1/1 已通过；旧 large 五轮视觉画像仍属 `423fb3e5…`，不可混用。离线容量候选已复算，下一步做兼容性/放置验证；新模型 G_safe/H_TTS 未冻结，SM-A 等原生 Ubuntu。见 [完整验收](../../docs/SMALL_9B_CURVES_20260907.md)。
+> **画像身份记录（2026-09-07）**：small 纯文本 C2 90/90、C3 150/150、KV 48/48 已核验，swap 0；该阶段版本为 `1a35ab89…`，后续批次以各自 manifest 为准。small 视觉 Answer 1/1 已通过；旧 large 五轮视觉画像仍属 `423fb3e5…`，不可混用。C512 的 `G_safe/H_TTS` 已由后续合并产物冻结，视觉及长上下文不能沿用；SM-A 等原生 Ubuntu。见 [完整验收](../../docs/SMALL_9B_CURVES_20260907.md)。
 
 > 导航：[总索引](README.md) · 兼容入口：[THESIS_EXPERIMENT_GUIDE_DRAFT.md](../THESIS_EXPERIMENT_GUIDE_DRAFT.md)
 
@@ -30,18 +30,25 @@ Go：
 - chunk 指标完整；
 - 无静默 Mock fallback。
 
-### Gate B：混合驻留
+### Gate B：混合驻留的实现准入与动态验收
 
 Go：
 
 - 至少一个声明为 `PARTITIONABLE` 的阶段存在可稳定运行且可复现的离散混合配置；
 - 该配置的拆分粒度、组件/层映射和转换方式均写入 manifest；
-- 相对全 CPU 降级存在流水线收益；
-- 没有不可接受的显存风险。
+- 真实 S0 句级流水线满足预先冻结的正确性、资源、首句就绪/实际播放截止与播放连续性约束；
+- 至少一个混合配置相对本轮可行的非混合基线形成有意义的端到端 Pareto 收益，不以击败已不可用的 K0:T4 全 CPU 为充分条件；
+- 收益不是由输出长度差异、不同切句、额外预缓冲或漏算必要加载造成；比较容差与主要指标在正式评价前冻结。
+
+本门禁的 Go 仅准许实现 `PlacementPlan`、代价模型与 predictor/planner，不表示动态弹性策略已通过。动态验收仍须验证状态正确性、转换成本、已到达队列内的真实 payback，并与最佳静态放置及二元完整迁移比较。当前 S0 协议见 [E2](07_experiment_stages_and_matrix.md#e2无图像的-llmtts-流水线)；截止阈值尚待确认，不登记 Go。
 
 No-Go：
 
-- 部分驻留只增加转换和干扰，没有改善端到端指标。
+- 所有混合候选均违反冻结约束或被可行基线支配，则不进入以收益为前提的 planner 实现；采集故障或样本不足只记证据不足，不当作算法 No-Go。
+- 后续动态实验若显示转换和干扰抵消收益，则收缩动态规划主张，保留已成立的静态放置结论。
+- 仅有限回复通过预缓冲实现零 underrun 时，只报告该有限回复能力及启动代价，不宣称持续实时通过。
+
+门禁按工作流适用：S0 使用已冻结的 `G_safe/H_TTS` 和四候选；`H_D` pending 继续阻止未经验证的 Forge 共置候选进入规划，但不阻塞 S0。视觉和长上下文另行验收；Gate C 的受控 SM 门禁不阻塞当前不受控 S0 验证。
 
 ### Gate C：共享 GPU
 
@@ -113,10 +120,11 @@ No-Go：
 - [x] **9B 五轮视觉画像完成**：`v1_vision_9b_profile_20260906_204939`，5/5、0 failure、swap 0；整卡峰值 7542.47 MiB 已包含 n_ctx=640 的 24 MiB GPU KV，余量 608.53 MiB 尚未扣安全余量。
 - [x] **9B 回答补测完成**：`v1_vision_9b_answer_20260906_204651`，1/1 技术通过，三种主要图形/颜色/位置及白底正确；漏黑边，不能登记全部细节质量通过。
 - [x] **small 离线 GPU 容量候选已验收**：`small_stage_screen_20260907_204516_653987.json` 复算一致；完整阶段切换策略仍待验证；编码后释放 projector 并继续 decode 尚未实测，视觉与 TTS 共置及长上下文未验收，不能直接用旧 TEXT_ONLY H_TTS 替代。
-- [x] **small C512 LLM/TTS 共置兼容性 smoke**：K18/K20/K24 × T0/T3 共 6/6 `passed=true`、0 failure、swap 0、真实后端无 fallback、音频 WAV 跨批次 SHA 一致；T3 最坏时刻在加载期（高于推理期 106–424 MiB），最坏时刻口径下实测上界为 K24，K28/K30 不再自动安排。每档每配置仅 1 轮，属 smoke/pilot 而非正式重复。
+- [x] **small C512 LLM/TTS 共置兼容性 smoke**：K18/K20/K24 × T0/T3 共 6/6 `passed=true`、0 failure、swap 0、真实后端无 fallback、音频 WAV 跨批次 SHA 一致；T3 最坏时刻在加载期（高于推理期 106–424 MiB），最坏时刻口径下候选收敛至已验证的 K24（非最大可行档位证明），K28/K30 不再自动安排。每档每配置仅 1 轮，属 smoke/pilot 而非正式重复。
 - [x] **small C512/K24 五轮正式共置矩阵与阈值冻结**：`small_9b_tts_compat_20260907_225155_3728828` 10/10、0 failure、swap 0、direct NVML、真实后端无 fallback、Git provenance 干净（`e0f1779`）；五轮零漂移（idle/B_LLM/P 全一致，时间线峰值漂移仅 2 MiB），WAV 五轮 SHA 一致。离线复算 `small_9b_tts_colocated_20260907_225155_v1.json` 冻结 **C512 口径** `G_safe=915.015625 MiB`（含首次非零的共置正残差 168.90 MiB）与 `H_TTS`（T0/T3 均为 K24，安全余量下界 568.89/704.89 MiB）。复算入口新增 `small_screen_view.py` 与 `--screen-schema small`，候选判据为“已画像档位内”，两个候选均标记 `measured_beyond_screen_boundary=true`。边界：只验证 K24 一档（非上界证明）、只覆盖 C512、T3 按加载期最坏时刻裁决、`H_D` 仍 pending。
 - [x] **S0 无图像真实重叠静态放置实验（容量/可行性口径）**：正式 5 轮 ×4 配置（K24:T0、K24:T3、K0:T0、K24:T4）共 20 条全部通过且五轮漂移极小；K0:T4 全 CPU 降级以负面边界收案（正式矩阵 r2 swap 增长 53.3 MiB 失败，加 RTF 6.2 与 RSS 11.4 GiB，三重论据支撑“全 CPU 不可用”）；新增 T4 全 CPU 放置与纯 CPU 门禁豁免。多批次合并复算 `small_9b_s0_colocated_20260908_v1.json`（`colocated_batch_merge.py` + `--colocated-summaries`）冻结 `G_safe` 与四候选 `H_TTS`；关键发现：K24 下最坏时刻由 TTS 权重加载过 GPU 决定（T0/T3/T4 加载期峰值 7619/7589/7611 MiB 几乎相同）。详见 [S0 证据](../../docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md) 与 [放置复核](../../docs/LLM_TTS_PLACEMENT_REVIEW_20260906.md)。
-- [ ] S0 端到端流水线证据：LLM 生成 → 分句 → TTS 的成对测量（TTFA、chunk deadline、真实播放 underrun），需先约定口径（流式 vs 逐句、截止时间、underrun 判据）；这是弹性驻留 Go/No-Go 前的最后一块。
+- [ ] S0 端到端协议确认：第 07 模块已补草案，建议 LLM 流式输出 → 固定分句 → 逐句完整波形 → 连续播放；启动缓冲、首句就绪/实际播放截止、underrun 采集分辨率及比较容差待冻结。
+- [ ] S0 端到端流水线证据：先四配置 pilot 验证时间线，再独立正式成对测量首句就绪、实际播放、chunk deadline 与真实 underrun；这是实现准入 Go/No-Go 前的最后一块，不重复已收案容量矩阵。
 - [ ] 根据真实结果判断弹性驻留 Go / No-Go
 - [ ] Go 后才实现 `PlacementPlan` 与新代价模型，再开展 S1 和正式策略评测
 - [ ] **队列视界 predictor/planner（GATED）**：C3 校准、真实共置 smoke/矩阵、colocated 残差和 S0 Go/No-Go 完成前不实现。Go 后先用 calibration split 建立“画像插值 + 有界 EWMA 残差”，再冻结 queue horizon、转换安全余量与 minimum residency window；正式 evaluation 比较 Pareto-only、仅转换成本、queue-horizon-aware EdgeSched 与 oracle

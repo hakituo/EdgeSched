@@ -30,6 +30,7 @@ from services.tts.worker_protocol import (
     TTSWorkerHealth,
     WorkerState,
 )
+from services.tts.wav_codec import pcm16_wav_bytes
 
 
 def _health_from_dict(data: dict[str, Any]) -> TTSWorkerHealth:
@@ -55,18 +56,7 @@ def _actual_cpu_affinity() -> tuple[int, ...]:
 def _pcm_wav_bytes(samples: Any, sample_rate: int) -> bytes:
     """将模型浮点输出转换为标准单声道 PCM16 WAV。"""
 
-    import numpy as np
-
-    array = np.asarray(samples, dtype=np.float32).reshape(-1)
-    array = np.clip(array, -1.0, 1.0)
-    pcm = (array * 32767.0).astype("<i2").tobytes()
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(sample_rate)
-        wav_file.writeframes(pcm)
-    return buffer.getvalue()
+    return pcm16_wav_bytes(samples, sample_rate)
 
 
 def _fake_wav_bytes(chunk_id: int, sample_rate: int = 24000) -> bytes:

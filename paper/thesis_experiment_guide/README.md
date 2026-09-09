@@ -1,10 +1,12 @@
 # EdgeSched 论文与实验指南索引
 
-small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30 仅为容量候选，长上下文余量不足 16 MiB。下一步用户运行 `scripts/experiments/run_small_9b_tts_compat.ps1`，C512/K18 配 T0/T3 各 1 轮；加载期另需验证，不冻结阈值，见 [验收与命令](../../docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
+**当前主线：small 9B 的 C512 LLM+TTS 容量/可行性口径已收案，下一步是 S0 端到端协议确认与流水线验证。** 已完成选型、16 档曲线、KV 校准、离线筛选、兼容性 smoke、K24 边界修正、五轮正式矩阵和 S0 四配置静态放置。合并产物 `small_9b_s0_colocated_20260908_v1.json` 冻结 `G_safe=915.015625 MiB` 与四候选 `H_TTS`（K0:T0、K24:T0/T3/T4）；K0:T4 全 CPU 以负面边界收案。K24 是已验证候选，不是最大可行档位的证明；不自动安排 K28/K30 或重跑已收案矩阵。见 [当前门禁](10_gates_and_current_status.md) 与 [E2 协议草案](07_experiment_stages_and_matrix.md#e2无图像的-llmtts-流水线)。
 
 > **small 视觉画像补齐**：`20260907_171635` 五轮 5/5，swap 0；加载/预热、编码、回答后释放阶段成本已采集。独立进程画像不证明跨请求保温或编码后提前释放；见 [验收](../../docs/SMALL_9B_VISION_PROFILE_20260907.md)。
 
-> **2026-09-07 small 9B 更新**：后续版本固定 `1a35ab89…`；纯文本完整曲线 C2 90/90、C3 150/150、KV 48/48 已核验，swap 0。small 视觉 Answer 1/1 已通过；旧 large 五轮视觉画像仍属 `423fb3e5…`，不可混用。离线容量候选已复算，下一步做兼容性/放置验证；新模型 G_safe/H_TTS 未冻结，SM-A 等原生 Ubuntu。见 [完整验收](../../docs/SMALL_9B_CURVES_20260907.md)。
+> **画像身份记录（2026-09-07）**：small 纯文本 C2 90/90、C3 150/150、KV 48/48 已核验，swap 0；该阶段版本为 `1a35ab89…`，后续批次以各自 manifest 为准。small 视觉 Answer 1/1 已通过；旧 large 五轮视觉画像仍属 `423fb3e5…`，不可混用。C512 阈值以后续合并冻结记录为准，不能外推到视觉或 C2048/C4096。见 [完整验收](../../docs/SMALL_9B_CURVES_20260907.md)。
+
+**后续顺序**：确认句级流水线、首句就绪/实际播放截止和 underrun 口径 → pilot → 独立正式端到端矩阵 → 实现准入 Go/No-Go。Go 后才实现 `PlacementPlan`、代价模型及 predictor/planner；静态收益不等于动态转换收益已验证。`H_D` 仍 pending，保留 16G Forge 共置负面边界，不阻塞 S0；SM-B/C/D/E 等原生 Ubuntu + MPS，BGE 缓存补测与 D3 并发为辅助线。
 
 **用途**：把研究设计、实验协议和当前状态拆成可按任务选择读取的模块，避免 AI 或维护者每次加载整份长文档。
 
@@ -36,7 +38,9 @@ small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30
 | [09 证据与论文组织](09_evidence_and_paper_plan.md) | 写论文或决定数据能否使用 | 当前数据边界、必须重跑项、章节与图表规划、局限性 |
 | [10 门禁与当前状态](10_gates_and_current_status.md) | 每个新会话必读 | Go/No-Go、完成项、暂停项、下一批实验、完成标准 |
 
-## 当前真值摘要（2026-09-06）
+## 历史模型与批次摘要（2026-09-06）
+
+以下为历史身份和证据边界，不是当前 small C512 的阈值或下一步任务；当前主线以上方摘要和第 10 模块为准。
 
 - Qwen3.5-9B 的 C2+C3 direct NVML 已完成 16 个 LLM 驻留档位，共 240 条性能记录；KV 容量与语义校准已完成 48/48 条，均保留为 9B TEXT_ONLY 模型特定证据，不能当作当前视觉阈值。
 - Qwen3.5-4B 的 C2 90/90、C3 150/150 与纯文本 KV 校准 48/48 已完成并通过；C2+C3 在每个 context 合并为完整 16 档。C2/C3 artifact 保存的是短 commit `a35d4f5`，可唯一解析到完整提交 `a35d4f5f9b17b01b5d90bd6fd0db794cfdb54eb2`，晋升前仍须补独立 provenance 审计记录；KV artifact 已保存完整提交。
