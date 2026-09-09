@@ -108,9 +108,12 @@ def _load_tts(  # noqa: PLR0913
     spec = placement_for(config.tts_config)
     _apply_placement(wrapper, spec)
     inventory = _component_inventory(wrapper)
-    voice_prompt, prompt_build_s = _build_xvector_prompt(
+    prompt_item, prompt_build_s = _build_xvector_prompt(
         wrapper, Path(args.ref_audio).expanduser().resolve()
     )
+    # generate_voice_clone 只接受 dict 或 list[VoiceClonePromptItem]，
+    # 传入单个 VoiceClonePromptItem 会在内部下标访问时报错
+    voice_prompt = wrapper._prompt_items_to_voice_clone_prompt([prompt_item])
     _synchronize()
     generation_kwargs = wrapper._merge_generate_kwargs(
         do_sample=False,
