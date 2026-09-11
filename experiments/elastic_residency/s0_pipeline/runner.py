@@ -28,9 +28,11 @@ from experiments.elastic_residency.s0_pipeline.events import (
     execution_intervals,
     semantics_coverage,
 )
+from experiments.elastic_residency.s0_pipeline.output_contract import (
+    evaluate_text_contract,
+)
 from experiments.elastic_residency.s0_pipeline.text_contract import (
     StreamingTextNormalizer,
-    assess_output_contract,
 )
 
 
@@ -46,6 +48,8 @@ class PipelineRunResult:
     sentences: list[dict[str, Any]] = field(default_factory=list)
     token_stats: dict[str, Any] = field(default_factory=dict)
     playback_stats: dict[str, Any] = field(default_factory=dict)
+    playback_starvation: dict[str, Any] = field(default_factory=dict)
+    playback_calibration: dict[str, Any] | None = None
     tts_execution_intervals: list[dict[str, Any]] = field(default_factory=list)
     semantics: dict[str, Any] = field(default_factory=dict)
     clock_resolution_ns: int = 0
@@ -63,11 +67,15 @@ class PipelineRunResult:
             "sentences": self.sentences,
             "token_stats": self.token_stats,
             "playback_stats": self.playback_stats,
+            "playback_starvation": self.playback_starvation,
+            "playback_calibration": self.playback_calibration,
             "tts_execution_intervals": self.tts_execution_intervals,
             "semantics": self.semantics,
             "clock_resolution_ns": self.clock_resolution_ns,
             "text_contract": self.text_contract,
             "clock_mappings": self.clock_mappings,
+            # 事件必须落盘：只记 event_count 无法回溯首句就绪、提交与消费时间线
+            "events": self.events,
             "event_count": len(self.events),
         }
 
@@ -165,6 +173,7 @@ class PipelineRunner:
                 sentence = {
                     "chunk_id": result.chunk_id,
                     "text": result.synthesis_text,
+                    "raw_text": result.raw_text,
                     "audio_duration_s": result.audio_duration_s,
                     "queue_wait_s": result.queue_wait_s,
                     "synthesis_s": result.synthesis_s,
@@ -190,10 +199,13 @@ class PipelineRunner:
                 if self.player.is_opened:
                     self.player.wait_finished(timeout_s=120.0)
             await pipeline.stop()
-            contract = assess_output_contract(
-                normalizer_stats=self.normalizer.stats(),
-                sentences=[item["text"] for item in sentences],
+            contract = evaluate_text_contract(
+                normalizer=self.normalizer,
+                sentences=[item["raw_text"] for item in sentences],
             )
+            contract["synthesis_sentences"] = [
+                item["text"] for item in sentences
+            ]
             self.recorder.emit(
                 Stage.REQUEST_END,
                 attributes={
@@ -217,6 +229,14 @@ class PipelineRunner:
             playback_stats=self.player.stats.to_dict()
             if self.player is not None
             else {"backend": "disabled", "is_real": False},
+            playback_starvation=(
+                self.player.starve_summary() if self.player is not None else {}
+            ),
+            playback_calibration=(
+                self.player.calibration.to_dict()
+                if self.player is not None and self.player.calibration is not None
+                else None
+            ),
             tts_execution_intervals=[
                 item.to_dict()
                 for item in execution_intervals(

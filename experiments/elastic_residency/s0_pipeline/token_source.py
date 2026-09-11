@@ -23,7 +23,6 @@ import queue as queue_module
 import threading
 import time
 from collections.abc import AsyncIterator, Iterator
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -33,87 +32,18 @@ from experiments.elastic_residency.s0_pipeline.events import (
     Stage,
     TimestampSemantics,
 )
+from experiments.elastic_residency.s0_pipeline.s0_prompt import (
+    prompt_evidence,
+    render_chat_prompt,
+    special_token_text,
+)
+from experiments.elastic_residency.s0_pipeline.token_identity import (
+    TokenSourceError,
+    TokenSourceIdentity,
+    TokenSourceStats,
+)
 
 _END = object()
-
-
-class TokenSourceError(RuntimeError):
-    """token 源不可用或违反冻结边界。"""
-
-
-@dataclass(frozen=True)
-class TokenSourceIdentity:
-    """模型身份与本次生成的 token 边界。"""
-
-    model_path: str
-    model_sha256: str
-    architecture: str
-    block_count: int
-    n_ctx: int
-    context_tokens: int
-    generation_budget_tokens: int
-    chat_template_sha256: str
-    prompt_tokens_estimate: int
-    max_output_tokens: int
-    n_gpu_layers: int
-    n_threads: int
-    backend_kind: str = "llama_cpp_python"
-
-    def __post_init__(self) -> None:
-        if self.prompt_tokens_estimate > self.context_tokens:
-            raise TokenSourceError(
-                f"prompt token 数 {self.prompt_tokens_estimate} 超过冻结口径 "
-                f"{self.context_tokens}"
-            )
-        if self.prompt_tokens_estimate + self.max_output_tokens > self.n_ctx:
-            raise TokenSourceError(
-                "prompt + max_output 超过 n_ctx，会越过 C512 冻结口径"
-            )
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "model_path": self.model_path,
-            "model_sha256": self.model_sha256,
-            "architecture": self.architecture,
-            "block_count": self.block_count,
-            "n_ctx": self.n_ctx,
-            "context_tokens": self.context_tokens,
-            "generation_budget_tokens": self.generation_budget_tokens,
-            "chat_template_sha256": self.chat_template_sha256,
-            "prompt_tokens_estimate": self.prompt_tokens_estimate,
-            "max_output_tokens": self.max_output_tokens,
-            "n_gpu_layers": self.n_gpu_layers,
-            "n_threads": self.n_threads,
-            "backend_kind": self.backend_kind,
-        }
-
-
-@dataclass
-class TokenSourceStats:
-    """运行期统计；交付、阻塞与完成状态分开记录。"""
-
-    delivered_tokens: int = 0
-    first_delivery_ns: int | None = None
-    last_delivery_ns: int | None = None
-    bridge_max_depth: int = 0
-    bridge_blocked_count: int = 0
-    actual_output_tokens: int = 0
-    finished: bool = False
-    error: str = ""
-    notes: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "delivered_tokens": self.delivered_tokens,
-            "first_delivery_ns": self.first_delivery_ns,
-            "last_delivery_ns": self.last_delivery_ns,
-            "bridge_max_depth": self.bridge_max_depth,
-            "bridge_blocked_count": self.bridge_blocked_count,
-            "actual_output_tokens": self.actual_output_tokens,
-            "finished": self.finished,
-            "error": self.error,
-            "notes": dict(self.notes),
-        }
 
 
 class BridgedTokenSource:
@@ -252,6 +182,9 @@ class LlamaTokenSource(BridgedTokenSource):
         self.system_prompt = system_prompt
         self.temperature = temperature
         self.model_sha256 = model_sha256
+        self.rendered_prompt = ""
+        self.prompt_evidence: dict[str, Any] = {}
+        self._stop: list[str] = []
         self._llm: Any = None
 
     def open(self) -> TokenSourceIdentity:
@@ -286,6 +219,16 @@ class LlamaTokenSource(BridgedTokenSource):
         architecture = str(metadata.get("general.architecture", ""))
         block_count = int(metadata.get(f"{architecture}.block_count", 0) or 0)
         template = str(metadata.get("tokenizer.chat_template", ""))
+        eos_text = special_token_text(self._llm, eos=True)
+        self.rendered_prompt = render_chat_prompt(
+            chat_template=template,
+            system_prompt=self.system_prompt,
+            user_prompt=self.prompt,
+            eos_token=eos_text,
+            bos_token=special_token_text(self._llm, eos=False),
+        )
+        self.prompt_evidence = prompt_evidence(self.rendered_prompt)
+        self._stop = [eos_text] if eos_text else []
         identity = TokenSourceIdentity(
             model_path=str(self.model_path),
             model_sha256=self.model_sha256,
@@ -312,32 +255,22 @@ class LlamaTokenSource(BridgedTokenSource):
             )
         return identity
 
-    def _messages(self) -> list[dict[str, str]]:
-        messages: list[dict[str, str]] = []
-        if self.system_prompt:
-            messages.append({"role": "system", "content": self.system_prompt})
-        messages.append({"role": "user", "content": self.prompt})
-        return messages
-
     def _estimate_prompt_tokens(self) -> int:
         assert self._llm is not None
-        prompt_text = "".join(
-            f"{item['role']}: {item['content']}\
-" for item in self._messages()
-        )
-        return len(self._llm.tokenize(prompt_text.encode("utf-8")))
+        return len(self._llm.tokenize(self.rendered_prompt.encode("utf-8")))
 
     def _produce(self) -> Iterator[str]:
         assert self._llm is not None
-        stream = self._llm.create_chat_completion(
-            messages=self._messages(),
+        stream = self._llm.create_completion(
+            prompt=self.rendered_prompt,
             max_tokens=self.max_output_tokens,
             temperature=self.temperature,
+            seed=self.seed,
             stream=True,
+            stop=self._stop or None,
         )
         for chunk in stream:
-            delta = chunk["choices"][0].get("delta", {})
-            text = delta.get("content") if isinstance(delta, dict) else None
+            text = chunk["choices"][0].get("text")
             if text:
                 yield str(text)
 

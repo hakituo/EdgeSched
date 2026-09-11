@@ -27,13 +27,12 @@ from experiments.elastic_residency.cpu_topology import (  # noqa: E402
     process_affinity_scope,
 )
 from experiments.elastic_residency.gpu_telemetry import DirectNvmlProbe  # noqa: E402
-from experiments.elastic_residency.llm_residency_curve import (  # noqa: E402
-    resolve_config,
-)
 from experiments.elastic_residency.resource_sampler import ResourceSampler  # noqa: E402
 from experiments.elastic_residency.s0_pipeline.config import (  # noqa: E402
+    DIRECT_ANSWER_SYSTEM_PROMPT,
     S0PipelineConfig,
     default_output_root,
+    text_fingerprint,
 )
 from experiments.elastic_residency.s0_pipeline.events import (  # noqa: E402
     EventRecorder,
@@ -42,6 +41,10 @@ from experiments.elastic_residency.s0_pipeline.playback import (  # noqa: E402
     ContinuousPlayer,
 )
 from experiments.elastic_residency.s0_pipeline.runner import PipelineRunner  # noqa: E402
+from experiments.elastic_residency.s0_pipeline.s0_backends import (  # noqa: E402
+    load_llm,
+    load_tts,
+)
 from experiments.elastic_residency.s0_pipeline.token_source import (  # noqa: E402
     LlamaTokenSource,
 )
@@ -49,85 +52,12 @@ from experiments.elastic_residency.s0_pipeline.tts_executor import (  # noqa: E4
     SentenceSynthesizer,
 )
 from experiments.elastic_residency.tts_component_offload import (  # noqa: E402
-    _apply_placement,
-    _build_xvector_prompt,
-    _component_inventory,
     _nvidia_memory_snapshot,
-    _synchronize,
-    placement_for,
 )
 from experiments.elastic_residency.tts_runtime_evidence import (  # noqa: E402
     SwapUsageSampler,
 )
 from experiments.tts.profiling_utils import sha256_file  # noqa: E402
-
-
-def _load_llm(  # noqa: PLR0913 - child 编排需要完整参数集
-    args: argparse.Namespace,
-    config: S0PipelineConfig,
-    recorder: EventRecorder,
-    n_threads: int,
-    model_sha256: str,
-) -> tuple[LlamaTokenSource, Any, float]:
-    started = time.perf_counter()
-    source = LlamaTokenSource(
-        model_path=args.llm_model,
-        n_ctx=config.n_ctx,
-        context_tokens=config.context_tokens,
-        generation_budget_tokens=config.generation_budget_tokens,
-        max_output_tokens=config.max_output_tokens,
-        n_gpu_layers=resolve_config(config.llm_config, args.model_layers),
-        n_threads=n_threads,
-        seed=config.seed,
-        prompt=args.prompt,
-        system_prompt=args.system_prompt,
-        temperature=config.temperature,
-        model_sha256=model_sha256,
-        bridge_maxsize=config.token_queue_maxsize,
-        recorder=recorder,
-    )
-    identity = source.open()
-    return source, identity, time.perf_counter() - started
-
-
-def _load_tts(  # noqa: PLR0913
-    args: argparse.Namespace,
-    config: S0PipelineConfig,
-) -> tuple[Any, Any, Any, dict[str, Any], float]:
-    import torch
-    from qwen_tts import Qwen3TTSModel
-
-    started = time.perf_counter()
-    wrapper = Qwen3TTSModel.from_pretrained(
-        str(Path(args.tts_model).expanduser().resolve()),
-        device_map="cuda:0",
-        dtype=torch.bfloat16,
-        attn_implementation="sdpa",
-        local_files_only=True,
-    )
-    spec = placement_for(config.tts_config)
-    _apply_placement(wrapper, spec)
-    inventory = _component_inventory(wrapper)
-    prompt_item, prompt_build_s = _build_xvector_prompt(
-        wrapper, Path(args.ref_audio).expanduser().resolve()
-    )
-    # generate_voice_clone 只接受 dict 或 list[VoiceClonePromptItem]，
-    # 传入单个 VoiceClonePromptItem 会在内部下标访问时报错
-    voice_prompt = wrapper._prompt_items_to_voice_clone_prompt([prompt_item])
-    _synchronize()
-    generation_kwargs = wrapper._merge_generate_kwargs(
-        do_sample=False,
-        subtalker_dosample=False,
-        max_new_tokens=args.max_new_tokens,
-        repetition_penalty=args.repetition_penalty,
-    )
-    return (
-        wrapper,
-        voice_prompt,
-        inventory,
-        generation_kwargs,
-        time.perf_counter() - started,
-    )
 
 
 def run_child(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
@@ -138,6 +68,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
         max_output_tokens=args.max_new_tokens,
         llm_cores=args.llm_cores,
         system_cores=args.system_cores,
+        system_prompt=args.system_prompt,
     )
     topology = CPUTopology.discover()
     if len(topology.physical_cores) < config.system_cores + config.llm_cores:
@@ -169,10 +100,10 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
             sampler.start(wait_for_gpu_timeout_s=config.gpu_warmup_timeout_s)
             baseline = _nvidia_memory_snapshot(process.pid)
             model_sha256 = sha256_file(Path(args.llm_model).expanduser().resolve())
-            source, identity, llm_load_s = _load_llm(
+            source, identity, llm_load_s = load_llm(
                 args, config, recorder, len(llm_lease.affinity), model_sha256
             )
-            wrapper, voice_prompt, inventory, gen_kwargs, tts_load_s = _load_tts(
+            wrapper, voice_prompt, inventory, gen_kwargs, tts_load_s = load_tts(
                 args, config
             )
             synthesizer = SentenceSynthesizer(
@@ -220,6 +151,14 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
                 "resource_summary": resource_summary,
                 "swap_report": swap_report,
                 "output_contract": run_result.text_contract,
+                "prompt_contract": {
+                    "version": config.prompt_contract_version,
+                    "prompt": args.prompt,
+                    "prompt_sha256": text_fingerprint(args.prompt),
+                    "system_prompt": config.system_prompt,
+                    "system_prompt_sha256": text_fingerprint(config.system_prompt),
+                    **source.prompt_evidence,
+                },
                 "run": run_result.to_dict(),
             }
     except Exception as exc:  # noqa: BLE001 - child 失败必须落盘
@@ -254,7 +193,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--placement", required=True)
     parser.add_argument(
         "--llm-model",
-        default="/home/leslie/mvp_core/models/llm/Qwen3.5-9B-q4_k_m.gguf",
+        default="/home/leslie/mvp_core/models/llm/Qwen3.5-9B-Q4_K_M.gguf",
     )
     parser.add_argument(
         "--tts-model",
@@ -264,14 +203,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--ref-audio", default="/home/leslie/mvp_core/models/tts_refs/ref_calm.wav"
     )
     parser.add_argument("--prompt", default="请用三到五句话介绍边缘计算的优势。")
-    parser.add_argument(
-        "--system-prompt",
-        default=(
-            "直接回答用户问题。不要输出思考过程、分析步骤或计划；"
-            "不要使用 Markdown 列表、加粗或标题。"
-            "用完整自然的中文句子回答。"
-        ),
-    )
+    parser.add_argument("--system-prompt", default=DIRECT_ANSWER_SYSTEM_PROMPT)
     parser.add_argument("--max-new-tokens", type=int, default=128)
     parser.add_argument("--repetition-penalty", type=float, default=1.05)
     parser.add_argument("--model-layers", type=int, default=32)

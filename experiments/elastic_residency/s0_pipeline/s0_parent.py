@@ -22,9 +22,12 @@ from experiments.elastic_residency.contracts import (
     FailureRecord,
 )
 from experiments.elastic_residency.s0_pipeline.config import (  # noqa: E402
+    DIRECT_ANSWER_SYSTEM_PROMPT,
     FREEZE_STATUS,
+    PROMPT_CONTRACT_VERSION,
     S0_PLACEMENTS,
     default_output_root,
+    text_fingerprint,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -48,6 +51,8 @@ def _run_child(  # noqa: PLR0913
         args.ref_audio,
         "--prompt",
         args.prompt,
+        "--system-prompt",
+        args.system_prompt,
         "--max-new-tokens",
         str(args.max_new_tokens),
         "--model-layers",
@@ -95,6 +100,9 @@ def _gate_checks(record: dict[str, Any]) -> dict[str, bool]:
         "output_contract_ok": (
             run.get("text_contract", {}).get("failed") is not True
         ),
+        "prompt_contract_recorded": bool(
+            record.get("prompt_contract", {}).get("system_prompt_sha256")
+        ),
     }
 
 
@@ -128,6 +136,10 @@ def run_parent(args: argparse.Namespace) -> Path:
             "placements": list(args.placements),
             "runs": args.runs,
             "prompt": args.prompt,
+            "prompt_sha256": text_fingerprint(args.prompt),
+            "system_prompt": args.system_prompt,
+            "system_prompt_sha256": text_fingerprint(args.system_prompt),
+            "prompt_contract_version": PROMPT_CONTRACT_VERSION,
             "max_new_tokens": args.max_new_tokens,
             "enable_playback": args.enable_playback,
         },
@@ -203,7 +215,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument(
         "--llm-model",
-        default="/home/leslie/mvp_core/models/llm/Qwen3.5-9B-q4_k_m.gguf",
+        default="/home/leslie/mvp_core/models/llm/Qwen3.5-9B-Q4_K_M.gguf",
     )
     parser.add_argument(
         "--tts-model",
@@ -213,6 +225,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--ref-audio", default="/home/leslie/mvp_core/models/tts_refs/ref_calm.wav"
     )
     parser.add_argument("--prompt", default="请用三到五句话介绍边缘计算的优势。")
+    parser.add_argument("--system-prompt", default=DIRECT_ANSWER_SYSTEM_PROMPT)
     parser.add_argument("--max-new-tokens", type=int, default=128)
     parser.add_argument("--model-layers", type=int, default=32)
     parser.add_argument("--enable-playback", action="store_true")

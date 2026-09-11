@@ -77,6 +77,44 @@ def test_pipeline_records_real_tts_execution_intervals() -> None:
     assert result.semantics["execution_event_count"] >= 6
 
 
+def test_markdown_stream_keeps_order_without_pure_marker_chunks() -> None:
+    stream = "\n1. 第一句话在这里。\n**\n2. 第二句话在这里。\n"
+    synthesizer = ScriptedSynthesizer(
+        base_duration_s=0.01, per_char_duration_s=0.0, recorder=None
+    )
+    recorder = EventRecorder(request_id="s0-markdown", config="K24:T0")
+    source = ScriptedTokenSource(list(stream), bridge_maxsize=4)
+    config = S0PipelineConfig(
+        placement="K24:T0",
+        tts_queue_maxsize=1,
+        min_chars=4,
+        max_chars=40,
+        sample_interval_s=0.01,
+    )
+    runner = PipelineRunner(
+        config=config,
+        token_source=source,
+        synthesizer=synthesizer,
+        recorder=recorder,
+        player=None,
+        request_id="s0-markdown",
+    )
+    source.start()
+    result = asyncio.run(runner.run())
+    source.close()
+
+    assert result.finished, result.error
+    assert [item["text"] for item in result.sentences] == [
+        "第一句话在这里。",
+        "第二句话在这里。",
+    ]
+    assert result.text_contract["failed"] is False
+    mapping = result.text_contract["sentence_mapping"]
+    assert [item["mapped"] for item in mapping] == [True, True]
+    # 有界桥接：规范化不得把队列变成无界缓冲
+    assert source.stats.bridge_max_depth <= source.bridge_maxsize
+
+
 def test_synthesis_failure_closes_stream_and_records_error() -> None:
     synthesizer = ScriptedSynthesizer(
         base_duration_s=0.01,

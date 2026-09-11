@@ -6,6 +6,7 @@ pilot 阶段只要求「参数可记录、可复核」，不声称协议已冻�
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,22 @@ S0_PLACEMENTS: tuple[str, ...] = ("K24:T0", "K24:T3", "K0:T0", "K24:T4")
 S0_CONTEXT_TOKENS = 512
 
 SCHEMA_VERSION = "edgesched.s0_pipeline.v1"
+
+#: 统一的直接回答 prompt：四配置共用，禁止思考正文、分析与 Markdown。
+#: 它只约束正文语义；模型仍泄漏思考正文时由输出契约判失败，不静默删除。
+PROMPT_CONTRACT_VERSION = "s0_direct_answer_v1"
+DIRECT_ANSWER_SYSTEM_PROMPT = (
+    "直接回答用户问题，只输出需要朗读的最终正文。"
+    "不要输出思考过程、分析步骤、计划或任何推理说明；"
+    "不要使用 Markdown 列表、编号、加粗、标题或代码块；"
+    "用完整自然的中文句子回答，句末使用中文句号。"
+)
+
+
+def text_fingerprint(value: str) -> str:
+    """文本指纹：用于把 prompt/系统提示固化进产物并可复核。"""
+
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -46,6 +63,8 @@ class S0PipelineConfig:
     max_swap_growth_mb: float = 4.0
     safety_margin_mb: float = 1024.0
     language: str = "Chinese"
+    system_prompt: str = DIRECT_ANSWER_SYSTEM_PROMPT
+    prompt_contract_version: str = PROMPT_CONTRACT_VERSION
     attributes: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
