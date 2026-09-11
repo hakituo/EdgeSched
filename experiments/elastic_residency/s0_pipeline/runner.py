@@ -198,6 +198,8 @@ class PipelineRunner:
                 self.player.mark_producer_done()
                 if self.player.is_opened:
                     self.player.wait_finished(timeout_s=120.0)
+                # 先结算断流再取结果，否则统计与段落汇总会不一致
+                self.player.finalize_starvation()
             await pipeline.stop()
             contract = evaluate_text_contract(
                 normalizer=self.normalizer,

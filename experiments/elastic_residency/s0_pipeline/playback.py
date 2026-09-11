@@ -343,11 +343,20 @@ class ContinuousPlayer:
     def wait_finished(self, *, timeout_s: float = 60.0) -> bool:
         return bool(self._finished.wait(timeout_s))
 
-    def close(self) -> None:
-        self.tracker.finalize(producer_done=True)
+    def finalize_starvation(self) -> dict[str, Any]:
+        """结算断流段落并回写统计；幂等，可在取结果前与 close 时各调一次。"""
+
+        self.tracker.finalize(producer_done=self._producer_done)
         summary = self.starve_summary()
+        self.stats.starve_events = summary["starve_episode_count"]
         self.stats.starve_episode_count = summary["starve_episode_count"]
+        self.stats.starve_samples = summary["starve_samples_total"]
+        self.stats.starve_callback_count = self.tracker.callback_starve_count
         self.stats.starve_samples_in_window = summary["starve_samples_in_window"]
+        return summary
+
+    def close(self) -> None:
+        self.finalize_starvation()
         if self._stream is not None:
             try:
                 self._stream.stop()
