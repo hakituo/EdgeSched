@@ -352,7 +352,7 @@ small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；�
 | 图像模型 | `/home/leslie/mvp_core/models/Image` |
 | Forge 服务 | `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/` |
 
-`scripts/sync_to_wsl2_safe.ps1` 是安全同步入口，只增量复制源码，不删除 WSL2 独有的模型、Forge 或构建产物。根目录模型排除必须写成 `/models/`，避免误排除 `domain/models/` 等源码包；Python 缓存和测试临时目录不参与同步。默认会提交并推送 Windows 独立仓库；存在其他未完成改动时使用 `-SkipGit`，避免把无关文件加入提交。真实运行前仍应核对目标文件时间戳或哈希。
+`scripts/sync_to_wsl2_safe.ps1` 是安全同步入口，只增量复制源码，不删除 WSL2 独有的模型、Forge 或构建产物。根目录模型排除必须写成 `/models/`，避免误排除 `domain/models/` 等源码包；Python 缓存和测试临时目录不参与同步。默认会提交并推送 Windows 独立仓库，但**必须带 `-Message "一句话说明这次改了什么"`**（`-Detail` 可选作 commit 正文）；缺 `-Message` 或文案无信息（auto/update/更新/自动提交 等）时脚本在 rsync 之前报错退出，不再生成看不懂的 commit。存在其他未完成改动时使用 `-SkipGit`，避免把无关文件加入提交。详细过程（背景/改动/验证）写 `docs/UPDATES.md`。真实运行前仍应核对目标文件时间戳或哈希。
 
 ### 7.1 当前 WSL2 运行快照
 

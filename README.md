@@ -75,7 +75,13 @@ ResourceIsolationScheduler (C++ execution plane)
 | 图像模型 | `/home/leslie/mvp_core/models/Image` |
 | Forge | `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/` |
 
-Windows 到 WSL2 使用 `scripts/sync_to_wsl2_safe.ps1` 增量同步。该脚本不删除 WSL2 独有模型和 Forge 文件；不要改成镜像删除模式。工作区另有未完成改动时使用 `-SkipGit`，避免默认自动提交把无关文件一起纳入。
+Windows 到 WSL2 使用 `scripts/sync_to_wsl2_safe.ps1` 增量同步。该脚本不删除 WSL2 独有模型和 Forge 文件；不要改成镜像删除模式。
+
+```powershell
+.\scripts\sync_to_wsl2_safe.ps1 -Message "一句话说明这次改了什么"
+```
+
+`-Message` 必填（`-Detail` 可选，作为 commit 正文）；缺它或写成 `auto`/`更新` 这类无信息文案时脚本直接报错退出，不产生提交。工作区另有未完成改动时使用 `-SkipGit`，避免默认自动提交把无关文件一起纳入。详细过程（背景/改动/验证）记入 `docs/UPDATES.md`。
 
 WSL2 的可复现实验依赖使用 `requirements-wsl-cu128.txt`。它锁定当前已验证的 PyTorch CUDA 12.8、Qwen3-TTS、Transformers 和 llama-cpp-python 版本，并强制后者从源码构建 CUDA 版。安装前还需按文件头部说明安装 SoX、PortAudio 与 ALSA→Pulse 桥接；通用依赖中的 ONNX Runtime、Faster-Whisper/CTranslate2、sounddevice、blendmodes 和 Pillow 以 `requirements.txt` 的固定兼容版本为准。音频探针优先使用 WSLg Pulse，并在端点不可用时回退到 Windows WASAPI；静音链路通过不等于真实并发 TTS 已满足无 underrun。
 

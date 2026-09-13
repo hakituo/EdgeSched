@@ -29,6 +29,14 @@ provider:
 - 不使用全局 Python，不修改任何虚拟环境；确需修改依赖时先与用户讨论。
 - 统一使用中文注释，优先编写 Windows 与 Linux 均可运行的代码。
 
+## 提交与更新记录
+
+- **commit 必须写清这次改动做了什么**：运行 `scripts/sync_to_wsl2_safe.ps1` 必须带 `-Message "一句话说明"`，例如 `-Message '修复 Phase-Aware 阶段切换的显存估算偏差'`；需要随代码留存细节时再补 `-Detail`。
+- 不带 `-Message`，或提交信息是 `auto`/`update`/`更新`/`自动提交`/`同步` 这类无信息文案时，脚本在 rsync 之前直接报错退出（exit 2），不允许再产生看不懂的 commit。
+- commit 主题行只写一句话，不写文件清单和时间戳（`git show --stat`、`git log` 本来就有）。
+- **详细记录写 `docs/UPDATES.md`**（背景/改动/验证/备注，倒序追加），它是本仓库唯一的更新记录文件；禁止调用父仓库 `scripts/doc_records/update_project_records.py`。
+- 工作区存在其他会话或其他 agent 的未提交改动时，先用 `-SkipGit` 只同步，再按需单独提交，不要把无关改动一起推上去。
+
 ## 实验与证据规则
 
 - 明确区分 Mock、仿真、真实模型、真实 Forge 和论文正文证据；Mock 通过只证明链路和统计口径，不证明生产性能。

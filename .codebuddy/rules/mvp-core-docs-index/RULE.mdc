@@ -17,6 +17,11 @@ provider:
 3. 修改本模块前必须读 `.trae/skills/xiaoyou-mvp-core/SKILL.md`。
 4. 论文数据任务同时读 `paper/experiment_data/README.md`；C++ 任务同时读 `cpp_scheduler/README.md`。
 
+## 提交与更新记录
+
+- 同步/提交前先看 `docs/UPDATES.md`：它是本仓库唯一的详细更新记录入口，commit 只写一句话。
+- 跑 `scripts/sync_to_wsl2_safe.ps1` 必须带 `-Message "这次改了什么"`，缺参数会被脚本拒绝。
+
 ## 实验与子系统文档
 
 - 弹性驻留实验执行计划：`docs/ELASTIC_RESIDENCY_EXPERIMENT_EXECUTION_PLAN_20260828.md`
