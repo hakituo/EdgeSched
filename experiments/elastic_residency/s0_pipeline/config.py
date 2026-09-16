@@ -1,7 +1,8 @@
 """S0 端到端流水线的参数、门禁与冻结状态。
 
-pilot 阶段只要求「参数可记录、可复核」，不声称协议已冻结。
-正式比较前必须把 07 模块表格中的待确认项逐条落到本文件并锁定。
+07 模块表格中的待确认项已在本文件冻结为 ``FROZEN_PROTOCOL``（``s0_protocol_v1``）：
+输入与生成、分句、启动策略、重复次数、输出差异与失败处理规则都已落值，
+改协议必须同步改版本号并重跑，不能看完正式结果再调截止或预缓冲。
 """
 
 from __future__ import annotations
@@ -13,6 +14,18 @@ from typing import Any
 
 #: 已冻结的四个容量可行配置（LLM 档位 : TTS 放置）。
 S0_PLACEMENTS: tuple[str, ...] = ("K24:T0", "K24:T3", "K0:T0", "K24:T4")
+
+#: 启动策略：首句就绪即开播，或等全部句子合成完再开播。
+STARTUP_FIRST_SENTENCE = "first_sentence"
+STARTUP_FULL_PREBUFFER = "full_prebuffer"
+S0_STARTUP_POLICIES: tuple[str, ...] = (
+    STARTUP_FIRST_SENTENCE,
+    STARTUP_FULL_PREBUFFER,
+)
+#: 正式比较冻结使用首句即播；全量预缓冲只用于启动策略小对照。
+DEFAULT_STARTUP_POLICY = STARTUP_FIRST_SENTENCE
+
+S0_PROTOCOL_VERSION = "s0_protocol_v1"
 
 #: 冻结的容量口径上下文长度。
 S0_CONTEXT_TOKENS = 512
@@ -46,6 +59,7 @@ class S0PipelineConfig:
     max_output_tokens: int = 128
     seed: int = 42
     temperature: float = 0.0
+    startup_policy: str = DEFAULT_STARTUP_POLICY
     min_chars: int = 12
     max_chars: int = 80
     tts_queue_maxsize: int = 4
@@ -76,6 +90,11 @@ class S0PipelineConfig:
             raise ValueError(
                 f"C512 口径只允许 context_tokens={S0_CONTEXT_TOKENS}，"
                 f"实际 {self.context_tokens}"
+            )
+        if self.startup_policy not in S0_STARTUP_POLICIES:
+            raise ValueError(
+                f"未冻结的启动策略 {self.startup_policy!r}，"
+                f"只允许 {S0_STARTUP_POLICIES}"
             )
         if self.max_output_tokens < 1:
             raise ValueError("max_output_tokens 必须为正")
@@ -110,15 +129,85 @@ class S0PipelineConfig:
         return {"schema_version": SCHEMA_VERSION, **asdict(self)}
 
 
-#: 与 07 模块表格一一对应；pilot 阶段一律为 pending，禁止预填数值。
+#: 与 07 模块表格一一对应；2026-09-17 起为已冻结状态。
 FREEZE_STATUS: dict[str, str] = {
-    "input_and_generation": "pending",
-    "sentence_splitting": "pending",
-    "startup_policy": "pending",
-    "first_sentence_ready_slo": "pending",
-    "actual_playback_slo": "pending",
-    "continuity_gate": "pending",
-    "comparison_rule": "pending",
+    "input_and_generation": "frozen",
+    "sentence_splitting": "frozen",
+    "startup_policy": "frozen",
+    "first_sentence_ready_slo": "frozen_as_reporting_only",
+    "actual_playback_slo": "pending_device_validation",
+    "continuity_gate": "frozen_scope_split",
+    "comparison_rule": "frozen",
+}
+
+#: 冻结的正式 S0 协议；改任何一项都必须升 ``S0_PROTOCOL_VERSION`` 并重跑。
+FROZEN_PROTOCOL: dict[str, Any] = {
+    "version": S0_PROTOCOL_VERSION,
+    "frozen_on": "2026-09-17",
+    "input_and_generation": {
+        "prompt": "请用三到五句话介绍边缘计算的优势。",
+        "prompt_sha256": text_fingerprint("请用三到五句话介绍边缘计算的优势。"),
+        "system_prompt_version": PROMPT_CONTRACT_VERSION,
+        "seed": 42,
+        "temperature": 0.0,
+        "repetition_penalty": 1.05,
+        "max_output_tokens": 128,
+        "voice_ref": "tts_refs/ref_calm.wav",
+        "output_check": (
+            "输出契约逐次判定；输出 token 数、句数与文本 SHA-256 作为协变量记录，"
+            "不因长度或文本差异删除运行"
+        ),
+    },
+    "sentence_splitting": {
+        "min_chars": 12,
+        "max_chars": 80,
+        "strong_boundaries": "。！？!?；;\\n",
+        "weak_boundaries": "，,：:",
+        "tail_flush": True,
+        "queue_order": "FIFO",
+    },
+    "startup_policy": {
+        "formal": DEFAULT_STARTUP_POLICY,
+        "comparison": [STARTUP_FIRST_SENTENCE, STARTUP_FULL_PREBUFFER],
+        "note": (
+            "正式比较用首句即播；全量预缓冲仅用于 K24:T0 启动策略小对照，"
+            "同时报告首播等待代价与窗口内供给缺口，禁止逐配置调节预缓冲掩盖断流"
+        ),
+    },
+    "repetitions": {
+        "runs_per_placement": 5,
+        "paired_order": "rotate",
+        "formal_placements": list(S0_PLACEMENTS),
+        "formal_total_runs": 5 * len(S0_PLACEMENTS),
+    },
+    "output_difference_rule": {
+        "fingerprint": "逐句 raw_text 拼接后 SHA-256，另记输出 token 数",
+        "tolerance": "文本 SHA 不同的运行不删除，按协变量报告并标注 confound",
+        "confound_checks": ["output_tokens", "sentence_count", "audio_duration_s"],
+    },
+    "comparison_rule": {
+        "paired_unit": "run_index",
+        "primary_metrics": [
+            "first_sentence_waveform_ready_s",
+            "last_sentence_waveform_ready_s",
+            "rtf_mean",
+            "supply_fault_episode_count",
+        ],
+        "relative_tolerance": 0.10,
+        "absolute_tolerance_s": 1.0,
+        "baseline_non_mixed": "K0:T0",
+        "reference_same_llm": "K24:T0",
+        "note": (
+            "无绝对 SLO 截止值，按配对相对容差判定 Pareto 收益；"
+            "设备体验指标不参与比较，只报 pending"
+        ),
+    },
+    "failure_handling": {
+        "no_silent_drop": "失败运行必须落盘并计入分母，不得静默删除或替换",
+        "fail_fast_default": True,
+        "continue_on_failure": "仅用于收全证据，产物中仍标 passed=false",
+        "display_missing": "缺少真实后端的运行直接失败，禁止 Mock fallback",
+    },
 }
 
 

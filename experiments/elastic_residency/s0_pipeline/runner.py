@@ -31,6 +31,10 @@ from experiments.elastic_residency.s0_pipeline.events import (
 from experiments.elastic_residency.s0_pipeline.output_contract import (
     evaluate_text_contract,
 )
+from experiments.elastic_residency.s0_pipeline.startup import (
+    StartupPlan,
+    ensure_player_started,
+)
 from experiments.elastic_residency.s0_pipeline.text_contract import (
     StreamingTextNormalizer,
 )
@@ -54,6 +58,7 @@ class PipelineRunResult:
     semantics: dict[str, Any] = field(default_factory=dict)
     clock_resolution_ns: int = 0
     text_contract: dict[str, Any] = field(default_factory=dict)
+    startup: dict[str, Any] = field(default_factory=dict)
     events: list[dict[str, Any]] = field(default_factory=list)
     clock_mappings: list[dict[str, Any]] = field(default_factory=list)
 
@@ -69,6 +74,7 @@ class PipelineRunResult:
             "playback_stats": self.playback_stats,
             "playback_starvation": self.playback_starvation,
             "playback_calibration": self.playback_calibration,
+            "startup": self.startup,
             "tts_execution_intervals": self.tts_execution_intervals,
             "semantics": self.semantics,
             "clock_resolution_ns": self.clock_resolution_ns,
@@ -102,6 +108,7 @@ class PipelineRunner:
         self.request_id = request_id
         self.voice_profile_id = voice_profile_id
         self.normalizer = StreamingTextNormalizer()
+        self.startup = StartupPlan(policy=config.startup_policy)
         if getattr(self.synthesizer, "recorder", None) is None:
             self.synthesizer.recorder = self.recorder
 
@@ -160,6 +167,9 @@ class PipelineRunner:
         sentences: list[dict[str, Any]] = []
         error = ""
         try:
+            if self.player is not None and not self.startup.is_prebuffer:
+                # 首句即播：消费前打开输出流；启动等待落在统计窗口之外
+                ensure_player_started(self.player)
             await pipeline.start()
             stream = pipeline.stream_synthesize(
                 self.request_id,
@@ -182,9 +192,15 @@ class PipelineRunner:
                 }
                 if self.player is not None:
                     samples, _ = decode_pcm16_wav(result.audio_bytes)
-                    span = await self.player.submit(result.chunk_id, samples)
-                    sentence["start_sample"] = span.start_sample
-                    sentence["end_sample"] = span.end_sample
+                    if self.startup.is_prebuffer:
+                        # 全量预缓冲：先留在内存，等整段回复合成完再开播
+                        self.startup.hold(
+                            result.chunk_id, samples, result.audio_duration_s
+                        )
+                    else:
+                        span = await self.player.submit(result.chunk_id, samples)
+                        sentence["start_sample"] = span.start_sample
+                        sentence["end_sample"] = span.end_sample
                 sentences.append(sentence)
         except Exception as exc:  # noqa: BLE001 - 异常必须落盘而不是静默
             error = f"{type(exc).__name__}: {exc}"
@@ -195,6 +211,8 @@ class PipelineRunner:
         finally:
             snapshot_task.cancel()
             if self.player is not None:
+                # 预缓冲模式在这里才开播；首句即播模式 flush 为空操作
+                await self.startup.flush(self.player, sentences)
                 self.player.mark_producer_done()
                 if self.player.is_opened:
                     self.player.wait_finished(timeout_s=120.0)
@@ -251,6 +269,7 @@ class PipelineRunner:
             semantics=semantics_coverage(events),
             clock_resolution_ns=resolution_ns,
             text_contract=contract,
+            startup=self.startup.evidence(),
             events=[item.to_dict() for item in events],
             clock_mappings=[item.to_dict() for item in self.recorder.mappings()],
         )

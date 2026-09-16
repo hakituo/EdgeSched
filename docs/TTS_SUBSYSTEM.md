@@ -89,7 +89,40 @@ GPU 句长 profiling：
   --git-root /mnt/d/AI/xiaoyou-core/legacy/mvp_core
 ```
 
-2026-08-28 的完整结果与决策见 [GPU 句长画像](TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md)：45 条样本全部 RTF > 1，因此当前应先研究真正音频流式或后端优化，不直接铺开 CPU 核心组合。
+2026-08-28 的完整结果与决策见 [GPU 句长画像](TTS_GPU_SENTENCE_LENGTH_PROFILE_20260828.md)：45 条样本全部 RTF > 1，因此当前应先研究真正音频流式或后端优化，不直接铺开 CPU 核心组合。**2026-09-17 该判断已兑现**：换推理路径（CUDA Graph）后 RTF 降到 0.32，见下节。
+
+## 推理后端对照（CUDA Graph，2026-09-17）
+
+原始 RTF > 1 的主因不是模型能力，而是每步约 125–156 ms 的解码开销（`process_cpu_percent` 恒 ~100%，符合「每步约 500 次 CUDA kernel 启动」的特征）。换用 MIT 项目 `faster-qwen3-tts`（静态 KV cache + `torch.cuda.CUDAGraph` 捕获）后，**同一模型、同一参考音频、同一 B2 文本**（x-vector、非流式、`do_sample=False`、eager 注意力）：
+
+| 文本 | 上游动态 RTF（min–max） | CUDA Graph RTF（min–max） | 加速比 |
+|---|---:|---:|---:|
+| 20 字（4.72 s 音频） | 1.7754（1.6215–1.8833） | 0.3168（0.3165–0.3174） | 5.6× |
+| 50 字（10.64 s 音频） | 1.7257（1.6534–1.7840） | 0.3067（0.3058–0.3073） | 5.6× |
+| 100 字（18.88 s 音频） | 1.7622（1.6612–1.8345） | 0.3032（0.3030–0.3034） | 5.8× |
+
+上表来自 `tts_backend_both_eager_20260917_072516`：**同一隔离环境、同一进程先后测量**，因此可直接比较。
+早期跨环境批次（`cudagraph_only_20260917_v2`，报 9.5×/7.2×/8.1×）**已作废只作旁证**——同环境下上游 eager 为
+1.72–1.78，与 B2 的 sdpa 基线（1.60–1.92）基本一致，说明注意力实现影响很小，差异来自环境与包版本
+（原环境 python3.10 + 上游 `qwen-tts 0.1.1` + transformers 4.57.3）。
+
+入口：
+
+```bash
+# 两条路径同进程先后测量（推荐；用脚本入口自动同步与落 provenance）
+./scripts/experiments/run_tts_backend_compare.ps1 -Mode both        # Windows 侧发起
+# 或直接跑
+/home/leslie/qwen3tts-cugraph-probe/faster-qwen3-tts/.venv/bin/python -u \
+  -m experiments.tts.profile_qwen3_tts_cudagraph --paths upstream_dynamic cuda_graph_static
+```
+
+产物：`experiment_results/tts/cudagraph/<run_id>/{manifest.json,chunks.jsonl,audio/}`，含模型树哈希、参考音频哈希、git provenance 与逐条 PCM SHA。
+
+**边界（必须随数字一起报告）**
+
+- 加速路径依赖 `qwen-tts-hf 0.1.1.post1` + `transformers>=5.15.1` + cu128 torchaudio，**不能装进 `mvp_core-cu128`**（上游 `qwen-tts 0.1.1` 会在图捕获时报 `StaticLayer.lazy_initialization()` 签名不匹配；默认 torchaudio wheel 是 CUDA 13 构建；transformers 5.17 会让 `MimiConfig` 缺 `rope_theta`），因此使用仓库外隔离环境 `/home/leslie/qwen3tts-cugraph-probe/`。
+- 静态 KV cache 与上游走不同 SDPA kernel，**不是位精确**。同环境实测：上游动态路径 3/3 轮 PCM SHA 完全一致、样本数恒为 113280 / 255360 / 453120；CUDA Graph 路径 3/3 轮 SHA 全不同、样本数 111360–128640 / 249600–261120 / 443520–491520（最大差约 10%）。即加速路径即使 `do_sample=False` 也不确定，**输出长度也会变**。
+- 尚未接入 `s0_pipeline`：接入需要替换 `SentenceSynthesizer` 后端并把 `s0_protocol_v1` 升到 v2（含音频一致性口径），属冻结口径变更，须先评估再动手。
 
 每次真实运行写入：
 

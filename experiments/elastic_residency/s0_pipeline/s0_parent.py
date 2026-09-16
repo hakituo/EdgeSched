@@ -1,7 +1,10 @@
-"""S0 流水线 parent：四配置 pilot 编排、门禁聚合与产物写入。
+"""S0 流水线 parent：配置成对编排、门禁聚合与产物写入。
 
-parent 不加载模型，只负责按冻结顺序调用 child、收集结果并执行门禁；
-child 失败默认 fail-fast，pilot 阶段可用 ``--continue-on-failure`` 收全证据。
+parent 不加载模型，只负责按冻结协议调用 child、收集结果并执行门禁；
+child 失败默认 fail-fast，收全证据时可用 ``--continue-on-failure``。
+
+成对口径：每个 ``run_index`` 内对所有 placement × 启动策略做**轮转排序**，
+使每个配置在各重复轮次里都出现在不同的执行位次，降低位置/热状态偏差。
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from experiments.elastic_residency.contracts import (
     BackendEvidence,
@@ -22,20 +25,45 @@ from experiments.elastic_residency.contracts import (
     FailureRecord,
 )
 from experiments.elastic_residency.s0_pipeline.config import (  # noqa: E402
+    DEFAULT_STARTUP_POLICY,
     DIRECT_ANSWER_SYSTEM_PROMPT,
     FREEZE_STATUS,
+    FROZEN_PROTOCOL,
     PROMPT_CONTRACT_VERSION,
     S0_PLACEMENTS,
+    S0_PROTOCOL_VERSION,
+    S0_STARTUP_POLICIES,
     default_output_root,
     text_fingerprint,
+)
+from experiments.elastic_residency.s0_pipeline.measurement_scope import (  # noqa: E402
+    SCOPE_VERSION,
+)
+from experiments.elastic_residency.s0_pipeline.s0_evidence import (  # noqa: E402
+    attach_evidence,
+    summarize_record,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CHILD_MODULE = "experiments.elastic_residency.s0_pipeline.s0_child"
 
 
+def _rotated(items: Sequence[str], offset: int) -> list[str]:
+    """按 offset 轮转，保证同一 run_index 内各配置执行位次不同。"""
+
+    if not items:
+        return []
+    offset %= len(items)
+    return list(items[offset:]) + list(items[:offset])
+
+
 def _run_child(  # noqa: PLR0913
-    *, placement: str, args: argparse.Namespace, output_json: Path, run_index: int
+    *,
+    placement: str,
+    startup_policy: str,
+    args: argparse.Namespace,
+    output_json: Path,
+    run_index: int,
 ) -> tuple[dict[str, Any], str]:
     command = [
         sys.executable,
@@ -43,6 +71,8 @@ def _run_child(  # noqa: PLR0913
         CHILD_MODULE,
         "--placement",
         placement,
+        "--startup-policy",
+        startup_policy,
         "--llm-model",
         args.llm_model,
         "--tts-model",
@@ -58,7 +88,7 @@ def _run_child(  # noqa: PLR0913
         "--model-layers",
         str(args.model_layers),
         "--request-id",
-        f"{placement.replace(':', '-')}-r{run_index}",
+        f"{placement.replace(':', '-')}-{startup_policy}-r{run_index}",
         "--child-output-json",
         str(output_json),
         "--llm-cores",
@@ -82,28 +112,6 @@ def _run_child(  # noqa: PLR0913
         }
     payload["child_returncode"] = completed.returncode
     return payload, stderr
-
-
-def _gate_checks(record: dict[str, Any]) -> dict[str, bool]:
-    run = record.get("run", {})
-    semantics = run.get("semantics", {})
-    swap = record.get("swap_report", {})
-    return {
-        "child_passed": record.get("passed") is True,
-        "has_real_llm_identity": bool(record.get("llm_identity")),
-        "has_events": run.get("event_count", 0) > 0,
-        "has_execution_intervals": bool(run.get("tts_execution_intervals")),
-        "swap_within_tolerance": bool(swap.get("within_tolerance")),
-        "no_proxy_only_evidence": (
-            semantics.get("execution_event_count", 0) > 0
-        ),
-        "output_contract_ok": (
-            run.get("text_contract", {}).get("failed") is not True
-        ),
-        "prompt_contract_recorded": bool(
-            record.get("prompt_contract", {}).get("system_prompt_sha256")
-        ),
-    }
 
 
 def run_parent(args: argparse.Namespace) -> Path:
@@ -133,7 +141,10 @@ def run_parent(args: argparse.Namespace) -> Path:
             ),
         ),
         parameters={
+            "protocol_version": S0_PROTOCOL_VERSION,
+            "measurement_scope_version": SCOPE_VERSION,
             "placements": list(args.placements),
+            "startup_policies": list(args.startup_policies),
             "runs": args.runs,
             "prompt": args.prompt,
             "prompt_sha256": text_fingerprint(args.prompt),
@@ -148,63 +159,70 @@ def run_parent(args: argparse.Namespace) -> Path:
         config,
         {
             "freeze_status": FREEZE_STATUS,
-            "purpose": "pilot_only_no_performance_conclusion",
+            "protocol": FROZEN_PROTOCOL,
+            "protocol_version": S0_PROTOCOL_VERSION,
+            "measurement_scope_version": SCOPE_VERSION,
+            "purpose": "formal_s0_paired_comparison",
             "placements_frozen": list(S0_PLACEMENTS),
         },
     )
     summary: dict[str, Any] = {
+        "protocol_version": S0_PROTOCOL_VERSION,
         "placements": list(args.placements),
+        "startup_policies": list(args.startup_policies),
         "runs": args.runs,
         "records": [],
         "all_passed": True,
     }
-    for placement in args.placements:
-        for run_index in range(1, args.runs + 1):
-            started = time.monotonic()
-            output_json = (
-                writer.layout.root / "children" / f"{placement.replace(':', '-')}_r{run_index}.json"
-            )
-            output_json.parent.mkdir(parents=True, exist_ok=True)
-            record, stderr = _run_child(
-                placement=placement,
-                args=args,
-                output_json=output_json,
-                run_index=run_index,
-            )
-            record["placement"] = placement
-            record["run_index"] = run_index
-            record["parent_wall_s"] = time.monotonic() - started
-            record["acceptance_checks"] = _gate_checks(record)
-            record["passed"] = all(record["acceptance_checks"].values())
-            events = record.get("run", {}).get("events", [])
-            for event in events:
-                writer.append_event(event)
-            writer.append_iteration(record)
-            summary["records"].append(
-                {
-                    "placement": placement,
-                    "run_index": run_index,
-                    "passed": record["passed"],
-                    "checks": record["acceptance_checks"],
-                    "error": record.get("error", ""),
-                    "sentence_count": record.get("run", {}).get("sentence_count", 0),
-                }
-            )
-            if not record["passed"]:
-                writer.append_failure(
-                    FailureRecord(
-                        stage="s0_pipeline_child",
-                        error_type="GateFailure",
-                        message=record.get("error") or stderr or "门禁未通过",
-                        monotonic_ns=time.monotonic_ns(),
-                        fatal=not args.continue_on_failure,
-                        attributes={"placement": placement},
-                    )
+    for run_index in range(1, args.runs + 1):
+        order_index = 0
+        for placement in _rotated(list(args.placements), run_index - 1):
+            for policy in _rotated(list(args.startup_policies), run_index - 1):
+                started = time.monotonic()
+                tag = placement.replace(":", "-")
+                output_json = (
+                    writer.layout.root
+                    / "children"
+                    / f"{tag}_{policy}_r{run_index}.json"
                 )
-                summary["all_passed"] = False
-                if not args.continue_on_failure:
-                    writer.write_summary(summary)
-                    return writer.layout.root
+                output_json.parent.mkdir(parents=True, exist_ok=True)
+                record, stderr = _run_child(
+                    placement=placement,
+                    startup_policy=policy,
+                    args=args,
+                    output_json=output_json,
+                    run_index=run_index,
+                )
+                record["placement"] = placement
+                record["startup_policy"] = policy
+                record["run_index"] = run_index
+                record["order_index"] = order_index
+                order_index += 1
+                record["parent_wall_s"] = time.monotonic() - started
+                attach_evidence(record)
+                for event in record.get("run", {}).get("events", []):
+                    writer.append_event(event)
+                writer.append_iteration(record)
+                summary["records"].append(summarize_record(record))
+                if not record["passed"]:
+                    writer.append_failure(
+                        FailureRecord(
+                            stage="s0_pipeline_child",
+                            error_type="GateFailure",
+                            message=record.get("error") or stderr or "门禁未通过",
+                            monotonic_ns=time.monotonic_ns(),
+                            fatal=not args.continue_on_failure,
+                            attributes={
+                                "placement": placement,
+                                "startup_policy": policy,
+                                "run_index": run_index,
+                            },
+                        )
+                    )
+                    summary["all_passed"] = False
+                    if not args.continue_on_failure:
+                        writer.write_summary(summary)
+                        return writer.layout.root
     writer.write_summary(summary)
     return writer.layout.root
 
@@ -212,6 +230,9 @@ def run_parent(args: argparse.Namespace) -> Path:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--placements", nargs="+", default=list(S0_PLACEMENTS))
+    parser.add_argument(
+        "--startup-policies", nargs="+", default=[DEFAULT_STARTUP_POLICY]
+    )
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument(
         "--llm-model",
@@ -244,6 +265,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
+    args.placements = [item.upper() for item in args.placements]
+    invalid = [item for item in args.placements if item not in S0_PLACEMENTS]
+    if invalid:
+        raise SystemExit(f"未冻结的放置配置: {invalid}")
+    invalid_startup = [
+        item for item in args.startup_policies if item not in S0_STARTUP_POLICIES
+    ]
+    if invalid_startup:
+        raise SystemExit(f"未冻结的启动策略: {invalid_startup}")
     root = run_parent(args)
     print(json.dumps({"artifacts": str(root)}, ensure_ascii=False))
 

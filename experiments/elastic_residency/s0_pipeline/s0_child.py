@@ -29,6 +29,7 @@ from experiments.elastic_residency.cpu_topology import (  # noqa: E402
 from experiments.elastic_residency.gpu_telemetry import DirectNvmlProbe  # noqa: E402
 from experiments.elastic_residency.resource_sampler import ResourceSampler  # noqa: E402
 from experiments.elastic_residency.s0_pipeline.config import (  # noqa: E402
+    DEFAULT_STARTUP_POLICY,
     DIRECT_ANSWER_SYSTEM_PROMPT,
     S0PipelineConfig,
     default_output_root,
@@ -66,6 +67,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
     config = S0PipelineConfig(
         placement=args.placement,
         max_output_tokens=args.max_new_tokens,
+        startup_policy=args.startup_policy,
         llm_cores=args.llm_cores,
         system_cores=args.system_cores,
         system_prompt=args.system_prompt,
@@ -124,8 +126,8 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
                     device=config.playback_device,
                     max_pending_sentences=config.audio_queue_maxsize,
                 )
-                player.open()
-                player.calibrate_clock()
+                # 打开输出流与校准时钟由 runner 按启动策略决定时机：
+                # first_sentence 在消费前，full_prebuffer 在整段合成完成后
             source.start()
             runner = PipelineRunner(
                 config=config,
@@ -208,6 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repetition-penalty", type=float, default=1.05)
     parser.add_argument("--model-layers", type=int, default=32)
     parser.add_argument("--sample-rate", type=int, default=24000)
+    parser.add_argument("--startup-policy", default=DEFAULT_STARTUP_POLICY)
     parser.add_argument("--enable-playback", action="store_true")
     parser.add_argument("--request-id", default="s0-pilot")
     parser.add_argument("--child-output-json")
