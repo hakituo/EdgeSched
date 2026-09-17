@@ -90,3 +90,7 @@ experiments/debug_vl_test.jpg
 
 # Include test image for experiments
 !experiments/test.jpg
+
+# 测试运行时产物：每次跑测试都会改写，不入库（文件保留在本地）
+data/test_nvram.dat
+data/test_state_backplane.dat
