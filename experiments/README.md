@@ -136,22 +136,30 @@ python -m experiments.elastic_residency.tts_component_offload \
   --source-git-dirty false --source-git-status-entry-count 0
 ```
 
-每个配置在独立子进程中加载真实 Qwen3-TTS，记录 talker、speech codec、speaker encoder 和 prompt 的实际设备，分别测量 tokenize、talker、code transfer、codec decode，并保存整卡/进程估计/PyTorch 显存、CPU/RSS 和非静音 WAV 检查。若 WSL 驱动把进程显存报告为 `[N/A]`，结果必须保留 unavailable 原因，只能把相对空闲整卡基线的增量标为 estimate。当前通过记录为 `b1_tts_components_20260829_verified_v2`，源 commit 为 `38f4d81`。它是单文本冷态可行性 smoke，不代替 B2 多轮矩阵。
+每个配置在独立子进程中加载真实 Qwen3-TTS，记录 talker、speech codec、speaker encoder 和 prompt 的实际设备，分别测量 tokenize、talker、code transfer、codec decode，并保存整卡/进程估计/PyTorch 显存、CPU/RSS 和非静音 WAV 检查。若 WSL 驱动把进程显存报告为 `[N/A]`，结果必须保留 unavailable 原因，只能把相对空闲整卡基线的增量标为 estimate。当前通过记录为 `b1_tts_components_20260829_verified_v2`，源 commit 为 `38f4d81`。它是单文本冷态可行性 smoke，不代替 B2 画像。
 
-### 9. 弹性驻留 B2 TTS 正式矩阵
+### 9. 弹性驻留 B2 TTS 画像（当前接入后端）
 
-```bash
-python -m experiments.elastic_residency.tts_component_offload_matrix \
-  --run-id <new_run_id> --configs T0 T3 --rounds 5 \
-  --max-gpu-sample-freshness-ms 750 \
-  --swap-sample-interval 0.05 --max-swap-growth-mb 0 \
-  --source-git-commit <clean_commit> \
-  --source-git-dirty false --source-git-status-entry-count 0
+```powershell
+powershell -File scripts/experiments/run_tts_backend_compare.ps1 -Mode b2 -RunId <new_run_id>
 ```
 
-B2 固定使用恰好 20/50/100 字文本，每配置独立加载和预热一次，然后运行 15 个测量请求。`tts_runtime_evidence.py` 在整个配置子进程生命周期内按固定 deadline 保存 swap 原始时间线；每个显存点记录同步 direct NVML 查询的开始、结束与耗时，并以查询耗时作为样本新鲜度保守上界。任一 swap 增长、查询上界超过 750 ms、CLI/fallback 或原有 waveform/device 门禁失败，都会使 iteration、child 和 summary 同时失败并写入 `failures.jsonl`。
+B2 = **当前接入后端（加速 CUDA Graph 路径，整模型驻 GPU，放置维度 T0）** 的句长画像：
+20/50/100 字各五轮，再跑一遍重复/交替序列查状态残留，最后由主环境 ASR 回转核对
+写 `correctness.json`。每轮记录 RTF、波形就绪时间、加载与图准备成本、准备/执行阶段
+内存峰值与输出长度；`summary.json` 的 `by_config` 供
+`analyze_results.py --b2-summary` 做容量筛选（`max_card_delta_mb` 为执行阶段整卡峰值
+相对空闲基线的增量，NVML 不可用时退回 torch 保留峰值并标 `*_source`）。`passed`
+只有 ASR 正确性核对通过才为真；来源脏树时 `git_provenance_complete=false`，
+下游筛选不得据此晋升。
 
-旧 60 条 `b2_tts_matrix_20260829_verified_v1` 只保留 T0/T3 候选关系。T0/T3 direct NVML v1 `b2_tts_pareto_matrix_20260831_direct_nvml_v1` 缺运行期 swap/查询耗时字段且全树 provenance 不干净，只作为工程校准；v2 `b2_tts_pareto_matrix_20260831_direct_nvml_v2` 已基于干净 `0261e4da` 完成 30/30 技术核验，0 failure/fallback，但尚未人工晋升论文正文数据。全部既有 B2 记录的 RTF 均大于 1，因此不能证明无 underrun。
+旧后端（上游动态路径）的组件放置矩阵 T0–T4 与其三批产物
+（`b2_tts_matrix_20260829_verified_v1`、`b2_tts_pareto_matrix_20260831_direct_nvml_v1`、
+`b2_tts_pareto_matrix_20260831_direct_nvml_v2`）**已于 2026-09-17 删除**，B2 不再引用
+其中任何数值；其生成器 `tts_component_offload_matrix.py` 已于同日删除（冻结文本真源
+保留在 `experiments/tts/b2_profile_contract.py`）。T1–T4 只有在
+确认加速后端支持后才重测：当前后端只暴露整模型 `device`，没有 talker/codec/speaker
+分部件放置接口，因此 T1–T4 由 `placement_status` 显式排除，不为凑齐档位沿用旧值。
 
 ### 10. 弹性驻留 C1/C2 LLM 驻留曲线
 
@@ -261,9 +269,9 @@ python experiments/elastic_residency/analyze_results.py \
   --c2-summary experiment_results/elastic_residency/c2/c2_llm_residency_curve_20260829_direct_nvml_v2/summary.json \
   --c3-summary experiment_results/elastic_residency/c3/c3_llm_critical_refinement_20260829_direct_nvml_v2/summary.json \
   --expected-llm-config-count 16 \
-  --b2-summary experiment_results/elastic_residency/b2/b2_tts_pareto_matrix_20260831_direct_nvml_v2/summary.json \
+  --b2-summary experiment_results/elastic_residency/b2/b2_tts_t0_20260917/summary.json \
   --forge-summary experiment_results/elastic_residency/forge/forge_b1_reprofile_20260831_direct_nvml_v1/summary.json \
-  --tts-configs T0,T3 \
+  --tts-configs T0 \
   --output experiment_results/elastic_residency/c3_analysis/c3_h_direct_nvml_20260831_v1.json
 ```
 

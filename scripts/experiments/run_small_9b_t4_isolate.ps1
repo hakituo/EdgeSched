@@ -7,6 +7,8 @@ $TtsModel = '/home/leslie/mvp_core/models/Qwen3-TTS-12Hz-0.6B-Base'
 $Ref = '/home/leslie/mvp_core/models/tts_refs/ref_calm.wav'
 $Root = '/home/leslie/mvp_core/experiment_results/elastic_residency'
 $Snapshot = "$Root/vision_inputs/source_snapshots/small_t4_isolate_$Stamp.tar.gz"
+# 旧后端脚本：需要上游 qwen_tts（transformers 4.x）。遗留环境已删除，
+# 重跑需自建环境并把路径传给本变量（或改脚本参数）。
 $Python = '/home/leslie/.venvs/mvp_core-cu128/bin/python'
 Push-Location -LiteralPath $Project
 try {

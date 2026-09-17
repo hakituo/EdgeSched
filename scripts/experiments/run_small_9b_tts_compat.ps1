@@ -24,6 +24,8 @@ $Root = '/home/leslie/mvp_core/experiment_results/elastic_residency'
 $Snapshot = "$Root/vision_inputs/source_snapshots/small_tts_compat_$Stamp.tar.gz"
 $Screen = "$Root/c3_analysis/small_stage_screen_20260907_204516_653987.json"
 $ScreenSha = '7fa1b5ae48371d7bddcf7ac8e0138324e2c454d85bd4760bfa2f859284caaf41'
+# 旧后端脚本：需要上游 qwen_tts（transformers 4.x）。遗留环境已删除，
+# 重跑需自建环境并把路径传给本变量（或改脚本参数）。
 $Python = '/home/leslie/.venvs/mvp_core-cu128/bin/python'
 Push-Location -LiteralPath $Project
 try {

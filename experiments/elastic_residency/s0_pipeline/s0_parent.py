@@ -33,6 +33,7 @@ from experiments.elastic_residency.s0_pipeline.config import (  # noqa: E402
     S0_PLACEMENTS,
     S0_PROTOCOL_VERSION,
     S0_STARTUP_POLICIES,
+    TTS_PLACEMENT_T0,
     default_output_root,
     text_fingerprint,
 )
@@ -43,9 +44,32 @@ from experiments.elastic_residency.s0_pipeline.s0_evidence import (  # noqa: E40
     attach_evidence,
     summarize_record,
 )
+from experiments.tts.qwen3_tts_backends import (  # noqa: E402
+    DEFAULT_FASTER_PATH,
+    PATH_CUDA_GRAPH,
+    PATH_UPSTREAM,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CHILD_MODULE = "experiments.elastic_residency.s0_pipeline.s0_child"
+
+
+def validate_placements(placements: Sequence[str], tts_backend: str) -> None:
+    """放置维度必须与后端能力一致。
+
+    加速后端只暴露整模型 ``device``，没有分部件放置接口，因此 T3/T4 必须在
+    这里被挡住，而不是跑出一份看着像旧后端的数据。
+    """
+
+    if tts_backend != PATH_CUDA_GRAPH:
+        return
+    unsupported = [
+        item for item in placements if not item.endswith(f":{TTS_PLACEMENT_T0}")
+    ]
+    if unsupported:
+        raise ValueError(
+            f"{PATH_CUDA_GRAPH} 只支持 {TTS_PLACEMENT_T0} 放置，不支持: {unsupported}"
+        )
 
 
 def _rotated(items: Sequence[str], offset: int) -> list[str]:
@@ -95,6 +119,10 @@ def _run_child(  # noqa: PLR0913
         str(args.llm_cores),
         "--system-cores",
         str(args.system_cores),
+        "--tts-backend",
+        args.tts_backend,
+        "--faster-qwen3-tts-path",
+        args.faster_qwen3_tts_path,
     ]
     if args.enable_playback:
         command.append("--enable-playback")
@@ -135,7 +163,7 @@ def run_parent(args: argparse.Namespace) -> Path:
             ),
             BackendEvidence(
                 component="tts",
-                backend_kind="qwen3_tts_local",
+                backend_kind=f"qwen3_tts_{args.tts_backend}",
                 is_real=True,
                 model_path=args.tts_model,
             ),
@@ -143,6 +171,7 @@ def run_parent(args: argparse.Namespace) -> Path:
         parameters={
             "protocol_version": S0_PROTOCOL_VERSION,
             "measurement_scope_version": SCOPE_VERSION,
+            "tts_backend": args.tts_backend,
             "placements": list(args.placements),
             "startup_policies": list(args.startup_policies),
             "runs": args.runs,
@@ -249,6 +278,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--system-prompt", default=DIRECT_ANSWER_SYSTEM_PROMPT)
     parser.add_argument("--max-new-tokens", type=int, default=128)
     parser.add_argument("--model-layers", type=int, default=32)
+    parser.add_argument(
+        "--tts-backend", choices=(PATH_CUDA_GRAPH, PATH_UPSTREAM), default=PATH_CUDA_GRAPH
+    )
+    parser.add_argument("--faster-qwen3-tts-path", default=DEFAULT_FASTER_PATH)
     parser.add_argument("--enable-playback", action="store_true")
     parser.add_argument("--continue-on-failure", action="store_true")
     parser.add_argument("--llm-cores", type=int, default=14)
@@ -274,6 +307,10 @@ def main() -> None:
     ]
     if invalid_startup:
         raise SystemExit(f"未冻结的启动策略: {invalid_startup}")
+    try:
+        validate_placements(args.placements, args.tts_backend)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     root = run_parent(args)
     print(json.dumps({"artifacts": str(root)}, ensure_ascii=False))
 

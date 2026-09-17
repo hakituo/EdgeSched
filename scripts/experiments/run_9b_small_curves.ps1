@@ -7,6 +7,7 @@ $Model = '/home/leslie/mvp_core/models/llm/comparison_1a35ab89/model.gguf'
 $Sha = '1a35ab892c0c4eec814d6594d34461193593a19110cd1d1285414efceb8a26ab'
 $Root = '/home/leslie/mvp_core/experiment_results/elastic_residency'
 $Snapshot = "$Root/vision_inputs/source_snapshots/small_curves_$Stamp.tar.gz"
+# 主环境（已软链到加速隔离环境：llama_cpp CUDA + transformers 5.x + 加速 TTS）
 $Python = '/home/leslie/.venvs/mvp_core-cu128/bin/python'
 Push-Location -LiteralPath $Project
 try {

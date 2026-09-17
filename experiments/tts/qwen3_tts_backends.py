@@ -137,6 +137,54 @@ def release_gpu() -> None:
     torch.cuda.synchronize()
 
 
+def accelerated_placement_capability(faster_path: str) -> dict[str, Any]:
+    """检查加速后端是否支持组件级设备放置（决定 T3/T4 能否在新后端重测）。
+
+    依据是公开接口而不是猜测：``FasterQwen3TTS.from_pretrained`` 的签名里只有整模型
+    ``device``，没有 talker/codec/speaker 的分部件设备参数；``gguf_talker_path`` /
+    ``gguf_codec_path`` 只用于 GGML 后端挑权重文件，不是设备放置。
+    """
+
+    resolved = Path(faster_path).expanduser().resolve()
+    if not (resolved / "faster_qwen3_tts").is_dir():
+        return {
+            "checked": False,
+            "reason": f"找不到 faster-qwen3-tts: {resolved}",
+        }
+    if str(resolved) not in sys.path:
+        sys.path.insert(0, str(resolved))
+    try:
+        import inspect
+
+        from faster_qwen3_tts import FasterQwen3TTS
+
+        parameters = sorted(
+            inspect.signature(FasterQwen3TTS.from_pretrained).parameters
+        )
+    except Exception as exc:  # noqa: BLE001 - 探测失败如实记录，不吞
+        return {"checked": False, "reason": f"{type(exc).__name__}: {exc}"}
+    component_keys = ("talker_device", "codec_device", "speaker_device")
+    return {
+        "checked": True,
+        "engine": PATH_CUDA_GRAPH,
+        "component_placement_supported": any(
+            key in parameters for key in component_keys
+        ),
+        "whole_model_device_parameter": "device" in parameters,
+        "from_pretrained_parameters": parameters,
+        "evidence": (
+            "from_pretrained 只有整模型 device 参数，没有 talker/codec/speaker "
+            "分部件设备参数；gguf_*_path 只用于 GGML 后端的权重文件选择"
+        ),
+        "cpu_whole_model": "unverified_requires_run",
+        "cpu_whole_model_note": (
+            "device 参数接受 cpu，但该实现核心是 torch.cuda.CUDAGraph 捕获，"
+            "CPU 上图捕获不可用，是否还能运行必须单独实跑确认，"
+            "不得默认沿用旧 T4 数值"
+        ),
+    }
+
+
 def package_version(module_name: str) -> str:
     module = sys.modules.get(module_name)
     return str(getattr(module, "__version__", "unknown"))

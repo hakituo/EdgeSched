@@ -1,10 +1,17 @@
 # Qwen3-TTS T0–T3 组件卸载矩阵（2026-08-29）
 
+> **2026-09-17 已退役**：本文记录的旧后端三批产物
+> （`b2_tts_matrix_20260829_verified_v1`、`b2_tts_pareto_matrix_20260831_direct_nvml_v1`、
+> `..._v2`）已删除，其 T0/T3 条件式 Pareto、整卡增量与 TTFA/RTF 数值一律不再作为依据。
+> B2 现指当前接入后端（加速 CUDA Graph 整模型 GPU，放置 T0）的句长画像，见
+> `experiments/README.md` 第 9 节；T1–T4 需先确认加速后端支持（当前后端只暴露整模型
+> `device`，无分部件放置接口）。以下正文只保留为方法学记录。
+
 ## 结论
 
 > 2026-08-29 口径复核：本记录的 PyTorch allocated/reserved 峰值仍可作为框架内证据；整卡增量来自旧 CLI 采样，必须用 direct NVML 重新校准后才能参与 `H_TTS/H_D` 或论文容量结论。
 
-B2 真实矩阵 `b2_tts_matrix_20260829_verified_v1` 完成 4 配置 × 3 句长 × 5 轮，共 60/60 条成功，无 fallback、无失败记录。按最大整卡增量、TTFA p95 和 RTF p95 三个最小化目标，Pareto 候选为 **T0、T3**；T1、T2 被 T3 严格支配。
+旧后端真实矩阵 `b2_tts_matrix_20260829_verified_v1` 完成 4 配置 × 3 句长 × 5 轮，共 60/60 条成功，无 fallback、无失败记录。按最大整卡增量、TTFA p95 和 RTF p95 三个最小化目标，Pareto 候选为 **T0、T3**；T1、T2 被 T3 严格支配。
 
 T3 相对 T0 把矩阵内最大整卡增量从 3284 MiB 降至 1980 MiB，少 1304 MiB，但整体 TTFA p95 从 35.585 s 增至 44.859 s（+26.1%），RTF p95 从 2.342 增至 2.562（+9.4%），主机 RSS 峰值从 2422.8 MiB 增至 3304.0 MiB。T3 是否值得保留，必须等 LLM 驻留曲线证明 1304 MiB 能增加多少真实层数后再裁决。
 

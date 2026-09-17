@@ -181,7 +181,12 @@ tests/elastic_residency/
 
 单次冷态 smoke 中，T0/T1/T2/T3 的 ready 整卡增量估计分别为 2362/1914/1902/1906 MiB，TTFA 分别为 5.939/7.075/6.496/7.043 s，RTF 分别为 1.954/2.327/2.538/2.317。该数字只用于检查量纲与发现明显错误：每个配置只有一轮、没有独立预热，T2 的 CPU speaker 还改变了输出时长，因此不能据此判断 Pareto、质量等价性或“节省显存值得卸载”。这些裁决留给 B2 的冻结文本矩阵和多轮统计。
 
-**B2 完成记录（2026-08-29）**：`b2_tts_matrix_20260829_verified_v1` 基于干净 commit `ce024a051e2e878600eb53611b1ea1ee72ddf7fa` 完成 60/60 条真实迭代，12 个配置/句长分组各 5 条，0 fallback、0 failure。Pareto 候选为 T0/T3；T1/T2 被 T3 在最大整卡增量、TTFA p95 和 RTF p95 上严格支配。T3 相对 T0 的最大整卡增量少 1304 MiB，但 TTFA p95 增加 26.1%，RTF p95 增加 9.4%，最终是否保留要由 C 阶段验证这部分显存能否增加有效 LLM 层。全部 60 条的 RTF 均大于 1，当前后端无法支持持续实时播放，因此组件放置不能直接满足无 underrun 目标。完整分析见 `docs/TTS_COMPONENT_OFFLOAD_MATRIX_20260829.md`。
+> **2026-09-17 已退役**：本条记录的三批产物（`b2_tts_matrix_20260829_verified_v1`、
+> `b2_tts_pareto_matrix_20260831_direct_nvml_v1|v2`）已删除，其中的 T0/T3 Pareto、
+> 整卡增量与 TTFA/RTF 数值不再作为依据。B2 现指当前接入后端（加速 CUDA Graph
+> 整模型 GPU，放置 T0）的句长画像；T1–T4 需先确认加速后端支持。以下正文只作历史记录。
+
+**B2 完成记录（2026-08-29，旧后端）**：`b2_tts_matrix_20260829_verified_v1` 基于干净 commit `ce024a051e2e878600eb53611b1ea1ee72ddf7fa` 完成 60/60 条真实迭代，12 个配置/句长分组各 5 条，0 fallback、0 failure。Pareto 候选为 T0/T3；T1/T2 被 T3 在最大整卡增量、TTFA p95 和 RTF p95 上严格支配。T3 相对 T0 的最大整卡增量少 1304 MiB，但 TTFA p95 增加 26.1%，RTF p95 增加 9.4%，最终是否保留要由 C 阶段验证这部分显存能否增加有效 LLM 层。全部 60 条的 RTF 均大于 1，旧后端无法支持持续实时播放。完整分析见 `docs/TTS_COMPONENT_OFFLOAD_MATRIX_20260829.md`（同样已标注退役）。
 
 正式矩阵：4 配置 × 20/50/100 字 × 5 轮，另加每配置独立预热。记录 TTFA（当前语义为完整句 WAV ready）、合成时间、RTF、allocated/reserved/进程总显存、主机内存、CPU 利用率和组件传输时间。
 
@@ -381,7 +386,7 @@ experiment_results/elastic_residency/_archive/
 
 - [x] **A1**：GPU/jitter/CPU 首样本/provenance 硬门槛已通过。证据：`a1_smoke_20260829_verified_v7`；v6 仅作历史调试记录。
 - [x] **B1**：T0–T3 真实单文本 smoke 通过。证据：`b1_tts_components_20260829_verified_v2`。
-- [x] **B2**：旧 60 条矩阵筛出 T0/T3；当前 direct NVML v2 `b2_tts_pareto_matrix_20260831_direct_nvml_v2` 基于干净 `0261e4da` 完成 30/30 技术核验，0 failure/fallback，运行期 swap 与同步查询新鲜度证据完整，尚未晋升论文正文数据。
+- [ ] **B2（定义已改，旧记录退役）**：旧 60 条矩阵与 direct NVML v1/v2 三批产物已于 2026-09-17 删除，其筛出的 T0/T3 结论一并退役。B2 改为当前接入后端（加速 CUDA Graph 整模型 GPU，放置 T0）的句长画像：20/50/100 字 × 5 轮 + 状态残留序列 + 主环境 ASR 回转正确性，入口 `scripts/experiments/run_tts_backend_compare.ps1 -Mode b2`；T1–T4 必须先确认加速后端支持再重测。
 - [x] **C1**：K0/FULL 的 512-token 真实端点 smoke 已通过。证据：`c1_llm_residency_512_20260829_verified_v1`。
 - [x] **C2 direct NVML 重跑**：`c2_llm_residency_curve_20260829_direct_nvml_v2` 已完成 90/90 条并通过，干净 commit 为 `17c40d3495cb01237bdf2e7429f2635362e908cf`；旧 CLI 运行只保留为工程基线。
 - [x] **C3 工具**：Forge b=1 复测脚本、`G_safe`/`H_TTS`/`H_D` 筛选分析与临界补测建议已实现并通过静态测试；legacy 口径初步筛选见 `experiment_results/elastic_residency/c3_analysis/c3_h_screen_20260829_legacy_forge.json`。

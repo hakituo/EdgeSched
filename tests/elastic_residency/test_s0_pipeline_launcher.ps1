@@ -17,16 +17,29 @@ try {
     Assert-Contains $Startup '--startup-policies first_sentence full_prebuffer'
     Assert-Contains $Startup '--runs 1'
     Assert-Contains $Startup '--enable-playback'
+    Assert-Contains $Startup '--tts-backend cuda_graph_static'
     Assert-Contains $Startup "'s0_startup_"
     Assert-Contains $Startup 'provenance.txt'
+    # 主环境路径已软链到加速环境：S0 同进程共置 LLM 与加速 TTS
+    Assert-Contains $Startup '.venvs/mvp_core-cu128/bin/python'
 
     $Formal = (& $Launcher -Mode formal -PrintOnly) -join "`n"
     Assert-BashLines $Formal
-    Assert-Contains $Formal '--placements K24:T0 K24:T3 K0:T0 K24:T4'
+    # s0_protocol_v2：TTS 放置只剩 T0，T3/T4 已按后端能力排除
+    Assert-Contains $Formal '--placements K24:T0 K0:T0'
     Assert-Contains $Formal '--startup-policies first_sentence'
     Assert-Contains $Formal '--runs 5'
     Assert-Contains $Formal '--continue-on-failure'
     Assert-Contains $Formal "'s0_formal_"
+
+    # 遗留环境已删：upstream_dynamic 没有默认解释器，不给 -Python 必须拒绝
+    $LegacyRejected = $false
+    try { & $Launcher -Mode formal -TtsBackend upstream_dynamic -PrintOnly | Out-Null } catch { $LegacyRejected = $true }
+    if (-not $LegacyRejected) { throw 'upstream_dynamic 未要求显式 -Python。' }
+
+    $Legacy = (& $Launcher -Mode formal -TtsBackend upstream_dynamic -Python /custom/legacy-python -PrintOnly) -join "`n"
+    Assert-Contains $Legacy '--tts-backend upstream_dynamic'
+    Assert-Contains $Legacy '/custom/legacy-python'
 
     $FailFast = (& $Launcher -Mode formal -Runs 2 -FailFast -PrintOnly) -join "`n"
     Assert-Contains $FailFast '--runs 2'

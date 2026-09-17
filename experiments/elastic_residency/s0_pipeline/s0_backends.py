@@ -17,6 +17,7 @@ from experiments.elastic_residency.llm_residency_curve import (  # noqa: E402
 )
 from experiments.elastic_residency.s0_pipeline.config import (  # noqa: E402
     S0PipelineConfig,
+    TTS_PLACEMENT_T0,
 )
 from experiments.elastic_residency.s0_pipeline.events import (  # noqa: E402
     EventRecorder,
@@ -24,6 +25,8 @@ from experiments.elastic_residency.s0_pipeline.events import (  # noqa: E402
 from experiments.elastic_residency.s0_pipeline.token_source import (  # noqa: E402
     LlamaTokenSource,
 )
+from experiments.tts.qwen3_tts_backends import PATH_CUDA_GRAPH  # noqa: E402
+
 from experiments.elastic_residency.tts_component_offload import (  # noqa: E402
     _apply_placement,
     _build_xvector_prompt,
@@ -67,7 +70,67 @@ def load_tts(
     args: argparse.Namespace,
     config: S0PipelineConfig,
 ) -> tuple[Any, Any, Any, dict[str, Any], float]:
-    """加载真实 Qwen3-TTS 与冻结放置，返回 (模型, 音色, 清单, 参数, 耗时)。"""
+    """加载真实 TTS，返回 (模型, 音色, 清单, 参数, 耗时)。
+
+    推理后端由 ``--tts-backend`` 决定：
+
+    - ``upstream_dynamic``：上游动态路径 + 冻结的分部件放置（旧后端，T0–T4）；
+    - ``cuda_graph_static``：B2 画像用的加速 CUDA Graph 路径，整模型驻 GPU，
+      放置维度只有 ``T0``，因此 T3/T4 在这里直接失败而不是静默退回。
+    """
+
+    if args.tts_backend == PATH_CUDA_GRAPH:
+        return _load_tts_cuda_graph(args, config)
+    return _load_tts_upstream(args, config)
+
+
+def _load_tts_cuda_graph(
+    args: argparse.Namespace,
+    config: S0PipelineConfig,
+) -> tuple[Any, Any, Any, dict[str, Any], float]:
+    """加速路径：复用 B2 的后端构造，口径与 B2 画像一致。"""
+
+    from types import SimpleNamespace
+
+    from experiments.tts.b2_profile_contract import WARMUP_TEXT
+    from experiments.tts.qwen3_tts_backends import cuda_graph_synth
+
+    if config.tts_config != TTS_PLACEMENT_T0:
+        raise ValueError(
+            f"加速后端只支持整模型 GPU（{TTS_PLACEMENT_T0}），"
+            f"收到 {config.tts_config}：当前后端没有分部件放置接口"
+        )
+    backend_args = SimpleNamespace(
+        model=args.tts_model,
+        ref_audio=args.ref_audio,
+        language=config.language,
+        max_new_tokens=args.max_new_tokens,
+        repetition_penalty=args.repetition_penalty,
+        xvec_only=True,
+        attn_implementation="eager",
+        max_seq_len=2048,
+        faster_qwen3_tts_path=args.faster_qwen3_tts_path,
+        warmup_text=WARMUP_TEXT,
+    )
+    started = time.perf_counter()
+    synth, meta = cuda_graph_synth(backend_args)
+    elapsed = time.perf_counter() - started
+    inventory = {
+        "backend": PATH_CUDA_GRAPH,
+        "placement": TTS_PLACEMENT_T0,
+        "load_s": meta.get("load_s"),
+        "graph_capture_s": meta.get("graph_capture_s"),
+        "component_split": None,
+        "note": "加速后端整模型驻 GPU，无 talker/codec/speaker 分部件设备清单",
+    }
+    return synth, None, inventory, {}, elapsed
+
+
+def _load_tts_upstream(
+    args: argparse.Namespace,
+    config: S0PipelineConfig,
+) -> tuple[Any, Any, Any, dict[str, Any], float]:
+    """上游动态路径 + 冻结放置（旧后端）。"""
 
     import torch
     from qwen_tts import Qwen3TTSModel

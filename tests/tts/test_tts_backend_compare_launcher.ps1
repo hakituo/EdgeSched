@@ -31,6 +31,22 @@ try {
     Assert-Contains $Graph '--paths cuda_graph_static'
     Assert-Contains $Graph "--run-id 'static_graph_only'"
 
+    $B2 = (& $Launcher -Mode b2 -RunId b2_tts_t0_test -PrintOnly) -join "`n"
+    Assert-BashLines $B2
+    Assert-Contains $B2 '--paths cuda_graph_static'
+    Assert-Contains $B2 '--rounds 5'
+    Assert-Contains $B2 "--output-root 'experiment_results/elastic_residency/b2'"
+    Assert-Contains $B2 '--sequence correctness'
+    Assert-Contains $B2 "--run-id 'b2_tts_t0_test_state'"
+    Assert-Contains $B2 "check_tts_output_correctness --run-dir 'experiment_results/elastic_residency/b2/b2_tts_t0_test'"
+    # 主环境路径已软链到加速环境，画像与 ASR 核对同环境
+    Assert-Contains $B2 '.venvs/mvp_core-cu128/bin/python'
+    Assert-Contains $B2 'status=0'
+    # 来源门由主机侧传入；两次画像运行都要带（值随工作树状态变化，只断言标志）
+    Assert-Contains $B2 "--source-git-commit '"
+    Assert-Contains $B2 "--source-git-dirty '"
+    Assert-Contains $B2 '--source-git-status-entry-count'
+
     foreach ($Invalid in @(
         @{ Mode = 'unknown' },
         @{ Mode = 'both'; RunId = 'bad;command' },

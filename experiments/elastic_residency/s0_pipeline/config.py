@@ -1,8 +1,12 @@
 """S0 端到端流水线的参数、门禁与冻结状态。
 
-07 模块表格中的待确认项已在本文件冻结为 ``FROZEN_PROTOCOL``（``s0_protocol_v1``）：
+07 模块表格中的待确认项已在本文件冻结为 ``FROZEN_PROTOCOL``：
 输入与生成、分句、启动策略、重复次数、输出差异与失败处理规则都已落值，
 改协议必须同步改版本号并重跑，不能看完正式结果再调截止或预缓冲。
+
+``s0_protocol_v2``（2026-09-17）相对 v1 的改动：TTS 接入后端改为加速 CUDA Graph
+路径，放置维度只保留 T0（K24:T3、K24:T4 因后端不支持分部件放置而排除），
+正式配置由 4 个降为 2 个（K24:T0 与 K0:T0）。
 """
 
 from __future__ import annotations
@@ -12,8 +16,16 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-#: 已冻结的四个容量可行配置（LLM 档位 : TTS 放置）。
-S0_PLACEMENTS: tuple[str, ...] = ("K24:T0", "K24:T3", "K0:T0", "K24:T4")
+#: 已冻结的容量可行配置（LLM 档位 : TTS 放置）。
+#: 2026-09-17 起只保留 T0 一档 TTS 放置：接入后端改为加速 CUDA Graph 路径后，
+#: 后端只暴露整模型 device，没有 talker/codec/speaker 分部件放置接口，
+#: 因此 T3/T4 显式排除（见 B2 的 placement_status），不为凑齐档位沿用旧后端数值。
+S0_PLACEMENTS: tuple[str, ...] = ("K24:T0", "K0:T0")
+
+#: 加速后端唯一支持的 TTS 放置：整模型驻 GPU。
+TTS_PLACEMENT_T0 = "T0"
+#: 旧后端组件放置维度；当前接入后端不支持，已排除。
+TTS_PLACEMENTS_EXCLUDED: tuple[str, ...] = ("T1", "T2", "T3", "T4")
 
 #: 启动策略：首句就绪即开播，或等全部句子合成完再开播。
 STARTUP_FIRST_SENTENCE = "first_sentence"
@@ -25,7 +37,7 @@ S0_STARTUP_POLICIES: tuple[str, ...] = (
 #: 正式比较冻结使用首句即播；全量预缓冲只用于启动策略小对照。
 DEFAULT_STARTUP_POLICY = STARTUP_FIRST_SENTENCE
 
-S0_PROTOCOL_VERSION = "s0_protocol_v1"
+S0_PROTOCOL_VERSION = "s0_protocol_v2"
 
 #: 冻结的容量口径上下文长度。
 S0_CONTEXT_TOKENS = 512
@@ -153,6 +165,11 @@ FROZEN_PROTOCOL: dict[str, Any] = {
         "repetition_penalty": 1.05,
         "max_output_tokens": 128,
         "voice_ref": "tts_refs/ref_calm.wav",
+        "tts_backend": "cuda_graph_static",
+        "tts_backend_note": (
+            "加速 CUDA Graph 路径，整模型驻 GPU（T0）；与 B2 画像同口径："
+            "eager attention、x-vector 克隆、do_sample=False、非流式完整波形"
+        ),
         "output_check": (
             "输出契约逐次判定；输出 token 数、句数与文本 SHA-256 作为协变量记录，"
             "不因长度或文本差异删除运行"
@@ -172,6 +189,14 @@ FROZEN_PROTOCOL: dict[str, Any] = {
         "note": (
             "正式比较用首句即播；全量预缓冲仅用于 K24:T0 启动策略小对照，"
             "同时报告首播等待代价与窗口内供给缺口，禁止逐配置调节预缓冲掩盖断流"
+        ),
+    },
+    "placement_dimension": {
+        "supported": [TTS_PLACEMENT_T0],
+        "excluded": list(TTS_PLACEMENTS_EXCLUDED),
+        "rule": (
+            "加速后端只暴露整模型 device，没有分部件放置接口；"
+            "未确认支持的放置不进入 S0 矩阵，也不沿用旧后端数值凑齐档位"
         ),
     },
     "repetitions": {

@@ -28,7 +28,11 @@ from experiments.elastic_residency.s0_pipeline.events import (
 
 
 class SentenceSynthesizer:
-    """把已放置好的 TTS 模型包装成逐句合成执行器。"""
+    """把已放置好的 TTS 模型包装成逐句合成执行器。
+
+    ``_generate`` 是唯一的模型调用点；换推理后端只需覆盖它
+    （见 ``AcceleratedSentenceSynthesizer``）。
+    """
 
     def __init__(
         self,
@@ -199,3 +203,18 @@ class SentenceSynthesizer:
             device=self.device,
             backend_kind=self.backend_kind,
         )
+
+
+class AcceleratedSentenceSynthesizer(SentenceSynthesizer):
+    """加速 CUDA Graph 路径：整模型驻 GPU，放置维度只有 T0。
+
+    ``model`` 是 ``qwen3_tts_backends.cuda_graph_synth`` 返回的合成闭包
+    ``text -> (audio, sample_rate)``；加载与图捕获在闭包构造时已完成，
+    因此没有 voice_prompt、generation_kwargs 或分部件放置可言。
+    返回 ``([samples], sample_rate)`` 以沿用基类的 ``generated[0]`` 取值。
+    """
+
+    def _generate(self, text: str) -> tuple[Any, int]:
+        audio, sample_rate = self.model(text)
+        samples = audio[0] if isinstance(audio, (list, tuple)) else audio
+        return [samples], int(sample_rate)

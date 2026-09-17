@@ -46,9 +46,8 @@ experiment_results/elastic_residency/
 | A1 | `a1/a1_smoke_20260829_verified_v7/` | 当前实验基础设施硬门证据 |
 | Audio | `audio_compat/audio_compat_20260829*/` | WSLg/Windows 播放兼容性记录 |
 | B1 | `b1/b1_tts_components_20260829_verified_v2/` | T0--T3 单文本组件放置 smoke |
-| B2 | `b2/b2_tts_matrix_20260829_verified_v1/` | 旧后端 60/60 TTS 基线；只保留 T0/T3 候选关系，等待 direct NVML 校准 |
-| B2 direct v1 | `b2/b2_tts_pareto_matrix_20260831_direct_nvml_v1/` | T0/T3 已完成 30/30、0 failure/fallback、WAV/hash 完整；缺运行期 swap/同步查询耗时且全树 provenance 不干净，仅作工程校准，等待 v2 |
-| B2 direct v2 | `b2/b2_tts_pareto_matrix_20260831_direct_nvml_v2/` | 基于干净 `0261e4da` 完成 30/30 技术核验；100 个 child 生命周期 GPU 快照均 direct NVML/无 CLI，最大新鲜度上界 17.582 ms，运行期 swap 0；尚未晋升论文正文数据 |
+| B2（当前口径） | `b2/b2_tts_t0_20260917/`（状态残留序列为 `b2_tts_t0_20260917_state/`） | 当前接入后端（加速 CUDA Graph 整模型 GPU，放置 T0）的句长画像：20/50/100 字 × 5 轮 + 状态残留序列 + 主环境 ASR 回转核对；记录 RTF、波形就绪、加载与图准备成本、准备/执行阶段内存峰值、输出长度 |
+| 旧后端 B2（已删除） | 原 `b2/b2_tts_matrix_20260829_verified_v1/`、`b2/b2_tts_pareto_matrix_20260831_direct_nvml_v1|v2/` | 2026-09-17 按「B2 只指当前接入后端」删除；其 T0/T3 条件式 Pareto 与全部 RTF 数值随产物一并退役，不得被引用为当前依据；生成器 `tts_component_offload_matrix.py` 已于同日删除 |
 | C1 | `c1/c1_llm_residency_512_20260829_verified_v1/` | K0/FULL 端点 smoke |
 | 9B C2 | `c2/c2_llm_residency_curve_20260829_direct_nvml_v2/` | Qwen3.5-9B 90/90 粗驻留曲线；迁移后作为模型特定压力基线 |
 | 9B C3 | `c3/c3_llm_critical_refinement_20260829_direct_nvml_v2/` | Qwen3.5-9B 150/150 临界细化曲线；迁移后作为模型特定压力基线 |
@@ -120,7 +119,7 @@ experiment_results/elastic_residency/
 | 产物 | 说明 |
 |---|---|
 | `b1/b1_tts_components_20260829_verified_v2/` | TTS 组件发现，纯 TTS 侧 |
-| `b2/b2_tts_pareto_matrix_20260831_direct_nvml_v2/` | T0/T3 隔离校准 30/30，**不含 LLM** |
+| `b2/b2_tts_t0_20260917/` | 当前接入后端（加速整模型 GPU，T0）画像，**不含 LLM**；旧后端 T0–T4 三批产物已于 2026-09-17 删除 |
 | `forge/forge_b1_reprofile_20260831_direct_nvml_v1/` | Forge 是独立服务，`M_D=5484 MiB` 与 LLM 无关 |
 | `a1/a1_smoke_20260829_verified_v7/` | 实验基础设施硬门 |
 | `sm_capability/sm_a_20260830_direct_nvml_v1/` | 环境能力结论（MPS binary 不存在 → SM-A NO_GO） |

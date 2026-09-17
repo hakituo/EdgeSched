@@ -50,6 +50,7 @@ from experiments.elastic_residency.s0_pipeline.token_source import (  # noqa: E4
     LlamaTokenSource,
 )
 from experiments.elastic_residency.s0_pipeline.tts_executor import (  # noqa: E402
+    AcceleratedSentenceSynthesizer,
     SentenceSynthesizer,
 )
 from experiments.elastic_residency.tts_component_offload import (  # noqa: E402
@@ -59,6 +60,11 @@ from experiments.elastic_residency.tts_runtime_evidence import (  # noqa: E402
     SwapUsageSampler,
 )
 from experiments.tts.profiling_utils import sha256_file  # noqa: E402
+from experiments.tts.qwen3_tts_backends import (  # noqa: E402
+    DEFAULT_FASTER_PATH,
+    PATH_CUDA_GRAPH,
+    PATH_UPSTREAM,
+)
 
 
 def run_child(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
@@ -108,15 +114,26 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
             wrapper, voice_prompt, inventory, gen_kwargs, tts_load_s = load_tts(
                 args, config
             )
-            synthesizer = SentenceSynthesizer(
-                model=wrapper,
-                voice_prompt=voice_prompt,
-                language=config.language,
-                generation_kwargs=gen_kwargs,
-                recorder=recorder,
-                device="cuda:0",
-                backend_kind="qwen3_tts_local",
-            )
+            if args.tts_backend == PATH_CUDA_GRAPH:
+                synthesizer = AcceleratedSentenceSynthesizer(
+                    model=wrapper,
+                    voice_prompt=voice_prompt,
+                    language=config.language,
+                    generation_kwargs=gen_kwargs,
+                    recorder=recorder,
+                    device="cuda:0",
+                    backend_kind=args.tts_backend,
+                )
+            else:
+                synthesizer = SentenceSynthesizer(
+                    model=wrapper,
+                    voice_prompt=voice_prompt,
+                    language=config.language,
+                    generation_kwargs=gen_kwargs,
+                    recorder=recorder,
+                    device="cuda:0",
+                    backend_kind=args.tts_backend,
+                )
             player = None
             if args.enable_playback:
                 player = ContinuousPlayer(
@@ -148,6 +165,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
                 "llm_identity": identity.to_dict(),
                 "llm_load_s": llm_load_s,
                 "tts_load_s": tts_load_s,
+                "tts_backend": args.tts_backend,
                 "component_inventory": inventory,
                 "gpu_baseline_mb": baseline,
                 "resource_summary": resource_summary,
@@ -211,6 +229,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-layers", type=int, default=32)
     parser.add_argument("--sample-rate", type=int, default=24000)
     parser.add_argument("--startup-policy", default=DEFAULT_STARTUP_POLICY)
+    parser.add_argument(
+        "--tts-backend",
+        choices=(PATH_CUDA_GRAPH, PATH_UPSTREAM),
+        default=PATH_CUDA_GRAPH,
+        help="cuda_graph_static 为当前接入后端（B2 口径，T0）；upstream_dynamic 为旧后端",
+    )
+    parser.add_argument("--faster-qwen3-tts-path", default=DEFAULT_FASTER_PATH)
     parser.add_argument("--enable-playback", action="store_true")
     parser.add_argument("--request-id", default="s0-pilot")
     parser.add_argument("--child-output-json")

@@ -93,7 +93,7 @@ GPU 句长 profiling：
 
 ## 推理后端对照（CUDA Graph，2026-09-17）
 
-原始 RTF > 1 的主因不是模型能力，而是每步约 125–156 ms 的解码开销（`process_cpu_percent` 恒 ~100%，符合「每步约 500 次 CUDA kernel 启动」的特征）。换用 MIT 项目 `faster-qwen3-tts`（静态 KV cache + `torch.cuda.CUDAGraph` 捕获）后，**同一模型、同一参考音频、同一 B2 文本**（x-vector、非流式、`do_sample=False`、eager 注意力）：
+实测每步约 125–156 ms 的解码开销、且 `process_cpu_percent` 恒 ~100%；上游项目文档称每步约 500 次 CUDA kernel 启动，本仓库的 CPU 占用数据**与该解释一致，但不足以单独完成原因归因**（未做内核级 profile）。换用 MIT 项目 `faster-qwen3-tts`（静态 KV cache + `torch.cuda.CUDAGraph` 捕获）后，**同一模型、同一参考音频、同一 B2 文本**（x-vector、非流式、`do_sample=False`、eager 注意力）：
 
 | 文本 | 上游动态 RTF（min–max） | CUDA Graph RTF（min–max） | 加速比 |
 |---|---:|---:|---:|
@@ -102,7 +102,7 @@ GPU 句长 profiling：
 | 100 字（18.88 s 音频） | 1.7622（1.6612–1.8345） | 0.3032（0.3030–0.3034） | 5.8× |
 
 上表来自 `tts_backend_both_eager_20260917_072516`：**同一隔离环境、同一进程先后测量**，因此可直接比较。
-早期跨环境批次（`cudagraph_only_20260917_v2`，报 9.5×/7.2×/8.1×）**已作废只作旁证**——同环境下上游 eager 为
+早期跨环境批次（`cudagraph_only_20260917_v2`，报 9.5×/7.2×/8.1×）**已作废，产物已删除**——同环境下上游 eager 为
 1.72–1.78，与 B2 的 sdpa 基线（1.60–1.92）基本一致，说明注意力实现影响很小，差异来自环境与包版本
 （原环境 python3.10 + 上游 `qwen-tts 0.1.1` + transformers 4.57.3）。
 
@@ -120,9 +120,10 @@ GPU 句长 profiling：
 
 **边界（必须随数字一起报告）**
 
-- 加速路径依赖 `qwen-tts-hf 0.1.1.post1` + `transformers>=5.15.1` + cu128 torchaudio，**不能装进 `mvp_core-cu128`**（上游 `qwen-tts 0.1.1` 会在图捕获时报 `StaticLayer.lazy_initialization()` 签名不匹配；默认 torchaudio wheel 是 CUDA 13 构建；transformers 5.17 会让 `MimiConfig` 缺 `rope_theta`），因此使用仓库外隔离环境 `/home/leslie/qwen3tts-cugraph-probe/`。
-- 静态 KV cache 与上游走不同 SDPA kernel，**不是位精确**。同环境实测：上游动态路径 3/3 轮 PCM SHA 完全一致、样本数恒为 113280 / 255360 / 453120；CUDA Graph 路径 3/3 轮 SHA 全不同、样本数 111360–128640 / 249600–261120 / 443520–491520（最大差约 10%）。即加速路径即使 `do_sample=False` 也不确定，**输出长度也会变**。
-- 尚未接入 `s0_pipeline`：接入需要替换 `SentenceSynthesizer` 后端并把 `s0_protocol_v1` 升到 v2（含音频一致性口径），属冻结口径变更，须先评估再动手。
+- 加速路径依赖 `qwen-tts-hf 0.1.1.post1` + `transformers>=5.15.1` + cu128 torchaudio，**不能装进旧的 `mvp_core-cu128`**（上游 `qwen-tts 0.1.1` 会在图捕获时报 `StaticLayer.lazy_initialization()` 签名不匹配；默认 torchaudio wheel 是 CUDA 13 构建；transformers 5.17 会让 `MimiConfig` 缺 `rope_theta`），因此使用仓库外隔离环境 `/home/leslie/qwen3tts-cugraph-probe/faster-qwen3-tts/.venv`。
+- **2026-09-17 起主环境路径已扶正**：`/home/leslie/.venvs/mvp_core-cu128` 改为指向该隔离环境的软链；同日**遗留环境 `mvp_core-cu128_legacy` 已删除**（释放约 9G），它是唯一装了上游 `qwen_tts` 的环境。因此脚本里写 `/home/leslie/.venvs/mvp_core-cu128/bin/python` 就是在加速环境里跑（Python 3.12 / torch 2.11 / transformers 5.15.1）；换环境只需改这条软链。需要上游 `qwen_tts` 的旧后端脚本（`upstream_dynamic`、旧 B2 矩阵、worker 画像、应用 `services/tts/qwen3_tts_worker.py`）重跑需自建环境并用 `-Python` 指定。注意 `cpp_scheduler` 的 WSL 扩展是按旧 py3.10 构建的，若要用需在新主环境重编。
+- 静态 KV cache 与上游走不同 kernel 路径，**不是位精确**。同环境实测：上游动态路径 3/3 轮 PCM SHA 完全一致、样本数恒为 113280 / 255360 / 453120；加速后端 3/3 轮 SHA 全不同，样本数 111360/122880/128640、249600/261120、443520/472320/491520，相对上游同一文本**最大偏差 +13.6%（20 字）、最小 −2.3%**。**这只证明「不位精确」，既不等于质量不合格，也不等于统计结果不可复现**；长度差异需另行核查（重复同句、交替长短文本、检查状态重置是否完整），并同时报音频时长、合成耗时与文本/听感一致性，不能只看 SHA。
+- **2026-09-17 已接入 `s0_pipeline`**（此前为「尚未接入」）：新增 `--tts-backend {cuda_graph_static,upstream_dynamic}`，默认 `cuda_graph_static`（当前接入后端）；加速路径复用 `AcceleratedSentenceSynthesizer`（只覆盖 `_generate`），协议升到 `s0_protocol_v2`，正式配置由 4 档降为 2 档（`K24:T0`、`K0:T0`），`K24:T3`/`K24:T4` 因后端无分部件放置接口而排除。隔离环境已补装 CUDA 编译的 `llama-cpp-python==0.3.35`（`llama_supports_gpu_offload()=True`）与 `sounddevice==0.5.5`，S0 为保持 LLM 与 TTS 同进程共置默认跑在该环境。音频一致性口径见 `experiments/tts/check_tts_output_correctness.py`（主环境 ASR 回转核对）。
 
 每次真实运行写入：
 

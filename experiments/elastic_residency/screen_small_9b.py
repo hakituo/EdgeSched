@@ -20,7 +20,9 @@ DEFAULTS = {
     "c2": "c2/c2_9b_small_20260907_143917",
     "c3": "c3/c3_9b_small_20260907_143917",
     "vision": "vision_endpoint/v1_vision_9b_small_profile_20260907_171635",
-    "tts": "b2/b2_tts_pareto_matrix_20260831_direct_nvml_v2",
+    # B2 = 当前接入后端（加速整模型 GPU，T0）的句长画像；旧后端 T0–T4 产物已删除，
+    # 因此这里的 TTS 画像只有 T0，不再有 T3。
+    "tts": "b2/b2_tts_t0_20260917",
     "forge": "forge/forge_b1_reprofile_20260906_direct_nvml_v1",
 }
 

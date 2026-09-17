@@ -6,12 +6,9 @@ import pathlib
 import numpy as np
 import pytest
 
-from experiments.elastic_residency.tts_component_offload_matrix import (
-    EXPECTED_LENGTHS,
-    TEXTS,
-)
 from experiments.tts import profile_qwen3_tts_cudagraph as probe
 from experiments.tts import qwen3_tts_backends as backends
+from experiments.tts.b2_profile_contract import EXPECTED_LENGTHS, TEXTS
 
 _HEAVY_MODULES = ("torch", "faster_qwen3_tts", "soundfile", "librosa")
 
@@ -43,11 +40,11 @@ def test_probe_reuses_frozen_b2_texts() -> None:
 def test_aggregate_reports_per_path_and_text_stats() -> None:
     rows = [
         {"path": probe.PATH_UPSTREAM, "text": "chars_20", "rtf": 1.5,
-         "elapsed_s": 7.0, "audio_s": 4.7, "pcm_sha256": "a"},
+         "elapsed_s": 7.0, "waveform_ready_s": 7.0, "audio_s": 4.7, "pcm_sha256": "a"},
         {"path": probe.PATH_UPSTREAM, "text": "chars_20", "rtf": 2.5,
-         "elapsed_s": 12.0, "audio_s": 4.8, "pcm_sha256": "b"},
+         "elapsed_s": 12.0, "waveform_ready_s": 12.0, "audio_s": 4.8, "pcm_sha256": "b"},
         {"path": probe.PATH_CUDA_GRAPH, "text": "chars_20", "rtf": 0.3,
-         "elapsed_s": 1.4, "audio_s": 4.7, "pcm_sha256": "c"},
+         "elapsed_s": 1.4, "waveform_ready_s": 1.4, "audio_s": 4.7, "pcm_sha256": "c"},
     ]
     summary = probe.aggregate(rows)
     upstream = summary[f"{probe.PATH_UPSTREAM}|chars_20"]
@@ -55,6 +52,8 @@ def test_aggregate_reports_per_path_and_text_stats() -> None:
     assert upstream["rtf_mean"] == 2.0
     assert upstream["rtf_min"] == 1.5
     assert upstream["rtf_max"] == 2.5
+    assert upstream["waveform_ready_mean_s"] == 9.5
+    assert upstream["waveform_ready_max_s"] == 12.0
     assert upstream["distinct_pcm_sha256"] == ["a", "b"]
     graph = summary[f"{probe.PATH_CUDA_GRAPH}|chars_20"]
     assert graph["rtf_mean"] == 0.3
@@ -75,7 +74,8 @@ def test_to_mono_accepts_list_and_array() -> None:
 def test_parser_defaults_run_both_paths_and_xvector() -> None:
     args = probe.build_parser().parse_args([])
     assert args.paths == [probe.PATH_UPSTREAM, probe.PATH_CUDA_GRAPH]
-    assert args.rounds == 3
+    assert args.rounds == 5
+    assert args.sequence == "lengths"
     assert args.xvec_only is True
     assert args.faster_qwen3_tts_path == probe.DEFAULT_FASTER_PATH
 
@@ -83,6 +83,36 @@ def test_parser_defaults_run_both_paths_and_xvector() -> None:
 def test_parser_rejects_unknown_path() -> None:
     with pytest.raises(SystemExit):
         probe.build_parser().parse_args(["--paths", "no_such_backend"])
+
+
+def test_source_git_state_prefers_launcher_values() -> None:
+    # WSL2 副本没有 .git，进程内探测不可用；来源门必须由启动器传入
+    probed = probe.resolve_git_state(
+        probe.build_parser().parse_args([]), {"git": {"available": False}}
+    )
+    assert probed == {"available": False, "source": "in_process_probe"}
+    state = probe.resolve_git_state(
+        probe.build_parser().parse_args(
+            [
+                "--source-git-commit", "abc123",
+                "--source-git-dirty", "true",
+                "--source-git-status-entry-count", "3",
+            ]
+        ),
+        {"git": {"available": False}},
+    )
+    assert state == {
+        "available": True,
+        "commit": "abc123",
+        "dirty": True,
+        "dirty_file_count": 3,
+        "source": "launcher_supplied",
+    }
+    with pytest.raises(ValueError, match="source-git-dirty"):
+        probe.resolve_git_state(
+            probe.build_parser().parse_args(["--source-git-commit", "abc123"]),
+            {"git": {}},
+        )
 
 
 def test_build_synth_rejects_unknown_path() -> None:
