@@ -3,6 +3,7 @@
 from experiments.elastic_residency.s0_pipeline.measurement_scope import (
     LAYER_DEVICE,
     LAYER_SCHEDULING,
+    STATUS_OBSERVED,
     STATUS_PENDING,
     STATUS_TRUSTED,
     evaluate_measurement_scope,
@@ -91,7 +92,9 @@ def test_unverified_device_clock_keeps_device_metrics_pending() -> None:
     # 代理值只作为 proxy 保留，绝不填进实际播放时刻
     assert device["actual_first_playback_s"] is None
     assert device["proxy_first_playback_s"] == 3.0
-    assert device["device_underflow_status"] == STATUS_PENDING
+    # underflow 计数是 PortAudio 状态位直接给的：可观测，但不附时刻
+    assert device["device_underflow_status"] == STATUS_OBSERVED
+    assert device["device_underflow_source"] == "portaudio_status_flag"
     assert "跨度比" in "；".join(device["device_clock_reasons"])
 
 

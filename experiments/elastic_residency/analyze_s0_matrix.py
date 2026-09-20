@@ -24,8 +24,10 @@ from experiments.elastic_residency.s0_matrix_report import (
     aggregate,
     answer_questions,
     confound_checks,
+    covariate_normalization,
     extract_metrics,
     paired_deltas,
+    sentence_aligned_comparison,
     startup_policy_comparison,
 )
 from experiments.elastic_residency.s0_pipeline.config import (
@@ -101,6 +103,9 @@ def analyze(run_dir: Path) -> dict[str, Any]:
                 paired[f"{baseline}->{target}"] = pair
     confounds = confound_checks(runs)
     answers = answer_questions(aggregates, paired, confounds)
+    normalization = covariate_normalization(aggregates)
+    answers["q2_confound_controls"]["covariate_normalization"] = normalization
+    answers["q2_confound_controls"]["sentence_aligned"] = sentence_aligned_comparison(runs)
     startup_comparison = startup_policy_comparison(runs)
     policies = sorted({item["startup_policy"] for item in runs})
     pending = [

@@ -13,8 +13,10 @@ from experiments.elastic_residency.s0_matrix_report import (
     aggregate,
     answer_questions,
     confound_checks,
+    covariate_normalization,
     extract_metrics,
     paired_deltas,
+    sentence_aligned_comparison,
     startup_policy_comparison,
 )
 from experiments.elastic_residency.s0_pipeline.config import (
@@ -124,6 +126,116 @@ def _write_run_dir(tmp_path, records) -> None:
     (tmp_path / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
     )
+
+
+def _agg(first, last, tokens, sentences, audio, faults, ratio) -> dict:
+    return {
+        "first_sentence_ready_s": {"mean": first},
+        "last_sentence_ready_s": {"mean": last},
+        "output_tokens": {"mean": tokens},
+        "sentence_count": {"mean": sentences},
+        "audio_duration_s": {"mean": audio},
+        "supply_fault_episodes": {"mean": faults},
+        "starve_ratio_in_window": {"mean": ratio},
+    }
+
+
+def _aligned_run(placement: str, run_index: int, series: list[float]) -> dict:
+    return {
+        "placement": placement,
+        "startup_policy": "first_sentence",
+        "run_index": run_index,
+        "passed": True,
+        "sentence_ready_s": series,
+    }
+
+
+def test_sentence_aligned_comparison_ignores_extra_sentences() -> None:
+    # 参考 9 句、基线 8 句：对齐到前 8 句，基线每句都更慢
+    runs = [
+        _aligned_run("K24:T0", 1, [4.0, 5.5, 7.0, 10.0, 13.5, 16.5, 19.5, 21.3, 25.0]),
+        _aligned_run("K0:T0", 1, [10.0, 14.5, 18.5, 27.0, 36.5, 46.5, 52.5, 56.0]),
+    ]
+    result = sentence_aligned_comparison(runs)
+    assert result["aligned_depth"] == 8
+    assert result["paired_run_count"] == 1
+    assert result["all_sentences_baseline_worse"] is True
+    assert len(result["per_sentence"]) == 8
+    assert "不足以解释" in result["verdict"]
+
+
+def test_sentence_aligned_comparison_detects_inconsistency() -> None:
+    runs = [
+        _aligned_run("K24:T0", 1, [4.0, 5.5, 7.0]),
+        _aligned_run("K0:T0", 1, [10.0, 4.0, 18.5]),
+    ]
+    result = sentence_aligned_comparison(runs)
+    assert result["all_sentences_baseline_worse"] is False
+    assert "不能支持改善结论" in result["verdict"]
+
+
+def test_sentence_aligned_comparison_without_pair() -> None:
+    result = sentence_aligned_comparison([_aligned_run("K24:T0", 1, [4.0])])
+    assert result["aligned_depth"] == 0
+    assert "无法做句数对齐" in result["verdict"]
+
+
+def test_covariate_normalization_keeps_direction() -> None:
+    # 基线说得更少却更慢：归一化后差距不缩小，长度差异不足以解释
+    aggregates = {
+        "K24:T0|first_sentence": _agg(4.384, 25.24, 80, 9, 31.6, 0, 0.0),
+        "K0:T0|first_sentence": _agg(10.74, 56.05, 65, 8, 26.46, 6, 0.4414),
+    }
+    result = covariate_normalization(aggregates)
+    assert result["comparisons"]["last_ready_s_per_token"]["direction_preserved"] is True
+    assert result["gap_shrinking_metrics"] == []
+    assert len(result["direction_preserved_metrics"]) == len(result["comparisons"])
+    # 基线 token 更少，按 token 归一后每 token 更慢
+    assert (
+        result["comparisons"]["last_ready_s_per_token"]["normalized_baseline"]
+        > result["comparisons"]["last_ready_s_per_token"]["normalized_reference"]
+    )
+    assert "不足以解释" in result["verdict"]
+
+
+def test_covariate_normalization_detects_shrinking_gap() -> None:
+    # 基线 token 数倍于参考：归一后差距几乎消失，说明「说得更多」才是主因
+    aggregates = {
+        "K24:T0|first_sentence": _agg(4.0, 10.0, 100, 5, 20.0, 0, 0.0),
+        "K0:T0|first_sentence": _agg(5.0, 20.2, 200, 10, 40.0, 0, 0.0),
+    }
+    result = covariate_normalization(aggregates)
+    assert result["gap_shrinking_metrics"]
+    assert "缩小" in result["verdict"]
+
+
+def test_covariate_normalization_treats_zero_reference_as_baseline_worse() -> None:
+    # 参考 0 段缺口、基线 6 段：比值无定义，但这是「基线更差」的最强证据
+    aggregates = {
+        "K24:T0|first_sentence": _agg(4.0, 25.0, 80, 9, 31.6, 0, 0.0),
+        "K0:T0|first_sentence": _agg(10.0, 56.0, 65, 8, 26.4, 6, 0.4414),
+    }
+    result = covariate_normalization(aggregates)
+    fault = result["comparisons"]["supply_faults_per_10s_audio"]
+    assert fault["normalized_gap"] is None
+    assert fault["status"] == "baseline_worse"
+    assert fault["direction_preserved"] is True
+    assert "不足以解释" in result["verdict"]
+
+
+def test_covariate_normalization_detects_reversal() -> None:
+    aggregates = {
+        "K24:T0|first_sentence": _agg(4.0, 10.0, 80, 9, 31.6, 4, 0.4),
+        "K0:T0|first_sentence": _agg(10.0, 30.0, 65, 8, 26.4, 1, 0.1),
+    }
+    result = covariate_normalization(aggregates)
+    assert "反转" in result["verdict"]
+
+
+def test_covariate_normalization_requires_both_placements() -> None:
+    result = covariate_normalization({"K24:T0|first_sentence": _agg(4, 10, 80, 9, 31, 0, 0.0)})
+    assert result["comparisons"] == {}
+    assert result["verdict"].startswith("归一化后无差异或样本不足")
 
 
 def _records() -> list[dict]:

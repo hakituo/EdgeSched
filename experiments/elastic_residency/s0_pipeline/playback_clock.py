@@ -48,6 +48,9 @@ class ClockCalibration:
     device_span_ns: int
     monotone: bool
     dac_minus_current_mean_ns: int | None
+    #: callback(currentTime) 跨度比；与 span_ratio 一起用于区分「取错字段」与
+    #: 「设备没给可用 DAC 时钟」。
+    current_span_ratio: float | None
     verified: bool
     reasons: tuple[str, ...]
 
@@ -71,6 +74,11 @@ class ClockCalibration:
             "device_span_ns": self.device_span_ns,
             "monotone": self.monotone,
             "dac_minus_current_mean_ns": self.dac_minus_current_mean_ns,
+            "current_span_ratio": (
+                round(self.current_span_ratio, 6)
+                if self.current_span_ratio is not None
+                else None
+            ),
             "verified": self.verified,
             "reasons": list(self.reasons),
         }
@@ -103,6 +111,7 @@ def calibrate_pairs(
         device_span_ns=0,
         monotone=False,
         dac_minus_current_mean_ns=None,
+        current_span_ratio=None,
         verified=False,
         reasons=("样本不足，无法校准",),
     )
@@ -125,16 +134,30 @@ def calibrate_pairs(
     dac_gap = None
     if currents and len(currents) == count:
         dac_gap = int(sum(dev - cur for dev, cur in zip(devices, currents)) / count)
+        current_span = currents[-1] - currents[0]
+        current_ratio = (current_span / host_span) if host_span > 0 else 0.0
+    else:
+        current_ratio = None
 
+    low, high = span_ratio_range
     reasons: list[str] = []
     if host_span <= 0:
         reasons.append("host 时间跨度为 0，无法估计")
     if not monotone:
         reasons.append("device 时间非严格递增")
-    if not (span_ratio_range[0] <= span_ratio <= span_ratio_range[1]):
-        reasons.append(
-            f"跨度比 {span_ratio:.4f} 超出 {span_ratio_range}，单位或时钟源不一致"
-        )
+    if not (low <= span_ratio <= high):
+        if current_ratio is not None and low <= current_ratio <= high:
+            # callback 时间对得很准，只有 DAC 时间跑偏：这是设备不给可用 DAC 时钟，
+            # 不是我们取错字段。能在真机/直通设备上重测前，实际播放时刻只能保持 pending。
+            reasons.append(
+                f"设备未提供可用的 DAC 时钟：DAC 跨度比 {span_ratio:.4f} 超出 {span_ratio_range}，"
+                f"而 callback(currentTime) 跨度比 {current_ratio:.6f} 正常，"
+                "说明是虚拟/重采样设备的时间源问题，不是字段取错"
+            )
+        else:
+            reasons.append(
+                f"跨度比 {span_ratio:.4f} 超出 {span_ratio_range}，单位或时钟源不一致"
+            )
     if residual_max > max_residual_ns:
         reasons.append(f"残差 {residual_max} ns 超过容差 {max_residual_ns} ns")
     if drift_evaluated and abs(drift) > max_drift_ns_per_s:
@@ -154,6 +177,7 @@ def calibrate_pairs(
         device_span_ns=int(device_span),
         monotone=monotone,
         dac_minus_current_mean_ns=dac_gap,
+        current_span_ratio=current_ratio,
         verified=not reasons,
         reasons=tuple(reasons),
     )

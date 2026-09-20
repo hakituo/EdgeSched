@@ -14,6 +14,7 @@ from typing import Any, Iterable
 from experiments.elastic_residency.s0_pipeline.config import FROZEN_PROTOCOL
 from experiments.elastic_residency.s0_pipeline.measurement_scope import (
     evaluate_measurement_scope,
+    sentence_ready_seconds,
 )
 
 FORMAL_STARTUP_POLICY = FROZEN_PROTOCOL["startup_policy"]["formal"]
@@ -85,7 +86,19 @@ def extract_metrics(record: dict[str, Any]) -> dict[str, Any]:
         "actual_first_playback_s": device["actual_first_playback_s"],
         "prebuffered_sentences": startup.get("prebuffered_sentences", 0),
         "prebuffered_audio_s": startup.get("prebuffered_audio_s", 0.0),
+        "sentence_ready_s": _sentence_ready_series(record, scheduling),
     }
+
+
+def _sentence_ready_series(
+    record: dict[str, Any], scheduling: dict[str, Any]
+) -> list[float]:
+    """逐句就绪序列；旧产物没存该字段时从事件现场复算。"""
+
+    series = list(scheduling.get("sentence_ready_s", []) or [])
+    if series:
+        return series
+    return sentence_ready_seconds(record)
 
 
 def key_of(metrics: dict[str, Any]) -> str:

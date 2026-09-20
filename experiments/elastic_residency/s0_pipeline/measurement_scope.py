@@ -24,6 +24,9 @@ LAYER_DEVICE = "device_experience"
 
 STATUS_TRUSTED = "trusted"
 STATUS_PENDING = "pending_device_validation"
+#: 观测到但不附时刻：例如 PortAudio 直接报的 underflow 状态位，计数可用、
+#: 时刻仍待 DAC 时钟验证。
+STATUS_OBSERVED = "observed_not_clock_anchored"
 
 SCHEDULING_METRICS: tuple[str, ...] = (
     "first_sentence_waveform_ready_s",
@@ -78,6 +81,26 @@ def waveform_ready_seconds(record: dict[str, Any]) -> tuple[float | None, float 
     if start is None or not ready:
         return None, None
     return (min(ready) - start) / 1e9, (max(ready) - start) / 1e9
+
+
+def sentence_ready_seconds(record: dict[str, Any]) -> list[float]:
+    """逐句完整波形就绪延迟（相对 ``REQUEST_START``，按 chunk_id 排序，单位 s）。
+
+    用于句数对齐：两配置句数不同时，只比较都产出的前 N 句，消除「总句数不同」
+    这一协变量的影响。
+    """
+
+    events = _events(record)
+    start = _request_start_ns(events)
+    ready = [
+        (int(event.get("chunk_id", 0)), int(event["timestamp_ns"]))
+        for event in events
+        if event.get("stage") == _STAGE_WAVEFORM_READY
+    ]
+    if start is None or not ready:
+        return []
+    ready.sort(key=lambda item: item[0])
+    return [round((stamp - start) / 1e9, 6) for _, stamp in ready]
 
 
 def first_playback_seconds(record: dict[str, Any]) -> float | None:
@@ -151,6 +174,7 @@ def scheduling_layer(record: dict[str, Any]) -> dict[str, Any]:
         "last_sentence_waveform_ready_s": (
             None if last_ready is None else round(last_ready, 6)
         ),
+        "sentence_ready_s": sentence_ready_seconds(record),
         "sentence": sentences,
         "application_supply_gap": supply_gap_metrics(record),
         "resources_and_correctness": {
@@ -177,6 +201,12 @@ def device_layer(record: dict[str, Any]) -> dict[str, Any]:
     stats = record.get("run", {}).get("playback_stats", {}) or {}
     proxy_first = first_playback_seconds(record)
     reasons = list(calibration.get("reasons", []) or [])
+    # underflow 计数来自 PortAudio 的 callback 状态位，不依赖时钟映射；
+    # 但「发生在什么时刻」要靠 DAC 时钟，未验证前只报观测、不给时刻。
+    underflow = int(stats.get("device_underflow_count", 0) or 0)
+    underflow_status = (
+        STATUS_TRUSTED if verified else STATUS_OBSERVED if stats.get("backend") else STATUS_PENDING
+    )
     return {
         "layer": LAYER_DEVICE,
         "status": STATUS_TRUSTED if verified else STATUS_PENDING,
@@ -189,14 +219,22 @@ def device_layer(record: dict[str, Any]) -> dict[str, Any]:
             proxy_first if verified else None
         ),
         "proxy_first_playback_s": None if verified else proxy_first,
-        "device_underflow_count": int(stats.get("device_underflow_count", 0) or 0),
-        "device_underflow_status": STATUS_TRUSTED if verified else STATUS_PENDING,
+        "device_underflow_count": underflow,
+        "device_underflow_source": (
+            "portaudio_status_flag" if stats.get("backend") else ""
+        ),
+        "device_underflow_status": underflow_status,
+        "device_underflow_note": (
+            "underflow 计数由 PortAudio callback 状态位直接给出，不依赖时钟映射；"
+            "但其发生时刻仍需 DAC 时钟，未验证前不得给出时刻"
+        ),
         "playback_backend": stats.get("backend", ""),
         "note": (
             "设备时钟验证通过，实际播放时刻可用"
             if verified
-            else "设备时钟映射未通过验证：实际播放时刻与设备 underflow 均保持 pending，"
-            "proxy_first_playback_s 只是 callback 代理，不得当作实际播放时刻"
+            else "设备时钟映射未通过验证：实际播放时刻保持 pending，"
+            "proxy_first_playback_s 只是 callback 代理，不得当作实际播放时刻；"
+            "device_underflow_count 为观测计数（状态位），同样不附时刻"
         ),
     }
 

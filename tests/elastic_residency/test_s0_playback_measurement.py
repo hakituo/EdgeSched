@@ -123,6 +123,19 @@ def test_unit_mismatch_fails_verification() -> None:
     assert any("跨度比" in reason for reason in calibration.reasons)
 
 
+def test_bad_dac_time_with_good_callback_time_is_blamed_on_device() -> None:
+    # WSL2 的 pulse 虚拟设备就是这个形态：callback 时间对得很准，只有 DAC 时间跑偏
+    hosts = [i * 500_000_000 for i in range(8)]
+    devices = [host + int(host * 0.2) for host in hosts]
+    currents = [host + 1_000 for host in hosts]
+    calibration = calibrate_pairs(
+        list(zip(hosts, devices)), currents=currents
+    )
+    assert calibration.verified is False
+    assert abs(calibration.current_span_ratio - 1.0) < 1e-5
+    assert any("设备未提供可用的 DAC 时钟" in reason for reason in calibration.reasons)
+
+
 def test_non_monotonic_device_time_fails_verification() -> None:
     pairs = [(i * 10_000_000, (8 - i) * 10_000_000) for i in range(8)]
     calibration = calibrate_pairs(pairs)

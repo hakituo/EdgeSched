@@ -34,6 +34,235 @@ LOWER_IS_BETTER = (
 
 PREBUFFER_POLICY = FROZEN_PROTOCOL["startup_policy"]["comparison"][1]
 
+#: 归一指标 -> 对应的原始指标；越小越好，用来检验「改善只是输出更短」这一替代解释。
+#: 注意不含 audio_s_per_token：每 token 音频量是内容密度描述符，不是质量指标。
+NORMALIZED_PAIRS: tuple[tuple[str, str], ...] = (
+    ("last_ready_s_per_token", "last_sentence_ready_s"),
+    ("last_ready_s_per_sentence", "last_sentence_ready_s"),
+    ("supply_faults_per_10s_audio", "supply_fault_episodes"),
+    ("starve_ratio_in_window", "starve_ratio_in_window"),
+)
+
+#: 参考为 0、基线为正时比值无定义，但这恰恰是「基线更差」的最强证据。
+_GAP_UNDEFINED_NOTE = "参考为 0、基线为正：比值无定义，按『基线更差』记"
+
+
+def _mean_of(agg: dict[str, Any], metric: str) -> float:
+    return float(agg[metric]["mean"])
+
+
+def sentence_aligned_comparison(
+    runs: list[dict[str, Any]],
+    *,
+    reference: str = REFERENCE_SAME_LLM,
+    baseline: str = BASELINE_NON_MIXED,
+    policy: str = FORMAL_STARTUP_POLICY,
+) -> dict[str, Any]:
+    """句数对齐：只比两配置都产出的前 N 句。
+
+    「把两个配置的话调成一样多再比一次」在当前数据上唯一可实现的形式——
+    LLM 输出随放置确定性地不同（80 vs 65 token），多跑几轮不会让它们一致，
+    固定文本重放又只能作隔离诊断。于是退一步：对齐到相同**句数**，比较
+    第 k 句（k < 两配置句数的最小值）的波形就绪时刻，消除总句数差异。
+    """
+
+    def series(placement: str) -> dict[int, list[float]]:
+        return {
+            int(item["run_index"]): list(item.get("sentence_ready_s", []) or [])
+            for item in runs
+            if item["placement"] == placement and item["startup_policy"] == policy
+        }
+
+    ref, base = series(reference), series(baseline)
+    shared = sorted(set(ref) & set(base))
+    empty: dict[str, Any] = {
+        "reference": reference,
+        "baseline": baseline,
+        "aligned_depth": 0,
+        "paired_run_count": len(shared),
+        "per_sentence": [],
+        "verdict": "两个配置没有可配对的运行，无法做句数对齐",
+    }
+    if not shared:
+        return empty
+    depth = min(
+        min(len(ref[index]) for index in shared),
+        min(len(base[index]) for index in shared),
+    )
+    if depth <= 0:
+        return empty
+    per_sentence: list[dict[str, Any]] = []
+    for index in range(depth):
+        deltas = [
+            base[run][index] - ref[run][index]
+            for run in shared
+            if len(base[run]) > index and len(ref[run]) > index
+        ]
+        ref_values = [ref[run][index] for run in shared if len(ref[run]) > index]
+        base_values = [base[run][index] for run in shared if len(base[run]) > index]
+        per_sentence.append(
+            {
+                "sentence_index": index,
+                "reference_mean_s": round(sum(ref_values) / len(ref_values), 6)
+                if ref_values
+                else None,
+                "baseline_mean_s": round(sum(base_values) / len(base_values), 6)
+                if base_values
+                else None,
+                "mean_delta_s": round(sum(deltas) / len(deltas), 6) if deltas else None,
+                "baseline_worse_runs": sum(1 for item in deltas if item > 0),
+                "paired_run_count": len(deltas),
+            }
+        )
+    consistent = all(
+        item["baseline_worse_runs"] == item["paired_run_count"]
+        for item in per_sentence
+        if item["paired_run_count"]
+    )
+    if consistent:
+        verdict = (
+            f"对齐到前 {depth} 句后，基线在每一句的波形就绪上都更差"
+            f"（{per_sentence[0]['paired_run_count'] if per_sentence else 0}/"
+            f"{per_sentence[0]['paired_run_count'] if per_sentence else 0} 轮一致）："
+            "「总句数不同」不足以解释差异。"
+            "但各句文本内容仍不同，按冻结规则仍不构成干净归因。"
+        )
+    else:
+        verdict = (
+            f"对齐到前 {depth} 句后并非每句都是基线更差"
+            "，句数对齐不能支持改善结论。"
+        )
+    return {
+        "reference": reference,
+        "baseline": baseline,
+        "aligned_depth": depth,
+        "paired_run_count": len(shared),
+        "per_sentence": per_sentence,
+        "all_sentences_baseline_worse": consistent,
+        "verdict": verdict,
+    }
+
+
+def covariate_normalization(
+    aggregates: dict[str, Any],
+    *,
+    reference: str = REFERENCE_SAME_LLM,
+    baseline: str = BASELINE_NON_MIXED,
+) -> dict[str, Any]:
+    """按输出长度归一：检验「改善是否只是文本更短」。
+
+    两配置输出不同（token/句数/文本 SHA 都不同）时，主指标的差距有两种解释：
+    放置真的更快，或者只是说得少。把末句就绪按 token 与句数归一、供给缺口按
+    每 10 秒音频归一后，如果基线相对参考的差距**没有缩小**，则「输出更短」
+    不足以解释差距。首句就绪不归一：首句之前两配置输入完全相同，差异只可能来自
+    生成与合成速度。
+    """
+
+    per_placement: dict[str, dict[str, float]] = {}
+    for key, agg in aggregates.items():
+        tokens = max(_mean_of(agg, "output_tokens"), 1e-9)
+        sentences = max(_mean_of(agg, "sentence_count"), 1e-9)
+        audio = _mean_of(agg, "audio_duration_s")
+        per_placement[key] = {
+            "last_ready_s_per_token": round(_mean_of(agg, "last_sentence_ready_s") / tokens, 6),
+            "last_ready_s_per_sentence": round(
+                _mean_of(agg, "last_sentence_ready_s") / sentences, 6
+            ),
+            "audio_s_per_token": round(audio / tokens, 6),
+            "supply_faults_per_10s_audio": (
+                round(_mean_of(agg, "supply_fault_episodes") / audio * 10.0, 4)
+                if audio
+                else 0.0
+            ),
+            "starve_ratio_in_window": _mean_of(agg, "starve_ratio_in_window"),
+            "first_sentence_ready_s": _mean_of(agg, "first_sentence_ready_s"),
+        }
+    ref_key = next((key for key in aggregates if key.startswith(f"{reference}|")), None)
+    base_key = next((key for key in aggregates if key.startswith(f"{baseline}|")), None)
+    comparisons: dict[str, Any] = {}
+    if ref_key and base_key:
+        for norm_metric, raw_metric in NORMALIZED_PAIRS:
+            ref_raw = _mean_of(aggregates[ref_key], raw_metric)
+            base_raw = _mean_of(aggregates[base_key], raw_metric)
+            ref_norm = per_placement[ref_key][norm_metric]
+            base_norm = per_placement[base_key][norm_metric]
+            raw_gap = (base_raw / ref_raw) if ref_raw else None
+            norm_gap = (base_norm / ref_norm) if ref_norm else None
+            # 参考为 0 时比值无定义：基线为正即更差，两者都为 0 即持平
+            if ref_norm == 0.0 and base_norm > 0.0:
+                status = "baseline_worse"
+                note = _GAP_UNDEFINED_NOTE
+            elif ref_norm == 0.0 and base_norm == 0.0:
+                status = "tie"
+                note = "参考与基线均为 0，无差异可判"
+            elif norm_gap is not None and norm_gap > 1.0:
+                status = "baseline_worse"
+                note = ""
+            elif norm_gap is not None and norm_gap == 1.0:
+                status = "tie"
+                note = ""
+            else:
+                status = "baseline_better"
+                note = "归一化后基线反而更好，方向反转"
+            comparisons[norm_metric] = {
+                "raw_metric": raw_metric,
+                "reference": ref_raw,
+                "baseline": base_raw,
+                "raw_gap_baseline_over_reference": (
+                    round(raw_gap, 4) if raw_gap is not None else None
+                ),
+                "normalized_reference": ref_norm,
+                "normalized_baseline": base_norm,
+                "normalized_gap": round(norm_gap, 4) if norm_gap is not None else None,
+                "status": status,
+                # 越小越好：基线更差即方向保持
+                "direction_preserved": status == "baseline_worse",
+                "gap_shrinks_after_normalization": bool(
+                    norm_gap is not None
+                    and raw_gap is not None
+                    and norm_gap < raw_gap * 0.9
+                ),
+                "note": note,
+            }
+    preserved = [
+        name for name, item in comparisons.items() if item["direction_preserved"]
+    ]
+    shrunk = [
+        name
+        for name, item in comparisons.items()
+        if item["gap_shrinks_after_normalization"]
+    ]
+    reversed_names = [
+        name for name, item in comparisons.items() if item["status"] == "baseline_better"
+    ]
+    if comparisons and reversed_names:
+        verdict = f"归一化后方向反转：{reversed_names}；不能支持改善结论。"
+    elif shrunk:
+        verdict = (
+            f"归一化后差距缩小：{shrunk}；"
+            "「输出更短」可能部分解释差异，必须补输出一致的重跑才能归因。"
+        )
+    elif comparisons and len(preserved) == len(comparisons):
+        verdict = (
+            "归一化后基线仍全部更差、且差距未缩小："
+            "「输出更短」不足以解释主指标差异。"
+            "但文本内容本身仍不同，按冻结规则不构成干净归因。"
+        )
+    else:
+        verdict = "归一化后无差异或样本不足，不能支持改善结论。"
+    return {
+        "reference": reference,
+        "baseline": baseline,
+        "per_placement": per_placement,
+        "comparisons": comparisons,
+        "direction_preserved_metrics": preserved,
+        "gap_shrinking_metrics": shrunk,
+        "verdict": verdict,
+        "note": (
+            "首句就绪不参与归一：首句之前两配置输入相同，差异只可能来自生成与合成速度"
+        ),
+    }
+
 
 def paired_deltas(
     runs: list[dict[str, Any]],
