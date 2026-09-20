@@ -46,7 +46,9 @@ experiment_results/elastic_residency/
 | A1 | `a1/a1_smoke_20260829_verified_v7/` | 当前实验基础设施硬门证据 |
 | Audio | `audio_compat/audio_compat_20260829*/` | WSLg/Windows 播放兼容性记录 |
 | B1 | `b1/b1_tts_components_20260829_verified_v2/` | T0--T3 单文本组件放置 smoke |
-| B2（当前口径） | `b2/b2_tts_t0_20260917/`（状态残留序列为 `b2_tts_t0_20260917_state/`） | 当前接入后端（加速 CUDA Graph 整模型 GPU，放置 T0）的句长画像：20/50/100 字 × 5 轮 + 状态残留序列 + 主环境 ASR 回转核对；记录 RTF、波形就绪、加载与图准备成本、准备/执行阶段内存峰值、输出长度 |
+| B2（当前口径） | `b2/b2_tts_t0_20260920_222648/`（状态残留序列为 `..._state/`；上一批 `b2_tts_t0_20260917` 数值一致但来源脏） | 当前接入后端（加速 CUDA Graph 整模型 GPU，放置 T0）的句长画像：20/50/100 字 × 5 轮 + 状态残留序列 + 主环境 ASR 回转核对；RTF 0.3236/0.3138/0.3082，卡级增量 3889.1 MiB、torch 2957.2/3690.0、load 8.53 s + 图捕获 4.56 s；`passed=true`、`git_provenance_complete=true`（`1709ec4`，dirty=false） |
+| S0 v2 启动策略对照 | `s0_pipeline/s0_startup_20260917_v2/` | 加速后端 K24:T0，首句即播 vs 全量预缓冲各 1 轮：首句 4.260/4.243 s、RTF 0.359/0.366、窗口内缺口 0/0、首播 proxy 4.28/26.65 s |
+| S0 v2 正式比较 | `s0_pipeline/s0_formal_20260920_223105_8510199/` | 加速后端 `K24:T0` vs `K0:T0` 各 5 轮 = 10 次，10/10 通过、0 failure，来源干净；混合在主指标上全面一致占优（首句 4.384 vs 10.740 s、供给缺口 0 vs 6 段），但协变量未受控＋设备层 pending，不登记 Gate B Go |
 | 旧后端 B2（已删除） | 原 `b2/b2_tts_matrix_20260829_verified_v1/`、`b2/b2_tts_pareto_matrix_20260831_direct_nvml_v1|v2/` | 2026-09-17 按「B2 只指当前接入后端」删除；其 T0/T3 条件式 Pareto 与全部 RTF 数值随产物一并退役，不得被引用为当前依据；生成器 `tts_component_offload_matrix.py` 已于同日删除 |
 | C1 | `c1/c1_llm_residency_512_20260829_verified_v1/` | K0/FULL 端点 smoke |
 | 9B C2 | `c2/c2_llm_residency_curve_20260829_direct_nvml_v2/` | Qwen3.5-9B 90/90 粗驻留曲线；迁移后作为模型特定压力基线 |
