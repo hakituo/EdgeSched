@@ -1,3 +1,16 @@
+# ⚠ 已失效，仅作历史留存：不要把本文件当作当前环境的依赖真源。
+#
+# 2026-09-17「软链换名」把 ~/.venvs/mvp_core-cu128 指向加速隔离环境
+# （qwen3tts-cugraph-probe/faster-qwen3-tts/.venv）之后，本文件描述的那个主环境就已经
+# 被搁置了；2026-09-23 环境从 WSL2 迁到本机原生 Linux 时，实际环境是
+# transformers 5.15.1 / torch 2.11.0+cu128 / torchvision 未装 / diffusers 与 peft 未装，
+# 与本文件写的 4.57.3 / 2.10.0+cu128 对不上。
+#
+# 当前真源：requirements-linux-cu128.txt（主环境）、requirements-linux-forge.txt（Forge）。
+#
+# ---------------------------------------------------------------------------
+# 以下为历史内容，原样保留：
+#
 # EdgeSched 真实实验环境：Ubuntu-24.04-E + Python 3.10 + CUDA 12.8。
 #
 # 系统依赖（pip 无法安装）：

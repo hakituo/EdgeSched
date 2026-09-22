@@ -131,8 +131,21 @@ class TimelineSample:
     process_rss_bytes: int
     system_available_bytes: int
     system_swap_used_bytes: int
-    per_cpu_percent: tuple[float, ...]
-    cpu_affinity: tuple[int, ...]
+    # 主机内存分层：swap 增长究竟是「内存耗尽」还是「回收选错对象」，
+    # 只有把匿名/文件/可回收 slab 分开记才能判断。全部默认 0 保持旧记录可解析。
+    system_anon_bytes: int = 0
+    system_file_cached_bytes: int = 0
+    system_shmem_bytes: int = 0
+    system_sreclaimable_bytes: int = 0
+    system_sunreclaim_bytes: int = 0
+    # PSI 累计停顿微秒；total 为单调累计值，窗口内增量在汇总阶段计算。
+    memory_pressure_some_total_us: int = 0
+    memory_pressure_full_total_us: int = 0
+    memory_pressure_full_avg10: float = 0.0
+    # 外部服务（例如 Forge）不在被测进程 RSS 里，按标签逐点记账。
+    watched_process_rss_bytes: Mapping[str, int] = field(default_factory=dict)
+    per_cpu_percent: tuple[float, ...] = ()
+    cpu_affinity: tuple[int, ...] = ()
     gpu_available: bool = False
     gpu_sample_age_ms: float = 0.0
     gpu_card_used_mb: float = 0.0

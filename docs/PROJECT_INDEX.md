@@ -9,7 +9,7 @@ small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/�
 > **2026-09-07 9B 版本选定**：后续主模型为 small `1a35ab89…` + F16 projector `e36da9b9…`。纯文本对比 12/12、small 视觉 Answer 1/1 通过，固定图形内容描述完整；专用视觉启动器默认 Small，Large 可显式复测。新版本 C2 90/90、C3 150/150、KV 48/48 已通过，4B 对照与旧哈希证据保留。单图不是完整质量评测或 TTS 共置结论。详见 [选型与验收](NINE_B_MODEL_COMPARISON.md)。
 
 **用途**：给 Codex 和维护者提供低成本导航。  
-**最后核对**：2026-08-31（以当前目录实际文件为准）
+**最后核对**：2026-09-23（以当前目录实际文件为准；运行环境已由 WSL2 换为本机原生 Linux）
 
 ## 先判断你要做什么
 
@@ -29,8 +29,8 @@ small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/�
 | C++ 调度器 | [cpp_scheduler/README.md](../cpp_scheduler/README.md) | `cpp_scheduler/core/`, `workers/`, `queue/`, `bindings/` | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` |
 | 跑实验 | [experiments/README.md](../experiments/README.md) | `experiments/run_*.py`, 各实验子目录 | `experiment_results/`, manifest |
 | 论文重写与图表 | [paper/README.md](../paper/README.md)、[实验指南索引](../paper/thesis_experiment_guide/README.md)、[新版骨架](../paper/rewrite/OUTLINE.md) | `paper/thesis_experiment_guide/`, `paper/rewrite/`；方法公式 `paper/edgesched_phase_aware_formulation.tex`；架构图 `paper/system_architecture.tex`；`paper/THESIS_EXPERIMENT_GUIDE_DRAFT.md` 仅为兼容入口 | `paper/experiment_data/01_paper_main/`（当前尚未晋升新数据） |
-| WSL2 同步/环境 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#7-环境与同步边界) | `scripts/sync_to_wsl2_safe.ps1`, `cpp_scheduler/build_wsl2.sh` | WSL2 实际运行日志 |
-| 提交与更新记录 | [UPDATES.md](UPDATES.md)（详细记录）、`scripts/sync_to_wsl2_safe.ps1 -Message` | `docs/UPDATES.md` | `tests/scripts/verify_wsl_sync_policy.py` |
+| Linux 同步/环境 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md#7-环境与同步边界) | `scripts/sync_from_windows.sh`（Linux 侧拉取）、`scripts/commit_and_push.ps1`（Windows 侧收尾）、`requirements-linux-cu128.txt` | Linux 侧实际运行日志；`tests/scripts/verify_requirements_contract.py` |
+| 提交与更新记录 | [UPDATES.md](UPDATES.md)（详细记录）、`scripts/commit_and_push.ps1 -Message` | `docs/UPDATES.md` | `tests/scripts/verify_sync_policy.py` |
 
 ## 入口速查
 

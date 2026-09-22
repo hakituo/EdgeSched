@@ -24,6 +24,7 @@ from experiments.elastic_residency.forge_b1_reprofile import (
     forge_get,
     forge_post,
 )
+from experiments.elastic_residency.host_memory import collect_host_memory_state
 from experiments.elastic_residency.llm_forge_plan import (
     LlmForgeCandidate,
     build_execution_plan,
@@ -160,6 +161,9 @@ def run_parent(args: Any) -> Path:
     options = forge_get(args.forge_url.rstrip("/") + "/sdapi/v1/options", 10.0)
     if not isinstance(models, list) or not models or not options.get("sd_model_checkpoint"):
         raise ValueError("Forge preflight 未返回有效模型列表或当前 checkpoint")
+    # 论文环境约束是 WSL2 的有效内存上限而非宿主机容量；这两项必须随运行落盘，
+    # 否则复现差异分不清来自代码还是来自内存上限与 swap 状态。
+    host_memory_state = collect_host_memory_state()
     output_root = Path(args.output_root).expanduser().resolve()
     existed = (output_root / args.run_id).exists()
     writer = ExperimentArtifactWriter(output_root, args.run_id, allow_existing=args.resume)
@@ -206,6 +210,8 @@ def run_parent(args: Any) -> Path:
             "max_gpu_sample_age_ms": args.max_gpu_sample_age_ms,
             "max_swap_growth_mb": args.max_swap_growth_mb,
             "max_forge_resident_drift_mb": args.max_forge_resident_drift_mb,
+            # swappiness 是主机内存回收策略的对照变量，必须进配置而不是藏在环境里。
+            "host_memory_condition": host_memory_state,
         },
     )
     manifest = {
@@ -217,6 +223,7 @@ def run_parent(args: Any) -> Path:
                   "available_models": [item.get("title") for item in models]},
         "source_artifacts": {"screen_sha256": sha256_file(screen_path),
                              "forge_summary_sha256": sha256_file(forge_path)},
+        "host_memory": host_memory_state,
     }
     expected_manifest = {"schema_version": SCHEMA_VERSION, "run_id": args.run_id, **manifest}
     if existed:

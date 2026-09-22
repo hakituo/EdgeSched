@@ -19,21 +19,21 @@
 
 ## 环境与运行
 
-- 真实模型、CUDA、C++ 编译和论文实验优先在 WSL2 `/home/leslie/mvp_core` 运行，使用 `/home/leslie/.venvs/mvp_core-cu128`。
+- 真实模型、CUDA、C++ 编译和论文实验在**本机原生 Linux**（与 Windows 双系统）运行：代码 `/home/leslie/mvp_core`，主环境 `/home/leslie/.venvs/mvp_core-cu128`。WSL2（`Ubuntu-24.04-E`）自 2026-09-23 起停用，仅作历史参考，不要再按 WSL2 路径规划任务。
 - Forge 使用独立环境 `/home/leslie/.venvs/forge-cu128`，服务目录为 `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/`。
 - Windows 侧只做编辑、静态验证和结果收集；可用父仓库 `venv_core` 运行不依赖 GPU 的验证。
-- Windows 到 WSL2 只使用 `scripts/sync_to_wsl2_safe.ps1` 的增量同步语义，禁止 `--delete`、镜像覆盖或清理 WSL2 模型目录。
-- 本目录是独立 git 仓库（remote: `origin` = `https://github.com/hakituo/EdgeSched`），与父仓库 `d:\AI\xiaoyou-core` 的版本管理分开；`.git` 不同步到 WSL2，git 提交/推送只在 Windows 侧进行。
-- `scripts/sync_to_wsl2_safe.ps1` 同步到 WSL2 后会自动 `git add -A && commit && push origin main`（无变化则跳过）；因此运行该脚本即同时备份到 GitHub 私人仓库。
+- 双系统下 Windows 与 Linux 不会同时在线，因此同步的发起端在 **Linux 侧**：`bash scripts/sync_from_windows.sh` 从挂载的 D 盘仓库（`/mnt/d/AI/xiaoyou-core/legacy/mvp_core`）增量同步到 `$HOME/mvp_core`。禁止 `--delete`、镜像覆盖或清理 Linux 侧模型目录。
+- 本目录是独立 git 仓库（remote: `origin` = `https://github.com/hakituo/EdgeSched`），与父仓库 `d:\AI\xiaoyou-core` 的版本管理分开；`.git` 不同步到 Linux，git 提交/推送只在 Windows 侧进行。
+- Windows 侧收尾统一用 `scripts/commit_and_push.ps1`（只做 `git add/commit/push`，不再负责把代码推进运行环境）。
 - 不修改虚拟环境；确需修改依赖时先与用户讨论。
 
 ## 提交与更新记录
 
-- **commit 必须写清这次改动做了什么**：运行 `scripts/sync_to_wsl2_safe.ps1` 必须带 `-Message "一句话说明"`，例如 `-Message '修复 Phase-Aware 阶段切换的显存估算偏差'`；需要随代码留存细节时再补 `-Detail`。
-- 不带 `-Message`，或提交信息是 `auto`/`update`/`更新`/`自动提交`/`同步` 这类无信息文案时，脚本在 rsync 之前直接报错退出（exit 2），不允许再产生看不懂的 commit。
+- **commit 必须写清这次改动做了什么**：运行 `scripts/commit_and_push.ps1` 必须带 `-Message "一句话说明"`，例如 `-Message '修复 Phase-Aware 阶段切换的显存估算偏差'`；需要随代码留存细节时再补 `-Detail`。
+- 不带 `-Message`，或提交信息是 `auto`/`update`/`更新`/`自动提交`/`同步` 这类无信息文案时，脚本在 `git add` 之前直接报错退出（exit 2），不允许再产生看不懂的 commit。
 - commit 主题行只写一句话，不写文件清单和时间戳（`git show --stat`、`git log` 本来就有）。
 - **详细记录写 `docs/UPDATES.md`**（背景/改动/验证/备注，倒序追加），它是本仓库唯一的更新记录文件；禁止调用父仓库 `scripts/doc_records/update_project_records.py`。
-- 工作区存在其他会话或其他 agent 的未提交改动时，先用 `-SkipGit` 只同步，再按需单独提交，不要把无关改动一起推上去。
+- 工作区存在其他会话或其他 agent 的未提交改动时，先 `git stash push -m "wip-other" -- <无关路径>` 搁置，提交推送成功后立即 `git stash pop` 恢复，不要把无关改动一起推上去。
 
 ## 实验与证据规则
 
@@ -52,6 +52,6 @@
 - 调度主路径：`services/task_scheduler.py`、`services/admission_controller.py`、`services/resource_manager.py`、`services/state_backplane.py`。
 - C++ 桥接：`services/cpp_scheduler_engine.py`、`services/cpp_scheduler_wrapper.py`、`cpp_scheduler/bindings/python_bindings.cpp`。
 - Phase-Aware：`services/phase_aware/` 与 `cpp_scheduler/core/phase_strategy.*`，Python/C++ 契约变更必须双向检查。
-- 每次优化补充或更新 `tests/` 下的验证；默认先跑静态/Mock 测试，真实 GPU/Forge 测试在 WSL2 单独执行。
+- 每次优化补充或更新 `tests/` 下的验证；默认先跑静态/Mock 测试，真实 GPU/Forge 测试在 Linux 侧单独执行（Windows 侧无法代跑，也没有 WSL2 兜底）。
 - 修改目录、入口、环境、数据口径或模块职责时，同步更新 `docs/PROJECT_INDEX.md`、`docs/PROJECT_CONTEXT.md` 和相关 README。
 - 不把 `cpp_scheduler/build/`、模型、运行日志、临时输出或本地 mmap 数据当作源码。

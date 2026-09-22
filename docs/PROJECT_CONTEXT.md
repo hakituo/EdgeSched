@@ -339,11 +339,14 @@ small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；�
 和 Profile 五轮画像（5/5 全通过）。当前先离线筛容量与阶段切换候选，不重复运行基础画像。
 两个阶段生成预算与 n_ctx 不同，分别保存，不能混为同一性能曲线；详见 [协议](VISION_9B_PROBE_20260906.md)。
 
+**2026-09-23 起运行环境由 WSL2 换为本机原生 Linux**（与 Windows 双系统，另一块 SSD 整盘 ext4）。
+WSL2 发行版 `Ubuntu-24.04-E` 仅作历史参考：不要再按 `\\wsl.localhost\...`、`wsl -e` 或「Windows 侧推送代码到运行环境」规划任务。
+
 | 用途 | 路径/环境 |
 |---|---|
-| Windows 编辑副本 | `D:\AI\xiaoyou-core\legacy\mvp_core` |
-| WSL2 运行副本 | `/home/leslie/mvp_core` |
-| Windows 访问 WSL2 | `\\wsl.localhost\Ubuntu-24.04-E\home\leslie\mvp_core` |
+| Windows 编辑副本（代码真源，git 仓库） | `D:\AI\xiaoyou-core\legacy\mvp_core` |
+| Linux 运行副本 | `/home/leslie/mvp_core` |
+| Linux 侧挂载 Windows D 盘 | `/mnt/d`（`/mnt/d/AI/xiaoyou-core/legacy/mvp_core` 即上面那份真源） |
 | 主实验环境 | `/home/leslie/.venvs/mvp_core-cu128`（2026-09-17 起软链到加速隔离环境：`/home/leslie/qwen3tts-cugraph-probe/faster-qwen3-tts/.venv`；Python 3.12.3 / torch 2.11.0+cu128 / transformers 5.15.1 / llama_cpp 0.3.35(CUDA) / sounddevice / faster-whisper / onnxruntime） |
 | 遗留环境 | **已于 2026-09-17 删除**（原 Python 3.10.19 / torch 2.10 / transformers 4.57.3，是唯一装了上游 `qwen_tts` 的环境）。旧后端脚本（`--tts-backend upstream_dynamic`、`run_small_9b_tts_compat/t4_isolate`、`services/tts/qwen3_tts_worker.py`）重跑需自建环境并显式指定解释器；旧 B2 矩阵生成器 `tts_component_offload_matrix.py` 已于同日删除 |
 | Forge 环境 | `/home/leslie/.venvs/forge-cu128` |
@@ -353,9 +356,14 @@ small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；�
 | 图像模型 | `/home/leslie/mvp_core/models/Image` |
 | Forge 服务 | `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/` |
 
-`scripts/sync_to_wsl2_safe.ps1` 是安全同步入口，只增量复制源码，不删除 WSL2 独有的模型、Forge 或构建产物。根目录模型排除必须写成 `/models/`，避免误排除 `domain/models/` 等源码包；Python 缓存和测试临时目录不参与同步。默认会提交并推送 Windows 独立仓库，但**必须带 `-Message "一句话说明这次改了什么"`**（`-Detail` 可选作 commit 正文）；缺 `-Message` 或文案无信息（auto/update/更新/自动提交 等）时脚本在 rsync 之前报错退出，不再生成看不懂的 commit。存在其他未完成改动时使用 `-SkipGit`，避免把无关文件加入提交。详细过程（背景/改动/验证）写 `docs/UPDATES.md`。真实运行前仍应核对目标文件时间戳或哈希。
+同步分成两端，因为双系统下 Windows 与 Linux 不会同时在线：
 
-### 7.1 当前 WSL2 运行快照
+- **Linux 侧拉取**：`bash scripts/sync_from_windows.sh` 从挂载的 `/mnt/d/AI/xiaoyou-core/legacy/mvp_core` 增量同步到 `$HOME/mvp_core`，只覆盖不删除——Linux 独有的模型、Forge、`experiment_results` 软链与 C++ 构建产物绝不能被抹平。根目录模型排除必须写成 `/models/`，避免误排除 `domain/models/` 等源码包；Python 缓存和测试临时目录不参与同步。支持 `--dry-run` 预演与 `--ensure-links` 补软链。
+- **Windows 侧收尾**：`scripts/commit_and_push.ps1` 只做 `git add/commit/push`，**必须带 `-Message "一句话说明这次改了什么"`**（`-Detail` 可选作 commit 正文）；缺 `-Message` 或文案无信息（auto/update/更新/自动提交 等）时脚本在 `git add` 之前报错退出，不再生成看不懂的 commit。工作区存在其他会话的改动时先 `git stash push -m "wip-other" -- <无关路径>` 搁置，提交后恢复。详细过程（背景/改动/验证）写 `docs/UPDATES.md`。真实运行前仍应核对目标文件时间戳或哈希。
+
+`requirements-linux-cu128.txt`（主环境）与 `requirements-linux-forge.txt`（Forge）是当前依赖真源，均由 Linux 侧实际环境 `pip freeze` 净化而来，两者刻意保持隔离（主环境 torch 2.11.0+cu128 / numpy 2.5.3，Forge torch 2.10.0+cu128 / numpy 1.26.2）。`requirements-wsl-cu128.txt` 描述的是 2026-09-17 软链换名后已搁置的旧主环境，文件头已标注失效。
+
+### 7.1 WSL2 时期运行快照（历史，2026-09-23 前；仅作追溯，不代表当前环境）
 
 2026-08-28 在 `Ubuntu-24.04-E` 做过只读核验：
 

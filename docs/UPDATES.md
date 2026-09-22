@@ -12,7 +12,51 @@
 
 ## 条目格式
 
-```
+每条按「背景 / 改动 / 验证 / 备注」写，倒序追加在最上面。
+
+## 2026-09-23 运行环境由 WSL2 迁移到本机原生 Linux
+
+- 背景：用户装好本机原生 Linux（与 Windows 双系统，磁盘 0 整盘 ext4 + 独立 EFI），不再使用 WSL2
+  `Ubuntu-24.04-E`。动机之一是 WSL2 只有虚拟 Pulse 设备、没有真实采样时钟：`playback_clock_probe` 的
+  `outputBufferDacTime` 跨度比不单调（1.2335/1.1704/1.0900），换采样率与延迟档都过不了 ±5% 容差，
+  S0 设备体验指标只能长期 pending；真机才有机会解锁该项。
+- 迁移方式：双系统下 Windows 读不了 ext4、Linux 读不了 WSL2 的 `ext4.vhdx`，NTFS 是唯一双向通道。
+  先把代码与模型导出到 `D:\_lx_migrate\`（`payload/` 四个 tar + `manifest/` 指纹 + `env/` 依赖清单 +
+  `linux_setup/` 三个执行脚本），Linux 侧挂载 D 盘后解包。
+  - 搬：代码 537M、模型 18.7G（llm/Image/Qwen3-TTS/auxiliary）、加速 TTS 源码 30M、output 200K。
+    四个包都有 sha256 与逐文件大小清单，解包后由 `03_verify.sh` 逐项比对。
+  - 有意不搬：两个 venv（`mvp_core-cu128` 8.1G、`forge-cu128`）与 `cpp_scheduler/build*` 1.1G——
+    venv 的 `bin/python` 是绝对软链、shebang 写死路径，而且主环境本身就是软链到
+    `qwen3tts-cugraph-probe/faster-qwen3-tts/.venv`，跨机还会撞 CUDA/torch ABI。
+  - 导出改走 tar 单流：`/mnt/d` 是 9p/drvfs（`msize=65536`），逐个小文件同步极慢（5742 个文件的
+    `mvp_core` 用 rsync 要跑几分钟且没有可见进度，看起来像卡死），合并成单流后稳定 45~55 MB/s，
+    代码打包从数分钟降到 14 秒。
+- 仓库改动（同步方向反转，发起端从 Windows 移到 Linux）：
+  - 新增 `scripts/sync_from_windows.sh`：Linux 侧挂载 D 盘后从 `/mnt/d/AI/xiaoyou-core/legacy/mvp_core`
+    增量拉取到 `$HOME/mvp_core`，保留根锚定 `/models/` 排除、永不 `--delete`。
+  - 新增 `scripts/commit_and_push.ps1`：Windows 侧只做 `git add/commit/push`，提交信息门禁
+    （`-Message` 必填 + 无信息文案黑名单）原样保留。
+  - 旧 `scripts/sync_to_wsl2_safe.ps1` 头部标注「已停用」，暂不删除：`scripts/experiments/run_*.ps1`（9 个）
+    与 `tests/**/*_launcher.ps1`（6 个）仍在调用它并 `wsl -e bash` 启动实验，双系统下已不可用，
+    需改写成 Linux 侧 `.sh` 启动器并在新机器实跑验证后才可删除。
+  - 依赖真源重建：新增 `requirements-linux-cu128.txt` 与 `requirements-linux-forge.txt`（按实际环境
+    `pip freeze` 净化）。**核对发现原 `requirements-wsl-cu128.txt` 描述的是一个已经不存在的主环境**——
+    它是 2026-09-17 软链换名前的旧主环境，与实际在跑的加速环境不一致：transformers 4.57.3 vs 实际 5.15.1、
+    torch 2.10.0+cu128 vs 2.11.0+cu128、torchvision 写明要装而实际未装、diffusers/peft 写明要装而实际未装、
+    onnxruntime 1.23.2 vs 1.30.0、ctranslate2 4.7.2 vs 4.8.2。旧文件已标注失效并指向新真源。
+  - `requirements.txt`：实际安装的发行名是 `qwen-tts-hf==0.1.1.post1` 而非 `qwen-tts==0.1.1`，已修正；
+    指向 CUDA 精确版本的注释也改指新文件。
+  - 测试：`tests/scripts/verify_wsl_sync_policy.py` → `verify_sync_policy.py`（校验新同步/提交契约，
+    并断言同步脚本里不含 `--delete`）；`tests/scripts/verify_wsl_requirements.py` →
+    `verify_requirements_contract.py`（校验新依赖真源、Forge 与主环境隔离、旧清单已标记失效）。
+  - 文档：`AGENTS.md`、`.codebuddy/rules/`（两份）、`.trae/skills/xiaoyou-mvp-core/SKILL.md`、`README.md`、
+    `docs/PROJECT_INDEX.md`、`docs/PROJECT_CONTEXT.md`（第 7 节）按新环境改写；历史实验文档与
+    `paper/experiment_data/**` 里的 WSL2 字样保持原样——那是当时环境的真实记录，不是待改的错字。
+- 验证：中转包侧的 sha256、逐文件大小清单、依赖快照与复现命令均已生成；**尚未验证**：Linux 上的解包、
+  环境重建与 GPU 实跑（新系统未启动，属迁移后待办）。仓库侧两个新验证脚本需在 Windows `venv_core` 下通过。
+- 备注：新 Linux 的用户名同为 `leslie`，运行路径 `/home/leslie/mvp_core` 与 WSL2 时期完全一致，
+  所以脚本与文档里的绝对路径一个字都不用改；`experiment_results` 仍软链回 Windows 仓库收集产物。
+
 ## 2026-09-21 归因分析（按长度归一 + 句数对齐）与设备时钟诊断
 
 - 背景：v2 正式比较中混合 `K24:T0` 全面占优，但两配置输出不同（80 token/9 句 vs 65 token/8 句），

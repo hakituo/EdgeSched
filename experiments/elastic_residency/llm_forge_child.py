@@ -28,6 +28,11 @@ from experiments.elastic_residency.forge_colocated_capacity import (
     forge_colocated_metrics,
 )
 from experiments.elastic_residency.gpu_telemetry import DirectNvmlProbe
+from experiments.elastic_residency.host_memory import (
+    collect_host_memory_state,
+    default_forge_patterns,
+    resolve_watched_processes,
+)
 from experiments.elastic_residency.kv_measurement import (
     KV_MEASUREMENT_SEMANTICS,
     LlamaInitLogCapture,
@@ -89,6 +94,10 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
     llm: Any = None
     child_started_ns = time.monotonic_ns()
     child_started_wall = dt.datetime.now(dt.timezone.utc).isoformat()
+    # 当次内存上限、swap 状态与 swappiness 是实验条件，不是环境噪声，必须落盘。
+    host_memory_state = collect_host_memory_state()
+    watch_patterns = default_forge_patterns()
+    watched_processes = resolve_watched_processes(watch_patterns)
     try:
         with process_affinity_scope(llm_lease.affinity) as actual_affinity:
             sampler = ResourceSampler(
@@ -96,6 +105,7 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
                 gpu_interval_s=args.gpu_sample_interval,
                 gpu_probe=DirectNvmlProbe(include_process_memory=False),
                 thread_affinity=system_lease.affinity,
+                watch_processes=watched_processes,
             )
             gpu_ready = sampler.start(wait_for_gpu_timeout_s=args.gpu_warmup_timeout)
             forge_resident_snapshot = nvidia_memory_snapshot(
@@ -285,6 +295,9 @@ def run_child(args: argparse.Namespace) -> dict[str, Any]:
         "colocated_metrics": metrics,
         "runtime_evidence": runtime_evidence,
         "resource_summary": resource_summary,
+        "host_memory_state": host_memory_state,
+        "host_memory_watch_patterns": list(watch_patterns),
+        "host_memory_watched_processes": watched_processes,
         "allocator_after_release": allocator_after_release,
         "llm_logical_affinity": list(actual_affinity),
         "system_logical_affinity": list(system_lease.affinity),

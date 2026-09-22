@@ -579,8 +579,13 @@ git -C D:\AI\xiaoyou-core\legacy\mvp_core status --porcelain
 1. 完成修复与测试；
 2. Windows 侧形成一个干净 commit（本目录是独立仓库，提交/推送只在 Windows 侧进行）；
 3. 确认 `git status --porcelain` 输出为空（0 项）；
-4. 用 `scripts/sync_to_wsl2_safe.ps1 -SkipGit` 同步到 WSL2；
+4. 把代码送到运行环境：2026-09-23 起运行环境是本机原生 Linux（不再是 WSL2），
+   在 Linux 侧执行 `bash scripts/sync_from_windows.sh`（挂载 D 盘后增量拉取，`--dry-run` 可先预演）；
 5. 使用**真实完整的 HEAD** 与 `--source-git-dirty false --source-git-status-entry-count 0` 运行。
+
+> ⚠ 迁移待办：下面这些启动器仍是 `wsl -e bash` 模式，双系统下不可用，需要改写成 Linux 侧 `.sh`
+> 并在新机器实跑验证：`scripts/experiments/` 下的 9 个 `run_*.ps1` 与 `tests/**/*_launcher.ps1`。
+> 在改写完成前，先直接按各 `run_*.ps1` 里拼出的命令行在 Linux 上手工执行。
 
 如果坚持 dirty 探索运行，快照必须包含**实际工作树**的 modified 与 untracked 文件，例如：
 

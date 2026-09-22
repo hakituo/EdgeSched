@@ -8,4 +8,6 @@ dependencies:
   - pip:
       # CUDA 12.8、Qwen3-TTS 与 Qwen3.5 的版本真源统一放在该文件。
       # 创建环境后仍需按文件头部命令设置 CUDA 构建变量。
-      - -r requirements-wsl-cu128.txt
+      # 注意：主环境实际落盘在 $HOME/qwen3tts-cugraph-probe/faster-qwen3-tts/.venv，
+      # 用 $HOME/.venvs/mvp_core-cu128 软链暴露；Forge 用 requirements-linux-forge.txt 单独建。
+      - -r requirements-linux-cu128.txt

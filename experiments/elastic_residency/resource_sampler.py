@@ -16,6 +16,15 @@ import psutil
 
 from .contracts import ExperimentArtifactWriter, TimelineSample
 from .gpu_telemetry import DirectNvmlProbe, GPUProbe
+from .host_memory import (
+    MEMINFO_PATH,
+    PSI_MEMORY_PATH,
+    parse_meminfo,
+    parse_psi_memory,
+    read_text,
+    summarize_host_memory,
+    watched_process_rss,
+)
 
 
 def _wall_time_iso() -> str:
@@ -142,6 +151,7 @@ class ResourceSampler:
         gpu_probe: GPUProbe | None = None,
         framework_gpu_probe: Callable[[], Mapping[str, float]] | None = None,
         thread_affinity: Sequence[int] | None = None,
+        watch_processes: Mapping[str, int] | None = None,
     ) -> None:
         if interval_s <= 0 or gpu_interval_s < interval_s:
             raise ValueError("采样周期必须为正，且 GPU 周期不能小于基础周期")
@@ -150,6 +160,8 @@ class ResourceSampler:
         self.gpu_interval_s = gpu_interval_s
         self.writer = writer
         self.framework_gpu_probe = framework_gpu_probe
+        # 外部服务（Forge）的主机内存在被测进程 RSS 之外，必须单独记账。
+        self.watch_processes: dict[str, int] = dict(watch_processes or {})
         self.thread_affinity = (
             tuple(sorted(set(int(cpu_id) for cpu_id in thread_affinity)))
             if thread_affinity is not None
@@ -159,6 +171,7 @@ class ResourceSampler:
             raise ValueError("thread_affinity 至少需要一个逻辑 CPU")
         self.gpu_probe = gpu_probe or DirectNvmlProbe(include_process_memory=False)
         self.samples: list[TimelineSample] = []
+        self._psi_available = False
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._gpu_thread: threading.Thread | None = None
@@ -189,6 +202,7 @@ class ResourceSampler:
         self._gpu_sample_times.clear()
         self._gpu_probe_durations_ms.clear()
         self._gpu_deadline_recovery_count = 0
+        self._psi_available = False
         self._error = None
         self._gpu_error = None
         self._gpu_thread = threading.Thread(
@@ -284,6 +298,9 @@ class ResourceSampler:
                 ),
                 default=0.0,
             ),
+            "host_memory_psi_available": self._psi_available,
+            "host_memory_watched_processes": dict(self.watch_processes),
+            "host_memory": summarize_host_memory(self.samples),
         }
 
     def __enter__(self) -> "ResourceSampler":
@@ -313,6 +330,15 @@ class ResourceSampler:
                     gpu_sample_time = self._gpu_sample_time
                 memory = psutil.virtual_memory()
                 swap = psutil.swap_memory()
+                meminfo = parse_meminfo(read_text(MEMINFO_PATH) or "")
+                psi = parse_psi_memory(read_text(PSI_MEMORY_PATH))
+                if psi["available"]:
+                    self._psi_available = True
+                watched = (
+                    watched_process_rss(self.watch_processes)
+                    if self.watch_processes
+                    else {}
+                )
                 try:
                     affinity = tuple(process.cpu_affinity())
                 except (AttributeError, psutil.Error):
@@ -332,6 +358,15 @@ class ResourceSampler:
                     process_rss_bytes=process.memory_info().rss,
                     system_available_bytes=memory.available,
                     system_swap_used_bytes=swap.used,
+                    system_anon_bytes=meminfo["anon_bytes"],
+                    system_file_cached_bytes=meminfo["cached_bytes"],
+                    system_shmem_bytes=meminfo["shmem_bytes"],
+                    system_sreclaimable_bytes=meminfo["sreclaimable_bytes"],
+                    system_sunreclaim_bytes=meminfo["sunreclaim_bytes"],
+                    memory_pressure_some_total_us=int(psi["some_total_us"]),
+                    memory_pressure_full_total_us=int(psi["full_total_us"]),
+                    memory_pressure_full_avg10=float(psi["full_avg10"]),
+                    watched_process_rss_bytes=watched,
                     per_cpu_percent=tuple(psutil.cpu_percent(interval=None, percpu=True)),
                     cpu_affinity=affinity,
                     gpu_available=bool(gpu_data.get("available", False)),

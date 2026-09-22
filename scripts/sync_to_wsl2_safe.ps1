@@ -1,3 +1,13 @@
+# ⚠ 已停用（2026-09-23）：WSL2 已不再使用，本脚本仅作历史留存，不要再用它同步或提交。
+#
+# 现在的工作方式（与 Windows 双系统的本机原生 Linux）：
+#   - 把代码送到运行环境：在 Linux 侧执行 `bash scripts/sync_from_windows.sh`
+#     （挂载 D 盘后从 /mnt/d/AI/xiaoyou-core/legacy/mvp_core 增量拉取，永不 --delete）
+#   - Windows 侧 git 收尾：`.\scripts\commit_and_push.ps1 -Message "这次改了什么"`
+#
+# 保留原因：tests/elastic_residency 下 6 个 *_launcher.ps1 与 scripts/experiments 下
+# 9 个 run_*.ps1 仍在调用本脚本并 `wsl -e bash` 启动实验，这些启动器尚未改写成
+# Linux 侧 .sh；等它们迁移完成、且新机器实跑验证通过后，本文件即可删除。
 param(
     [switch]$SkipGit,
     [string]$Message = "",
