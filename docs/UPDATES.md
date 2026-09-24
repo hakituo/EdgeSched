@@ -14,6 +14,35 @@
 
 每条按「背景 / 改动 / 验证 / 备注」写，倒序追加在最上面。
 
+## 2026-09-25 修正依赖清单里主环境的 Python 版本（3.10 → 3.12）
+
+- 背景：`requirements-linux-cu128.txt` 文件头与 apt 段一直写 Python 3.10，`environment.yml` 也写
+  `python=3.10`，与 Linux 侧**实际主环境**不符。2026-09-17 把 `~/.venvs/mvp_core-cu128` 软链扶正到
+  加速隔离环境（`qwen3tts-cugraph-probe/faster-qwen3-tts/.venv`）时解释器就已经换成 3.12.3，
+  但当时只更新了 `docs/UPDATES.md`、`docs/PROJECT_CONTEXT.md`、`docs/TTS_SUBSYSTEM.md` 三处说明，
+  依赖文件没跟着改。照旧文件重建环境会建出 3.10 解释器，装不进 torch 2.11 / transformers 5.15.1。
+- 改动：
+  - `requirements-linux-cu128.txt`：文件头改成 `Python 3.12`；apt 系统依赖改成
+    `python3.12 python3.12-venv python3.12-dev ffmpeg`；新增「Python 版本」警示段，写明 Forge 的
+    3.10.19 是刻意保留、不得统一到 3.12。包版本列表**未动**（与实测一致）。
+  - `environment.yml`：`python=3.10` → `python=3.12`，消除与 `-r requirements-linux-cu128.txt` 的矛盾。
+- 验证：本机核对 WSL2 `Ubuntu-24.04-E`（Ubuntu 24.04.1）——`/usr/bin/python3` = 3.12.3，系统同时存在
+  `python3.10` 与 `python3.12`；`.venvs/mvp_core-cu128` 软链目标的 `pyvenv.cfg` `version = 3.12.3`、
+  `lib/python3.12/site-packages`，实测 torch 2.11.0+cu128 / transformers 5.15.1 / numpy 2.5.3 /
+  Pillow 12.3.0 / sounddevice 0.5.5 / onnxruntime 1.30.0 / gradio 6.27.0 / accelerate 1.12.0 /
+  llama_cpp_python 0.3.35 / qwen-tts-hf 0.1.1.post1，与本文件的包版本逐项吻合。
+  对照 `.venvs/forge-cu128`：`pyvenv.cfg` `version = 3.10.19`、`lib/python3.10/`、torch 2.10.0+cu128 /
+  numpy 1.26.2 / Pillow 9.5.0 / gradio 4.40.0 / transformers 4.46.1 / xformers 0.0.35 /
+  diffusers 0.31.0，确认 Forge 确实该保持 3.10，不动。
+- 备注：
+  - 未改：`requirements-wsl-cu128.txt`（已标废，历史内容写 3.10 是当时真相）、
+    `docs/VISION_9B_PROBE_20260906.md`（2026-09-06 那批跑的就是 3.10.19）、`paper/archive/` 下的旧草稿，
+    这些都是历史身份记录，改动会破坏证据链。
+  - 上面那份 WSL2 是迁移前的残留快照（`/home/leslie/mvp_core` 停在 2026-09-09、主环境 venv 停在
+    2026-09-17），本次只用作版本核对，不代表当前运行环境的真源；当前真环境是双系统本机原生 Linux。
+  - 遗留待办（`docs/TTS_SUBSYSTEM.md` 已记）：`cpp_scheduler` 的 WSL 扩展按旧 py3.10 构建，
+    在新主环境下使用需重新编译。
+
 ## 2026-09-23 运行环境由 WSL2 迁移到本机原生 Linux
 
 - 背景：用户装好本机原生 Linux（与 Windows 双系统，磁盘 0 整盘 ext4 + 独立 EFI），不再使用 WSL2

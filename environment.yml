@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.10
+  - python=3.12
   - pip
   - pip:
       # CUDA 12.8、Qwen3-TTS 与 Qwen3.5 的版本真源统一放在该文件。

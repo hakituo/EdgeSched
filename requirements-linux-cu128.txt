@@ -1,4 +1,11 @@
-# EdgeSched 可复现实验依赖真源（本机原生 Linux / Python 3.10 / CUDA 12.8）
+# EdgeSched 可复现实验依赖真源（本机原生 Linux / Python 3.12 / CUDA 12.8）
+#
+# ⚠ Python 版本：主环境是 3.12，不是 3.10。2026-09-17 把 ~/.venvs/mvp_core-cu128 软链扶正到
+#   加速隔离环境（$HOME/qwen3tts-cugraph-probe/faster-qwen3-tts/.venv）后解释器就换成了 3.12.3，
+#   2026-09-23 迁到本机原生 Linux 时实测仍是 3.12.3（Ubuntu 24.04 的 /usr/bin/python3 就是 3.12）。
+#   Forge 环境（requirements-linux-forge.txt）刻意保持 3.10.19：它锚定 torch 2.10.0+cu128 /
+#   numpy 1.26.2 / Pillow 9.5.0 / gradio 4.40.0，与主环境不兼容，必须各自独立——
+#   **不要把 Forge 的 3.10 当成漏改而统一成 3.12**。
 #
 # 来源：2026-09-23 从 WSL2 迁到本机 Linux 时，对 Linux 侧**实际运行环境**执行 pip freeze 后净化。
 #       原始快照与版本对照见 `docs/UPDATES.md` 该日条目；迁移中转包另有完整清单。
@@ -14,7 +21,7 @@
 #   sudo apt-get update
 #   sudo apt-get install -y build-essential cmake ninja-build git curl \
 #     sox libsox-fmt-all libportaudio2 libasound2-dev alsa-utils \
-#     python3.10 python3.10-venv python3.10-dev ffmpeg
+#     python3.12 python3.12-venv python3.12-dev ffmpeg
 #
 # llama-cpp-python 源码构建（CUDA 12.8）：
 #   环境内若残留 CC=x86_64-linux-gnu-gcc 会让 CMake 找不到宿主编译器，必须显式覆盖 CC/CXX：
