@@ -52,6 +52,10 @@ cpp_scheduler/build_*/
 cpp_scheduler/*.pyd
 cpp_scheduler/*.so
 
+# 本地依赖源码与第三方服务目录（CMake 直接引用 / Forge 服务，不作为仓库源码管理）
+cpp_scheduler/deps/
+stable-diffusion-webui-forge-main/
+
 # Report (ignore generated report files, keep source)
 # System_Architecture_and_Performance_Report.pdf
 System_Architecture_and_Performance_Report.toc

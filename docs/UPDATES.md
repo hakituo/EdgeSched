@@ -128,7 +128,7 @@
   - 陈旧杂项 4 个：`weight.json`（内含 d:\AI Windows 路径的 GPT-SoVITS 配置残留）、`experiments/test.jpg`（`experiments/overhead/comprehensive_experiment.py` 缺失时自建）、`resource_migration_summary_N5.json`（上述重复脚本的运行输出，原始 5 轮迭代 JSON 仍在 `paper/experiment_data/migration/`）、`verify_data_consistency.py`（357 行一次性核对工具，硬编码 legacy 时代数字，正文数据 2026-08-30 重置后已失准）。
 - 保留待用户决定跟踪与否的非脚本类未跟踪内容：论文/学位材料（`paper/`、`thesis_materials/`）、正式测试（`tests/test_baseline_*.py` 等 8 个）、C++ 未接入构建的新源码（`cpp_scheduler/api/`、`optimization/`、`main.cpp`、`tests/integration*`——CMake 只 GLOB core/workers/queue/utils）、无 Python 引用的生物系统桥（`services/biological_system.py`、`bio_state_store.py`、`domain/entities/character.py`、`memory/persistent_state.py`——对应 C++ 端经 GLOB 参与编译）、`artifacts/wheels/` 的 llama-cpp-python 0.3.35 wheel（免重编）、`scripts/fix_real_workload_agg.py`（`01_paper_main/real_workload_trace.json` 的生成脚本，按论文证据规则保留）。
 - 验证：删除前逐一通读内容并 grep 全仓引用（仅历史日期的 UPDATES 条目提及，无活引用）；三对疑似重复均先 `diff` 确认。删除后 `pytest -o asyncio_mode=auto tests/ -q`：580 passed / 5 skipped / 4 failed，失败全部为 WSL2 无 MPS control daemon 的已知 NO_GO，与删除前基线一致。
-- 备注：`cpp_scheduler/deps/` 与 `stable-diffusion-webui-forge-main/` 加入 .gitignore 的建议待用户批准后另行处理。
+- 备注：`cpp_scheduler/deps/` 与 `stable-diffusion-webui-forge-main/` 已于同日经用户批准加入 `.gitignore`（Build 段后新增本地依赖/服务目录段）。生效后未跟踪文件总数从 4396 降到 292（其中 `paper/` 227、`cpp_scheduler/` 16），剩余均为待用户圈定的真实工作文件。
 
 ## 2026-09-25（再续）git 主仓库迁回原生 Linux：复制 .git、行尾归一、废止 WSL2 同步提交流程
 
