@@ -117,6 +117,19 @@
 
 倒序追加，新条目放最上面。
 
+## 2026-09-26 未跟踪临时脚本清理：删除 16 个一次性/重复脚本，未跟踪文件澄清
+
+- 背景：git 重建后 status 折叠显示 147 行未跟踪目录，展开实为 4396 个文件；其中 2594 个是 `cpp_scheduler/deps/llama.cpp-master`（CMake 引用的本地依赖源码）、1494 个是 `stable-diffusion-webui-forge-main`（Forge 服务目录），两者均从未被跟踪、也不在 .gitignore，属基建噪音而非新增工作。用户要求先清理其中的临时脚本。
+- 已删除（16 个，均为一次性调试脚本或与已跟踪正本重复的散落副本）：
+  - 根目录一次性调试脚本 6 个：`test_env.sh`、`test_scheduler.sh`、`test_llm.sh`（引用不存在的 qwen2.5-7b 模型名）、`test_sched_import.py`、`test_cpp_sched.py`、`_test_route_task.py`——功能已被 `check_env.sh`、`cpp_scheduler/verify_bindings.py`、`tests/` 正式测试覆盖；
+  - `install_cuda_llama.sh`（引用已不存在的 `mvp_core/venv` 旧路径，无 sm_120 参数，编译命令已记录在本文档与 PROJECT_CONTEXT）；
+  - 与已跟踪正本逐字节相同的散落副本 3 个：根 `run_multiple_experiments.py`（正本 `experiments/migration/`）、根 `sync_to_wsl2_safe.ps1`（正本 `scripts/`）、`experiments/charts/generate_real_charts_legacy.py`（`paper/previous/` 有同副本）；
+  - WSL 时代契约验证脚本 2 个：`tests/scripts/verify_wsl_requirements.py`、`tests/scripts/verify_wsl_sync_policy.py`（守卫对象已废止，已跟踪的同族脚本迁移期已删）；
+  - 陈旧杂项 4 个：`weight.json`（内含 d:\AI Windows 路径的 GPT-SoVITS 配置残留）、`experiments/test.jpg`（`experiments/overhead/comprehensive_experiment.py` 缺失时自建）、`resource_migration_summary_N5.json`（上述重复脚本的运行输出，原始 5 轮迭代 JSON 仍在 `paper/experiment_data/migration/`）、`verify_data_consistency.py`（357 行一次性核对工具，硬编码 legacy 时代数字，正文数据 2026-08-30 重置后已失准）。
+- 保留待用户决定跟踪与否的非脚本类未跟踪内容：论文/学位材料（`paper/`、`thesis_materials/`）、正式测试（`tests/test_baseline_*.py` 等 8 个）、C++ 未接入构建的新源码（`cpp_scheduler/api/`、`optimization/`、`main.cpp`、`tests/integration*`——CMake 只 GLOB core/workers/queue/utils）、无 Python 引用的生物系统桥（`services/biological_system.py`、`bio_state_store.py`、`domain/entities/character.py`、`memory/persistent_state.py`——对应 C++ 端经 GLOB 参与编译）、`artifacts/wheels/` 的 llama-cpp-python 0.3.35 wheel（免重编）、`scripts/fix_real_workload_agg.py`（`01_paper_main/real_workload_trace.json` 的生成脚本，按论文证据规则保留）。
+- 验证：删除前逐一通读内容并 grep 全仓引用（仅历史日期的 UPDATES 条目提及，无活引用）；三对疑似重复均先 `diff` 确认。删除后 `pytest -o asyncio_mode=auto tests/ -q`：580 passed / 5 skipped / 4 failed，失败全部为 WSL2 无 MPS control daemon 的已知 NO_GO，与删除前基线一致。
+- 备注：`cpp_scheduler/deps/` 与 `stable-diffusion-webui-forge-main/` 加入 .gitignore 的建议待用户批准后另行处理。
+
 ## 2026-09-25（再续）git 主仓库迁回原生 Linux：复制 .git、行尾归一、废止 WSL2 同步提交流程
 
 - 背景：用户明确本机（无 WSL 内核特征，原生 Ubuntu-24.04-E）是以后唯一开发环境，不再使用 WSL2 双副本；要求把 Windows 副本 `D:\AI\xiaoyou-core\legacy\mvp_core\.git` 复制到 `/home/leslie/mvp_core`，并改写与此冲突的项目规则。
