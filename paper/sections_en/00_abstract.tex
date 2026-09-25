@@ -1,0 +1,12 @@
+\begin{abstract}
+\normalfont
+Deploying multiple AI services on consumer devices is constrained both by tight GPU memory budgets and by differences in workload behavior. In our target configuration, an 8GB GPU cannot comfortably host a resident LLM runtime and a bursty image-generation runtime at the same time, while existing solutions either target data centers or optimize a single model in isolation.
+
+This paper presents EdgeSched, a scheduler for local AI runtimes that multiplexes scarce accelerator memory across workloads with different service requirements. Its core mechanism is a constraint-aware asymmetric migration policy that separates fast, memory-safe downlink from low-interruption uplink restoration. The system further integrates workload-aware dispatch, backpressure control, cancellation semantics, and crash recovery to handle the main lifecycle events in this setting.
+
+Experiments on an RTX 5070 Laptop (8GB VRAM) show that, in the evaluated mixed-workload setting, EdgeSched keeps the resident service available in degraded form during burst-task execution, restores high-performance service predictably, and adds only modest scheduling overhead relative to a raw semaphore-based implementation.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Local AI Runtimes, Resource Scheduling, Large Language Models, Image Generation, GPU Memory Management
+\end{IEEEkeywords}

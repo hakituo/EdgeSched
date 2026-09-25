@@ -56,6 +56,9 @@ cpp_scheduler/*.so
 cpp_scheduler/deps/
 stable-diffusion-webui-forge-main/
 
+# 本地编译产物：llama-cpp-python CUDA wheel（141M，保留本地免重编，不入库）
+artifacts/wheels/
+
 # Report (ignore generated report files, keep source)
 # System_Architecture_and_Performance_Report.pdf
 System_Architecture_and_Performance_Report.toc
@@ -95,6 +98,8 @@ experiments/debug_vl_test.jpg
 # Include test image for experiments
 !experiments/test.jpg
 
-# 测试运行时产物：每次跑测试都会改写，不入库（文件保留在本地）
+# 测试/运行时 mmap 产物：每次运行都会改写，不入库（文件保留在本地）
 data/test_nvram.dat
 data/test_state_backplane.dat
+data/nvram.dat
+data/test_state_backplane.dat.bio

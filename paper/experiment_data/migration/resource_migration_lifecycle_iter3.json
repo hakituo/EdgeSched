@@ -1,0 +1,301 @@
+{
+  "test_name": "integrated_lifecycle",
+  "test_passed": true,
+  "error_message": "",
+  "llm_gpu_ttft_ms": 101.56177800005632,
+  "llm_cpu_ttft_ms": 0.0,
+  "migration_time_ms": 0.0,
+  "llm_still_working": false,
+  "migration_window_max_gap_ms": 0.0,
+  "migration_window_max_ttft_ms": 0.0,
+  "restore_time_ms": 1823.1938000008086,
+  "service_interruption_ms": 0.0,
+  "first_gpu_ttft_ms_after_restore": 0.0,
+  "kv_cache_preserved": false,
+  "restore_window_max_gap_ms": 0.0,
+  "restore_window_max_ttft_ms": 0.0,
+  "queued": false,
+  "queue_wait_time_ms": 0.0,
+  "eventually_executed": false,
+  "system_not_crashed": true,
+  "lifecycle_passed": true,
+  "coexistence_cpu_ttft_ms": 256.1875291428026,
+  "migration_stutter_ms": 1739.7658600002615,
+  "resources": {
+    "events": [
+      {
+        "t_s": 1.1444091796875e-05,
+        "name": "setup_started"
+      },
+      {
+        "t_s": 1.8087942600250244,
+        "name": "setup_ready"
+      },
+      {
+        "t_s": 1.8089323043823242,
+        "name": "lifecycle_start"
+      },
+      {
+        "t_s": 2.1139025688171387,
+        "name": "lifecycle_migration_trigger"
+      },
+      {
+        "t_s": 9.219939231872559,
+        "name": "lifecycle_restore_trigger"
+      },
+      {
+        "t_s": 11.615472078323364,
+        "name": "lifecycle_end",
+        "passed": true
+      },
+      {
+        "t_s": 11.615607738494873,
+        "name": "teardown_started"
+      }
+    ],
+    "samples": [
+      {
+        "t_s": 0.04955410957336426,
+        "llm_device": "unknown",
+        "proc_cpu_percent": 0.0,
+        "proc_rss_mb": 564.59765625,
+        "proc_vms_mb": 47381.0859375,
+        "thread_count": 39,
+        "gpu_used_mb": 557.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 32.0
+      },
+      {
+        "t_s": 0.5892448425292969,
+        "llm_device": "unknown",
+        "proc_cpu_percent": 85.4,
+        "proc_rss_mb": 2927.48046875,
+        "proc_vms_mb": 52021.73828125,
+        "thread_count": 40,
+        "gpu_used_mb": 680.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 3.0
+      },
+      {
+        "t_s": 1.134070873260498,
+        "llm_device": "unknown",
+        "proc_cpu_percent": 96.4,
+        "proc_rss_mb": 5159.23046875,
+        "proc_vms_mb": 52021.73828125,
+        "thread_count": 40,
+        "gpu_used_mb": 4850.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 65.0
+      },
+      {
+        "t_s": 1.6741490364074707,
+        "llm_device": "unknown",
+        "proc_cpu_percent": 100.9,
+        "proc_rss_mb": 2027.76171875,
+        "proc_vms_mb": 52016.0625,
+        "thread_count": 40,
+        "gpu_used_mb": 4850.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 64.0
+      },
+      {
+        "t_s": 2.214996576309204,
+        "llm_device": "gpu",
+        "proc_cpu_percent": 83.3,
+        "proc_rss_mb": 1224.41015625,
+        "proc_vms_mb": 81139.73828125,
+        "thread_count": 40,
+        "gpu_used_mb": 5416.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 15.0
+      },
+      {
+        "t_s": 2.7588772773742676,
+        "llm_device": "gpu",
+        "proc_cpu_percent": 98.1,
+        "proc_rss_mb": 1247.08203125,
+        "proc_vms_mb": 48391.46484375,
+        "thread_count": 40,
+        "gpu_used_mb": 892.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 9.0
+      },
+      {
+        "t_s": 3.307154655456543,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 86.4,
+        "proc_rss_mb": 3461.65625,
+        "proc_vms_mb": 52264.6171875,
+        "thread_count": 40,
+        "gpu_used_mb": 1958.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 53.0
+      },
+      {
+        "t_s": 3.8493950366973877,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 96.5,
+        "proc_rss_mb": 5659.046875,
+        "proc_vms_mb": 52760.22265625,
+        "thread_count": 40,
+        "gpu_used_mb": 4985.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 56.0
+      },
+      {
+        "t_s": 4.457205057144165,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 2840.5,
+        "proc_rss_mb": 5659.296875,
+        "proc_vms_mb": 53008.34375,
+        "thread_count": 71,
+        "gpu_used_mb": 6186.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 24.0
+      },
+      {
+        "t_s": 4.990916967391968,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 521.9,
+        "proc_rss_mb": 5659.296875,
+        "proc_vms_mb": 53008.34375,
+        "thread_count": 71,
+        "gpu_used_mb": 6687.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 96.0
+      },
+      {
+        "t_s": 5.530466556549072,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 241.9,
+        "proc_rss_mb": 5659.296875,
+        "proc_vms_mb": 52848.265625,
+        "thread_count": 47,
+        "gpu_used_mb": 6676.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 96.0
+      },
+      {
+        "t_s": 6.071998119354248,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 246.4,
+        "proc_rss_mb": 5659.296875,
+        "proc_vms_mb": 52848.265625,
+        "thread_count": 47,
+        "gpu_used_mb": 6677.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 87.0
+      },
+      {
+        "t_s": 6.610542297363281,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 253.1,
+        "proc_rss_mb": 5659.296875,
+        "proc_vms_mb": 52848.265625,
+        "thread_count": 47,
+        "gpu_used_mb": 6678.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 92.0
+      },
+      {
+        "t_s": 7.191545248031616,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 165.1,
+        "proc_rss_mb": 5659.296875,
+        "proc_vms_mb": 52848.265625,
+        "thread_count": 47,
+        "gpu_used_mb": 6678.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 89.0
+      },
+      {
+        "t_s": 7.736083030700684,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 130.8,
+        "proc_rss_mb": 5659.296875,
+        "proc_vms_mb": 52848.265625,
+        "thread_count": 47,
+        "gpu_used_mb": 6679.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 54.0
+      },
+      {
+        "t_s": 8.283527851104736,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 362.2,
+        "proc_rss_mb": 5659.296875,
+        "proc_vms_mb": 52848.265625,
+        "thread_count": 47,
+        "gpu_used_mb": 4354.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 35.0
+      },
+      {
+        "t_s": 8.821000337600708,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 270.5,
+        "proc_rss_mb": 5664.046875,
+        "proc_vms_mb": 52858.7265625,
+        "thread_count": 47,
+        "gpu_used_mb": 1519.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 13.0
+      },
+      {
+        "t_s": 9.359293222427368,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 11.2,
+        "proc_rss_mb": 5680.046875,
+        "proc_vms_mb": 52922.7265625,
+        "thread_count": 47,
+        "gpu_used_mb": 1520.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 4.0
+      },
+      {
+        "t_s": 9.913425922393799,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 94.6,
+        "proc_rss_mb": 10173.546875,
+        "proc_vms_mb": 57388.85546875,
+        "thread_count": 47,
+        "gpu_used_mb": 5709.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 78.0
+      },
+      {
+        "t_s": 10.453960180282593,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 102.9,
+        "proc_rss_mb": 8438.0546875,
+        "proc_vms_mb": 57383.1796875,
+        "thread_count": 47,
+        "gpu_used_mb": 5709.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 68.0
+      },
+      {
+        "t_s": 11.042649745941162,
+        "llm_device": "cpu",
+        "proc_cpu_percent": 90.4,
+        "proc_rss_mb": 6077.46484375,
+        "proc_vms_mb": 53543.3515625,
+        "thread_count": 47,
+        "gpu_used_mb": 6238.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 9.0
+      },
+      {
+        "t_s": 11.58208703994751,
+        "llm_device": "gpu",
+        "proc_cpu_percent": 64.5,
+        "proc_rss_mb": 1330.296875,
+        "proc_vms_mb": 81306.10546875,
+        "thread_count": 47,
+        "gpu_used_mb": 5408.0,
+        "gpu_total_mb": 8151.0,
+        "gpu_util_percent": 22.0
+      }
+    ]
+  }
+}

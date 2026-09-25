@@ -1,0 +1,74 @@
+{
+  "timestamp": "2026-05-05T04:39:25",
+  "data": [
+    {
+      "timestamp_s": 7.755839824676514,
+      "task_type": "LLM",
+      "latency_s": 0.3243293762207031,
+      "round": 1,
+      "phase": "gpu_before_image"
+    },
+    {
+      "timestamp_s": 9.834810018539429,
+      "task_type": "LLM",
+      "latency_s": 0.07790899276733398,
+      "round": 2,
+      "phase": "gpu_before_image"
+    },
+    {
+      "timestamp_s": 11.950837135314941,
+      "task_type": "LLM",
+      "latency_s": 0.11353588104248047,
+      "round": 3,
+      "phase": "gpu_before_image"
+    },
+    {
+      "timestamp_s": 17.568410634994507,
+      "task_type": "MIGRATION",
+      "latency_s": 1.134052038192749,
+      "phase": "gpu_to_cpu"
+    },
+    {
+      "timestamp_s": 25.79000234603882,
+      "task_type": "LLM",
+      "latency_s": 7.721369028091431,
+      "round": 4,
+      "phase": "cpu_during_image"
+    },
+    {
+      "timestamp_s": 28.155132055282593,
+      "task_type": "LLM",
+      "latency_s": 0.3635826110839844,
+      "round": 5,
+      "phase": "cpu_during_image"
+    },
+    {
+      "timestamp_s": 56.582481145858765,
+      "task_type": "IMAGE",
+      "latency_s": 39.01405954360962,
+      "round": 1,
+      "path": "/home/leslie/mvp_core/output/images/forge_1777927133477.png"
+    },
+    {
+      "timestamp_s": 70.7827262878418,
+      "task_type": "IMAGE",
+      "latency_s": 52.213332414627075,
+      "round": 2,
+      "path": "/home/leslie/mvp_core/output/images/forge_1777927147680.png"
+    },
+    {
+      "timestamp_s": 81.69563174247742,
+      "task_type": "RESTORE",
+      "latency_s": 10.912271738052368,
+      "phase": "cpu_to_gpu",
+      "success": true
+    },
+    {
+      "timestamp_s": 84.75994682312012,
+      "task_type": "LLM",
+      "latency_s": 2.061192512512207,
+      "round": 6,
+      "phase": "gpu_after_restore"
+    }
+  ]
+}

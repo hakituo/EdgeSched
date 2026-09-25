@@ -1,0 +1,74 @@
+\documentclass[tikz,border=10pt]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc,backgrounds,shapes.geometric}
+
+\begin{document}
+\begin{tikzpicture}[
+    font=\small,
+    >=Stealth,
+    node distance=10mm,
+    box/.style={draw, rounded corners=4pt, minimum height=14mm, align=center, inner sep=6pt, text width=32mm, font=\small},
+    gpbox/.style={box, fill=teal!12, draw=teal!50, line width=0.8pt},
+    cpbox/.style={box, fill=blue!12, draw=blue!50, line width=0.8pt},
+    actbox/.style={box, fill=orange!8, draw=orange!45, minimum height=12mm, text width=28mm, font=\footnotesize},
+    label/.style={font=\normalsize\bfseries},
+    arrow/.style={->, >=Stealth, line width=1pt},
+]
+
+% ==================== GPU to CPU Migration Flow ====================
+\node[label, text=teal!70, anchor=west] at (0, 5) {\textbf{Downlink (Urgent Mode)}};
+
+% Process boxes
+\node[gpbox] (t1) at (0, 3.2) {LLM on\\GPU};
+\node[actbox, right=of t1] (t2) {Image Task\\Arrives};
+\node[actbox, fill=teal!8, draw=teal!40, right=of t2] (t3) {Save KV Cache\\Release GPU};
+\node[actbox, right=of t3] (t4) {Load CPU\\LLM};
+\node[cpbox, right=of t4] (t5) {LLM on CPU\\Continues};
+\node[gpbox, right=of t5] (t6) {Image Model\\Occupies GPU};
+
+% Arrows
+\draw[arrow, draw=teal!50] (t1) -- (t2);
+\draw[arrow, draw=teal!50] (t2) -- (t3);
+\draw[arrow, draw=teal!50] (t3) -- (t4);
+\draw[arrow, draw=blue!50] (t4) -- (t5);
+\draw[arrow, draw=teal!50] (t5) -- (t6);
+
+% Migration window annotation (centered, no arrow)
+\node[font=\small, text=teal!70] at (10.5, 1.5) {Migration Window $\approx$ 8.8s};
+
+% ==================== CPU to GPU Restore Flow ====================
+\node[label, text=blue!70, anchor=west] at (0, -0.3) {\textbf{Uplink (Atomic Hot-Swap)}};
+
+% Process boxes
+\node[cpbox] (r1) at (0, -2.3) {LLM on CPU\\Running};
+\node[actbox, right=of r1] (r2) {Image Task\\Completes};
+\node[actbox, right=of r2] (r3) {Release Image\\Model};
+\node[actbox, fill=blue!8, draw=blue!40, right=of r3] (r4) {Preload GPU\\LLM Instance};
+\node[actbox, right=of r4] (r5) {Migrate\\KV Cache};
+\node[actbox, right=of r5] (r6) {Atomic Swap\\Hot Switch};
+\node[gpbox, right=of r6] (r7) {LLM on GPU\\Resumes};
+
+% Arrows
+\draw[arrow, draw=blue!50] (r1) -- (r2);
+\draw[arrow, draw=blue!50] (r2) -- (r3);
+\draw[arrow, draw=blue!50] (r3) -- (r4);
+\draw[arrow, draw=teal!50] (r4) -- (r5);
+\draw[arrow, draw=teal!50] (r5) -- (r6);
+\draw[arrow, draw=teal!50] (r6) -- (r7);
+
+% Restore window annotation (centered, no arrow)
+\node[font=\small, text=blue!70] at (10.5, -4.0) {Restore Window $\approx$ 11.2s};
+
+% ==================== Key Metrics (Centered) ====================
+\node[draw=gray!40, rounded corners=6pt, fill=gray!5, text width=66mm, align=center, font=\small,
+      inner sep=7pt, line width=0.8pt] at (10.5, -6.0) {
+    \textbf{Key Metrics Summary}\\[1.5mm]
+    {\setlength{\tabcolsep}{0pt}%
+    \begin{tabular}{@{}l@{\hspace{4pt}}r@{\hspace{10pt}}l@{\hspace{4pt}}r@{}}
+    \textbf{GPU TTFT:} & 112.9 ms & \textbf{Migration:} & 8.8 s \\
+    \textbf{CPU TTFT:} & 200.0 ms & \textbf{Restore:} & 11.2 s \\
+    \end{tabular}}
+};
+
+\end{tikzpicture}
+\end{document}

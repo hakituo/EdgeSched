@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-05T04:13:47",
+  "migration_stutter_ms": 10214.47393799997,
+  "coexistence_cpu_ttft_ms": 213.00112221428793,
+  "restore_time_ms": 10558.657661999972,
+  "restore_window_max_gap_ms": 0.0,
+  "llm_gpu_ttft_ms": 101.25591966666055,
+  "migration_time_ms": 0.0,
+  "failed_restore_count": 0,
+  "oom_count": 0,
+  "test_passed": true,
+  "llm_still_working": false,
+  "variant": "edgesched_migration",
+  "iteration": 5
+}

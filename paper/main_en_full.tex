@@ -1,0 +1,645 @@
+% Auto-generated flattened TeX file
+% EdgeSched Paper - English Version
+\documentclass[conference]{IEEEtran}
+
+% Packages
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{url}
+\usepackage{xurl}       % Better URL line breaking
+\usepackage{hyperref}
+\sloppy                  % Relax justification to reduce large word spaces
+\usepackage{float}       % Better float control
+\usepackage{adjustbox}   % For table scaling
+\usepackage[section]{placeins} % Keep floats near their sections
+
+% Warning cleanup for IEEEtran layout
+\emergencystretch=2em
+\hfuzz=20pt
+\hbadness=10000
+\vbadness=10000
+
+% Graphics path
+\graphicspath{{./figures/}}
+
+% Float placement preferences
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\setcounter{topnumber}{2}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{4}
+\renewcommand{\textfraction}{0.07}
+
+% Code highlighting
+\usepackage{listings}
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    language=Python
+}
+
+\begin{document}
+
+\title{EdgeSched: A Lightweight Multi-Modal AI Task Scheduler\\for Resource-Constrained Edge Devices}
+
+\author{
+\IEEEauthorblockN{Shihao Qi}
+\IEEEauthorblockA{\textit{Independent Researcher} \\
+Chongqing, China \\
+ORCID: 0009-0002-2954-3706}
+}
+
+\maketitle
+
+% >>> BEGIN INPUT sections_en/00_abstract
+\begin{abstract}
+\normalfont
+Deploying multiple AI services on consumer devices is constrained both by tight GPU memory budgets and by differences in workload behavior. In our target configuration, an 8GB GPU cannot comfortably host a resident LLM runtime and a bursty image-generation runtime at the same time, while existing solutions either target data centers or optimize a single model in isolation.
+
+This paper presents EdgeSched, a scheduler for local AI runtimes that must multiplex scarce accelerator memory across workloads with different service requirements. Its core mechanism is an asymmetric migration policy that separates fast, memory-safe downlink from low-interruption uplink restoration. The system further integrates workload-aware dispatch, backpressure control, cancellation semantics, and crash recovery to handle the main lifecycle events in this setting.
+
+Experiments on an RTX 5070 Laptop (8GB VRAM) show that, in the evaluated mixed-workload setting, EdgeSched keeps the resident service available in degraded form during burst-task execution, restores high-performance service predictably, and adds only modest scheduling overhead relative to a raw semaphore-based implementation.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Edge Computing, Resource Scheduling, Large Language Models, Image Generation, GPU Memory Management
+\end{IEEEkeywords}
+% <<< END INPUT sections_en/00_abstract
+% >>> BEGIN INPUT sections_en/01_introduction
+\section{Introduction}
+
+\subsection{Background and Motivation}
+
+In recent years, local AI applications on consumer-grade devices have grown rapidly. Users increasingly expect multiple AI services to remain available on the same personal device for privacy, responsiveness, and offline availability. Typical scenarios include combining assistant-style interaction with intermittent burst requests such as image generation or document processing. However, such devices remain severely resource-constrained: mainstream laptops are often equipped with only 8GB VRAM, which in our setting is not enough to keep both a resident LLM runtime and a bursty GPU-intensive generation runtime resident at the same time. The key difficulty is not simply that the two models are different, but that they impose different service obligations: the resident LLM service should remain reachable during contention, whereas the burst task may wait but should obtain exclusive accelerator access once admitted. This mismatch between limited dedicated VRAM and asymmetric service obligations motivates a lightweight scheduler for local AI runtimes.
+
+\subsection{Core Challenges}
+
+\textbf{Hard Memory Constraints}. In our tested configuration, 8GB VRAM is insufficient to keep both the LLM runtime (about 6--7GB including weights and KV cache) and the image model (about 6.7GB) resident at the same time, making traditional GPU isolation approaches impractical. When a GPU-intensive burst task arrives, the VRAM occupied by the resident task must be released or downgraded quickly to avoid CUDA OOM.
+
+\textbf{Asymmetric Service Requirements}. The two workload roles in our target setting behave differently at the service level, as shown in Table~\ref{tab:task_characteristics}:
+
+\begin{table}[htbp]
+\caption{Task Characteristics Comparison}
+\label{tab:task_characteristics}
+\centering
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Task Type & Resource & Latency & Queueable & Semantics \\
+ & Requirement & Sensitivity &  &  \\
+\midrule
+LLM Chat & GPU/CPU & High (streaming) & Low & Resident \\
+Image Gen & GPU-required & Medium (e2e) & High & One-shot \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The important point is not to build a broad taxonomy of local AI tasks, but to isolate the concrete asymmetry that drives scheduling decisions in this paper: one workload should stay reachable under contention, while the other can queue but needs exclusive GPU ownership to complete efficiently.
+
+\subsection{Limitations of Existing Solutions}
+
+Existing solutions mainly target two different design centers: (1) distributed scheduling frameworks (e.g., Ray, Kubernetes), which address cluster-level placement and orchestration but are generally mismatched to single-node consumer devices; and (2) single-model inference optimization systems (e.g., vLLM, FlexGen), which improve throughput or offloading efficiency for one model at a time but do not directly address service-level arbitration between multiple local services sharing the same constrained GPU.
+
+The scheduling problem for mixed local AI services on consumer hardware remains less studied than data-center scheduling and single-model serving. Existing solutions do not directly target contention between a continuously available, migratable service and a bursty GPU-exclusive job on 8GB-class devices, nor do they provide much support for maintaining availability during temporary degradation. EdgeSched targets this gap by focusing on the control consequence of this asymmetry: releasing GPU resources quickly on task arrival is a different problem from restoring high-performance service after the burst task finishes.
+
+\subsection{Our Contributions}
+
+This paper presents EdgeSched, a local scheduling framework for mixed AI workloads on consumer-grade devices, with core contributions including:
+
+\begin{enumerate}
+\item \textbf{Service-Role Characterization for Local Contention}. We characterize the target setting using a minimal service-role asymmetry: a resident interactive service should remain reachable under contention, whereas a burst task is queueable but requires exclusive GPU access once admitted. We use this characterization only to derive scheduling decisions in the studied setting, rather than as a general ontology for all local AI workloads.
+
+\item \textbf{Asymmetric Resource Migration Policy}. We show that symmetric migration is suboptimal in this setting because the two directions serve different control objectives: downlink prioritizes fast VRAM release for memory safety, while uplink prioritizes minimizing user-visible interruption. Based on this observation, we design separate downlink and uplink policies so that restoration defers the visible interruption to the final cut-over window in our evaluated setting.
+
+\item \textbf{Lifecycle-Aware Runtime Control}. We combine priority queues, backpressure control, cancellation semantics, and crash recovery (about 13 ms in our measurements) to provide predictable scheduling behavior under mixed workloads and failures.
+
+\item \textbf{Empirical Validation Against Practical Alternatives}. We evaluate the framework on an RTX 5070 Laptop (8GB VRAM) and compare it against restart-based, operator-managed, and generic memory-management alternatives, showing that these simpler designs do not simultaneously provide continuity, memory safety, and bounded recovery in our deployment setting.
+\end{enumerate}
+
+EdgeSched addresses an underexplored scheduling problem in local AI runtimes, instantiated here with LLM serving and image generation as a concrete high-conflict workload pair under dedicated-VRAM constraints.
+
+\textbf{Reproducibility}. The source code and experimental scripts are included in the supplementary material.
+% <<< END INPUT sections_en/01_introduction
+% >>> BEGIN INPUT sections_en/02_background
+\section{Background}
+
+\subsection{Edge Device Characteristics}
+
+Edge devices typically have the following characteristics:
+\begin{itemize}
+\item \textbf{Resource-Constrained}: Mainstream laptops equipped with 8GB VRAM, 16-32GB RAM, far below data center servers
+\item \textbf{Single-Machine Deployment}: No need for distributed coordination, but requires lightweight and efficient systems
+\item \textbf{High Stability Requirements}: In home/industrial scenarios, system crashes severely impact user experience
+\end{itemize}
+
+\subsection{Multi-Modal Task Characteristics}
+
+We characterize workloads on consumer-grade local AI devices using three orthogonal properties: service semantics, device affinity, and latency sensitivity. This view captures local runtime conflicts more directly than a taxonomy based only on model families.
+
+\textbf{Service Semantics}:
+\begin{itemize}
+\item \textbf{Resident Tasks}: Long-lived services that should remain continuously available and cannot tolerate extended periods without response. Interactive LLM assistants are the canonical example.
+\item \textbf{One-shot Tasks}: Bursty requests that are submitted, executed, and completed independently. Image generation is the representative example in this paper.
+\end{itemize}
+
+\textbf{Device Affinity}:
+\begin{itemize}
+\item \textbf{GPU-pinned Tasks}: Tasks whose latency is unacceptable without exclusive GPU execution. In practice, diffusion-based image generation falls into this category on commodity laptops.
+\item \textbf{Migratable Tasks}: Tasks that benefit substantially from GPU acceleration but can degrade to CPU execution while remaining usable, depending on quantization and the inference stack. Quantized LLM serving is the representative example.
+\end{itemize}
+
+\textbf{Latency Sensitivity}:
+\begin{itemize}
+\item \textbf{Interactive Tasks}: User-facing requests that require low delay and continuous responsiveness.
+\item \textbf{Queueable Tasks}: Tasks for which moderate waiting time is acceptable as long as they eventually complete successfully.
+\end{itemize}
+
+Under this abstraction, the current EdgeSched instantiation focuses on a particularly conflict-prone pair in local AI runtimes: LLM serving as a resident, migratable, latency-sensitive service, and image generation as a bursty, GPU-pinned, queueable job. The rest of the paper uses this pair as the concrete instance through which the scheduling policy is presented and evaluated.
+
+\subsection{Design Goals}
+
+Based on the above workload abstraction, EdgeSched's design goals include:
+
+\begin{enumerate}
+\item \textbf{Lightweight}: The scheduler itself must remain lightweight (fast startup, small memory), with model memory/VRAM accounted for separately.
+\item \textbf{Service Continuity under Resource Degradation}: Resident interactive tasks should preserve availability under GPU contention, even if they must temporarily degrade to CPU execution.
+\item \textbf{High Stability}: Crash recovery time should remain on the order of 10 ms, avoiding task state loss and dangling execution states.
+\item \textbf{Operational Simplicity}: The system should provide a simple interface and minimal deployment complexity for single-node local AI runtimes.
+\end{enumerate}
+% <<< END INPUT sections_en/02_background
+% >>> BEGIN INPUT sections_en/03_related_work
+\section{Related Work}
+
+\subsection{Local Inference Engines and Single-Model Optimization}
+
+The most relevant adjacent line of work focuses on improving local execution efficiency for a \emph{single} model on constrained hardware.
+
+\textbf{vLLM}\cite{kwon2023vllm} introduces \textit{PagedAttention} to manage KV cache efficiently and improve throughput in high-concurrency serving. However, its primary objective is high-throughput serving for one model, rather than service-level arbitration among heterogeneous tasks sharing a single constrained GPU.
+
+\textbf{FlexGen}\cite{sheng2023flexgen} uses aggressive tensor offloading to CPU and disk to run large models on limited hardware. While effective for capacity-oriented or offline settings, its I/O-heavy design is not aimed at preserving interactive continuity during rapid task switching.
+
+\textbf{Llama.cpp}\cite{llamacpp} enables practical LLM execution on consumer CPUs/GPUs through quantization and mmap-based loading. It is highly relevant as the local inference substrate in our setting, but it is not itself a scheduler for multiple heterogeneous services. Accordingly, our evaluation uses \texttt{llama.cpp + manual switching} as a practical baseline, rather than treating \texttt{llama.cpp} alone as a scheduling system.
+
+Other optimization efforts, including \textbf{PowerInfer}\cite{song2023powerinfer}, \textbf{Deja Vu}\cite{liu2023dejavu}, and \textbf{MLC LLM}\cite{wu2023mlc}, improve single-model execution via sparsity or compilation. These systems are complementary to our work: they optimize the internal execution path of one model, whereas EdgeSched arbitrates the lifecycle and resource ownership of multiple workload classes at the system level.
+
+More recent serving systems move closer to the scheduling boundary that motivates our work. \textbf{Splitwise}\cite{patel2024splitwise} and \textbf{P/D-Serve}\cite{jin2024pdserve} separate prefill and decode phases to improve utilization in high-throughput LLM serving. \textbf{Inference without Interference}\cite{hu2024interference} studies mixed downstream workloads and argues for disaggregating inference paths to reduce cross-workload interference. These systems are conceptually closer to EdgeSched than pure single-model optimizers because they recognize that different phases or request classes may require different control strategies. However, their design center remains server-style LLM serving with phase-aware resource allocation, rather than single-device arbitration between a resident service and an unrelated GPU-exclusive application.
+
+This distinction matters for evaluation: if one wanted stronger external comparators than manual switching or OS-managed memory, systems in the Splitwise/P-D-Serve/Inference-without-Interference family would be the most credible conceptual references. At the same time, they are not drop-in baselines for our deployment because they assume LLM-serving stacks, batching-oriented request flows, or distributed/server-class execution environments that do not match our LLM-plus-image-generation setting.
+
+\subsection{Application-Level Memory Arbitration}
+
+Traditional OS scheduling provides mature mechanisms for CPU processes, but it offers limited control over GPU memory ownership at the application level. Under dedicated-VRAM constraints, relying purely on OS-level paging, swap-like behavior, or unified-memory style fallback can lead to severe thrashing or timeout when multiple VRAM-intensive workloads compete. Our evaluation confirms this effect through the LRU/unified-memory baseline.
+
+EdgeSched addresses a different question from single-model inference engines: how to arbitrate between a \emph{resident, migratable, latency-sensitive} workload and a \emph{bursty, GPU-pinned, queueable} workload on a single consumer device. The key contribution is therefore not a new low-level primitive, but a control consequence of service-role asymmetry: the scheduler must release VRAM quickly on the downlink path while deferring visible interruption on the uplink path.
+
+This is also where EdgeSched differs from a mere engineering bundle. Priority queues, offloading, and crash recovery each exist elsewhere; the paper's claim is that the studied local-runtime setting imposes different control objectives on the two migration directions, which in turn justifies separating urgent downlink from continuity-oriented restoration.
+
+\subsection{General-Purpose Orchestration Systems}
+
+Frameworks such as \textbf{Ray}\cite{moritz2018ray} and \textbf{Kubernetes}\cite{verma2015borg} are designed for distributed orchestration across clusters or containers. They provide general-purpose scheduling abstractions, fault handling, and elastic resource management, but their design center is multi-node coordination rather than sub-second resource arbitration on a single consumer device. Even edge extensions such as \textbf{KubeEdge}\cite{xiong2019kubeedge} inherit much of the architectural overhead of cloud-native orchestration.
+
+We mention these systems only to clarify scope: EdgeSched does not target distributed placement or cluster-level orchestration. Instead, it targets single-node local AI runtimes with limited dedicated VRAM. Therefore, Ray/Kubernetes-style systems are relevant primarily as \emph{positioning references}, not as direct experimental baselines in our deployment setting.
+
+\subsection{Comparison Summary}
+
+Table~\ref{tab:comparison} summarizes the role of representative prior systems relative to EdgeSched.
+
+\begin{table}[htbp]
+\caption{Comparison of Representative Systems}
+\label{tab:comparison}
+\centering
+\scriptsize
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+System & Primary & Deploy. & Sched. & Multi-Workload & Overhead \\
+ & Focus & Scope & Level & Arbitration & Profile \\
+\midrule
+Ray & Dist. orchestration & Cluster & Coarse & Yes & High \\
+Kubernetes & Container orchestration & Cluster & Coarse & Yes & High \\
+vLLM & Single-model throughput & Server & Intra-model & No & Medium \\
+FlexGen & Capacity via offloading & Single model & Intra-model & No & Medium \\
+Splitwise / P-D-Serve & Phase-disagg. serving & Server & Inter-phase & Partial & Medium \\
+Inference w/o Interference & Mixed LLM workloads & Server & Inter-service & Partial & Medium \\
+Llama.cpp & Local inference & Consumer & None & No & Low \\
+\textbf{EdgeSched} & Local AI scheduling & Consumer & Inter-service & Yes & \textbf{Low} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+% <<< END INPUT sections_en/03_related_work
+% >>> BEGIN INPUT sections_en/04_system_design
+\section{System Design}
+
+\subsection{Architecture Overview}
+
+EdgeSched adopts a layered architecture design, as illustrated in Figure~\ref{fig:architecture}. The system is divided from top to bottom into presentation layer, domain layer, control plane, execution layer, and data adapter layer. User requests enter the system through WebSocket interfaces, processed by domain layer business logic, then uniformly routed by the control plane to corresponding execution components.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.95\columnwidth]{system_architecture.pdf}
+\caption{EdgeSched system architecture with layered design. The control plane orchestrates task routing while the execution plane manages GPU/CPU resource migration.}
+\label{fig:architecture}
+\end{figure}
+
+The control plane contains three core components:
+\begin{enumerate}
+\item \textbf{GlobalTaskScheduler} serves as the L1 routing layer, responsible for task distribution, managing priority queues, cancellation events, and image task backpressure control
+\item \textbf{CPPSchedulerEngine} serves as the L2 high-performance execution layer, encapsulating the llama-cpp-python inference engine, implementing GPU/CPU dynamic resource migration
+\item \textbf{StateBackplane} implements zero-copy state persistence based on mmap, supporting task state recovery within 12ms after crashes
+\end{enumerate}
+
+The execution layer contains ResourceManager, responsible for coordinating model lifecycle and GPU/CPU resource allocation, arbitrating resource contention among multiple models. The data adapter layer contains LLM Adapter and Image Adapter, respectively encapsulating large language model (GGUF format) and image generation model (Stable Diffusion) inference logic, shielding differences in underlying inference engines, supporting seamless switching among multiple backends.
+
+\subsection{Dual-Task Scheduling}
+
+EdgeSched instantiates the setting introduced in Section~2 using a concrete high-conflict pair in local AI runtimes: resident, interactive, migratable LLM serving and bursty, GPU-pinned image generation. The former should remain reachable even under temporary degradation, while the latter can be queued but requires exclusive GPU access to complete within acceptable latency.
+
+The scheduler therefore treats the two classes differently. LLM tasks are directly submitted to CPPSchedulerEngine through \texttt{submit\_llm\_task()} and occupy the GPU by default to maintain low latency. Image generation tasks enter an independent bounded queue through \texttt{try\_enqueue\_image\_generation()}. When an image task arrives while the LLM occupies GPU VRAM, the scheduler triggers resource migration so that the resident task degrades to CPU execution and the burst task obtains exclusive GPU access. If multiple image tasks arrive consecutively, subsequent tasks queue, and when the queue is full, the backpressure mechanism rejects new tasks to avoid resource exhaustion and unstable system behavior. Algorithm~\ref{alg:scheduling} presents the core scheduling logic.
+
+\begin{algorithm}[!t]
+\caption{Task Scheduling with Backpressure}
+\label{alg:scheduling}
+\begin{algorithmic}[1]
+\STATE \textbf{function} \textsc{SubmitTask}(task)
+\IF{task.type == LLM}
+    \STATE Submit to CPPSchedulerEngine
+    \STATE Allocate GPU by default
+\ELSIF{task.type == IMAGE}
+    \IF{queue.size() $<$ total\_slots}
+        \STATE Enqueue task
+        \IF{LLM is on GPU}
+            \STATE Trigger \textsc{OffloadToGPU}()
+        \ENDIF
+    \ELSE
+        \STATE \textbf{throw} QueueFullError
+    \ENDIF
+\ENDIF
+\STATE \textbf{end function}
+\end{algorithmic}
+\end{algorithm}
+
+This design is intended to preserve the availability of the resident service while providing predictable resource allocation for burst tasks.
+
+The design intent is not simply to prioritize one queue over another. Rather, the scheduler treats the two roles as carrying different obligations: the resident service should remain reachable throughout contention, whereas the burst task may wait but should receive exclusive GPU ownership once admitted. This observation drives the control logic in the rest of the section.
+
+
+\subsection{Design Rationale for Asymmetric Migration}
+
+The key observation behind EdgeSched is that the two directions of migration serve different control objectives. When a bursty GPU-pinned task arrives, the system is under hard VRAM pressure: the immediate objective is to minimize time-to-release so that the GPU can be reclaimed before OOM occurs. In this phase, brief service degradation of the resident task is acceptable, whereas delayed GPU release is not. In contrast, once the burst task completes and VRAM becomes available again, the immediate objective is no longer memory safety but minimizing user-visible interruption while restoring high-performance inference. In this phase, preserving service continuity is more important than minimizing raw reload time.
+
+This asymmetry means that a single symmetric migration routine is suboptimal. The GPU$\rightarrow$CPU path should prioritize fast VRAM release and context preservation, while the CPU$\rightarrow$GPU path should prioritize low-interruption recovery and delayed cut-over. EdgeSched therefore adopts two different policies: \textbf{Urgent Mode} for downlink migration and \textbf{Atomic Hot-Swap} for uplink restoration.
+
+Put differently, the novelty claim of EdgeSched is not that priority queues, model offloading, or state recovery are individually new. The claim is that, on a single memory-constrained device, the two migration directions must be governed by \emph{different control objectives}. If the system instead used a symmetric reload procedure in both directions, it would either delay VRAM release on burst-task arrival or impose unnecessary user-visible interruption during restoration.
+
+\subsection{Dynamic Resource Migration}
+
+Figure~\ref{fig:migration_flow} illustrates the complete resource migration workflow.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.95\columnwidth]{migration_flow.pdf}
+\caption{Resource migration workflow showing asymmetric strategies: Urgent Mode (GPU$\rightarrow$CPU) for rapid preemption and Atomic Hot-Swap (CPU$\rightarrow$GPU) for low-interruption recovery.}
+\label{fig:migration_flow}
+\end{figure}
+
+\subsubsection{Asymmetric Migration Strategy}
+
+\textbf{Downlink (GPU $\rightarrow$ CPU): Urgent Mode}. When image tasks arrive, the system triggers urgent migration to release VRAM quickly. This policy is optimized for memory safety: it first copies the KV cache from VRAM to host memory through \texttt{save\_state()} (about 200--300 ms in our measurements), preserving conversation context; it then releases GPU allocations so that the image model can be loaded with lower OOM risk. After release, the system starts two operations in parallel: background loading of a CPU LLM instance (helped by the OS page cache) and loading the image generation model to GPU. In other words, Urgent Mode accepts brief performance degradation in exchange for bounded time-to-release.
+
+\textbf{Uplink (CPU $\rightarrow$ GPU): Atomic Hot-Swap}. When image tasks complete and VRAM becomes available again, the system executes atomic hot-swap to restore high-performance LLM inference. This policy is optimized for service continuity rather than immediate cut-over. It adopts a double-buffering strategy:
+\begin{enumerate}
+\item \textbf{Preload}: First load a fresh LLM instance on GPU while the CPU instance continues serving user requests
+\item \textbf{Hot Transfer}: Once the GPU instance is ready, briefly pause the CPU instance, extract the KV cache through \texttt{save\_state()}, and load it into the GPU instance
+\item \textbf{Switch \& Unload}: Finally atomically replace the active instance pointer, route new requests to the GPU instance, and asynchronously unload the CPU instance
+\end{enumerate}
+
+In our implementation, this mode limits the user-visible interruption during restoration to the final state-transfer and cut-over window, rather than the full GPU reload time. Conceptually, this design is closer to established availability-oriented techniques such as preloading and delayed cut-over than to a claim of inventing a new low-level primitive~\cite{cully2008remus}. What EdgeSched contributes is the decision to apply such a continuity-oriented policy only on the uplink path, while using a more aggressive memory-safety policy on the downlink path.
+
+\subsubsection{Implementation Mechanisms}
+
+Asymmetric migration implementation relies on three core mechanisms:
+\begin{enumerate}
+\item \textbf{Concurrency Control}: \texttt{asyncio.Lock()} keeps instance replacement atomic and reduces race-condition risk
+\item \textbf{State Serialization}: llama-cpp-python's \texttt{save\_state()} / \texttt{load\_state()} interfaces are used to migrate KV-cache state between GPU-backed and CPU-backed instances
+\item \textbf{Async Cleanup}: Background release of old instances through \texttt{asyncio.create\_task()} avoids blocking the main service path
+\end{enumerate}
+
+\subsection{Backpressure Control}
+
+Image generation tasks are computationally intensive with large VRAM occupation; the system adopts bounded queues to prevent resource exhaustion. Image queue capacity is jointly determined by \texttt{queue\_capacity} (default 8) and \texttt{max\_concurrent} (default 1), with total slots being their sum (default 9). \texttt{max\_concurrent} represents concurrent execution count, \texttt{queue\_capacity} represents queued waiting count.
+
+Queue management is implemented through \texttt{try\_enqueue\_image\_generation()}: the system uses \texttt{asyncio.Queue(maxsize=total\_slots)} to create a bounded queue; if the queue is not full, tasks enqueue for execution; if full, it raises \texttt{RuntimeError("Image queue is full")} to reject requests. This design aims to keep system behavior predictable under high load, rather than allowing unbounded task accumulation that can worsen memory pressure and response latency.
+
+Additionally, the system tracks image task states (pending/running/completed), supporting task cancellation and result queries, and making task lifecycle state visible to users.
+
+\subsection{Cancellation Semantics}
+
+The system supports users actively canceling executing or queued tasks, adopting cooperative interruption strategies to avoid resource leaks.
+
+\textbf{LLM Streaming Cancellation}. LLM generation adopts streaming output, implementing cooperative cancellation through \texttt{asyncio.Event}. After users call \texttt{cancel\_llm\_request(request\_id)}, the system sets a cancellation flag; the generation loop checks the flag after each token and stops subsequent generation if set. This mode avoids forced termination and reduces the chance of resource leaks.
+
+\textbf{Image Task Cancellation}. Queued image tasks are directly discarded; executing tasks set cancellation flags but cannot be forcibly interrupted (must wait for completion). The system provides cancellation capability through the \texttt{cancel\_image\_job(job\_id)} interface; results of canceled tasks are discarded and not pushed to users.
+
+\textbf{Limitations}. The system does not support hard interruption (forcibly killing GPU tasks), determined by CUDA VRAM management mechanisms. Running image tasks must wait for completion; cancellation only affects whether results are pushed. This design acknowledges the boundary of non-hard-interruptibility, balancing resource safety and response speed.
+
+\subsection{Crash Recovery}
+
+Edge device environments are unstable; systems may crash due to power outages or exceptions. StateBackplane implements zero-copy state persistence based on mmap, designed to recover task states within 12ms after system restart.
+
+\textbf{Data Layout}. The persistence file size is 1MB, divided into three regions: Header (8B) stores Magic Number and version number for data integrity verification; Task Slots (32 slots, 48B each) store task ID, state, priority, and timestamp; remaining space reserved for expansion.
+
+\textbf{Persistence Mechanism}. When task states change, real-time writing to mmap file through \texttt{register\_task()} and \texttt{update\_task\_status()}. Since mmap directly maps files to memory address space, read/write operations are equivalent to memory access, requiring no traditional I/O data copying, with latency only at microsecond level.
+
+\textbf{Recovery Process}. Upon system restart, StateBackplane initialization reads the persistence file: verifies the magic number and version to ensure correct data format; traverses 32 task slots, extracting active tasks with non-zero states; re-adds Pending-state tasks to the scheduling queue; and marks Running-state tasks as Failed to avoid hanging tasks. This design preserves recoverable task metadata after crashes and provides minimally viable task-closure semantics. Algorithm~\ref{alg:recovery} details the recovery logic.
+
+\begin{algorithm}[!t]
+\caption{Crash Recovery Process}
+\label{alg:recovery}
+\begin{algorithmic}[1]
+\STATE \textbf{function} \textsc{RecoverFromCrash}()
+\STATE Open mmap file
+\IF{magic\_number $\neq$ EXPECTED}
+    \STATE \textbf{throw} CorruptedDataError
+\ENDIF
+\STATE recovered\_tasks $\leftarrow$ []
+\FOR{slot in task\_slots[0:32]}
+    \IF{slot.state $\neq$ EMPTY}
+        \IF{slot.state == PENDING}
+            \STATE Re-enqueue to scheduler
+        \ELSIF{slot.state == RUNNING}
+            \STATE Mark as FAILED
+        \ENDIF
+        \STATE recovered\_tasks.append(slot)
+    \ENDIF
+\ENDFOR
+\STATE \textbf{return} recovered\_tasks
+\STATE \textbf{end function}
+\end{algorithmic}
+\end{algorithm}
+% <<< END INPUT sections_en/04_system_design
+% >>> BEGIN INPUT sections_en/05_implementation
+\section{Implementation}
+\label{sec:implementation}
+
+\subsection{Technology Stack}
+
+EdgeSched is implemented based on Python 3.10. Core Framework: FastAPI 0.110+ provides WebSocket API, Uvicorn serves as ASGI server, Pydantic 2.6+ for data validation. Machine Learning Inference: llama-cpp-python 0.2+ for LLM inference (GGUF format), PyTorch 2.0+ with Diffusers 0.25+ for image generation (Stable Diffusion). Async Runtime: asyncio implements coroutine-based concurrency, aiohttp as async HTTP client. Hardware Configuration: NVIDIA GeForce RTX 5070 Laptop (8GB VRAM), AMD Ryzen 9 8940HX, 32GB DDR5, Windows 11.
+
+\subsection{Key Module Implementation}
+
+\textbf{Dynamic Resource Migration}. When image tasks arrive, the system offloads the resident LLM by saving its state, releasing GPU memory, and restoring execution on CPU. During uplink restoration, Atomic Hot-Swap ensures that the CPU instance continues serving requests while the GPU instance preloads in the background. Algorithm~\ref{alg:migration} presents the core migration logic.
+
+\begin{algorithm}[!t]
+\caption{Dynamic GPU-CPU Migration}
+\label{alg:migration}
+\begin{algorithmic}[1]
+\STATE \textbf{function} \textsc{OffloadToGPU}()
+\STATE \quad Save KV cache state
+\STATE \quad Release GPU VRAM
+\STATE \quad Load CPU backend asynchronously
+\STATE \textbf{end function}
+\STATE
+\STATE \textbf{function} \textsc{RestoreToGPU}()
+\STATE \quad Preload GPU instance in background
+\STATE \quad Wait until GPU ready
+\STATE \quad Atomic switch: CPU $\rightarrow$ GPU
+\STATE \textbf{end function}
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Task Queue Management}. Image queue uses bounded capacity to prevent resource exhaustion. When full, new tasks are immediately rejected with backpressure signals.
+
+\textbf{State Persistence}. StateBackplane uses mmap for zero-copy I/O. Task states are serialized via struct.pack and written to memory-mapped files, enabling low-overhead persistence and recovery on the order of 10 ms in our measurements.
+
+\subsection{Deployment Configuration}
+
+\textbf{LLM Configuration}:
+\begin{itemize}
+\item Model: Qwen2.5-7B-Instruct (GGUF format, Q4\_K\_M quantization)
+\item Model weights: $\sim$4.7GB
+\item KV Cache: roughly 1--2GB at context length 4096 in our tested configuration
+\item Total VRAM occupation: $\sim$6-7GB
+\item GPU layers: Default -1 (auto-allocate), typically loads 25-33 layers in 8GB VRAM environment
+\item First token timeout: 30 seconds
+\item Max generation tokens: 512
+\end{itemize}
+
+\textbf{Image Generation Configuration}:
+\begin{itemize}
+\item Model: SDXL Turbo 1.0 (fp16 precision, $\sim$6.7GB)
+\item Loading strategy: On-demand loading, unload after completion to release VRAM
+\item Max concurrent: 1
+\item Queue capacity: 8
+\item Total slots: 9 (concurrent + queued)
+\item Image size: 512$\times$512
+\item Inference steps: 20
+\end{itemize}
+% <<< END INPUT sections_en/05_implementation
+% >>> BEGIN INPUT sections_en/06_evaluation
+\section{Evaluation}
+
+\subsection{Experimental Setup}
+
+We evaluate EdgeSched using the deployment configuration described in Section~\ref{sec:implementation}. To make the evaluation criteria explicit, we group the results into five system properties: \textbf{availability}, \textbf{latency degradation}, \textbf{recovery time}, \textbf{throughput overhead}, and \textbf{completion behavior under load}. These categories correspond to the paper's main claims: keeping the resident service reachable, bounding the cost of temporary degradation, restoring high-performance execution predictably, limiting scheduler cost, and remaining operational under mixed workloads and failures.
+
+\textbf{Evaluation Metrics}:
+\begin{itemize}
+\item \textbf{Availability}: whether the resident service remains usable while the burst workload occupies the GPU
+\item \textbf{Latency Degradation}: TTFT (Time To First Token) and visible interruption during migration and coexistence
+\item \textbf{Recovery Time}: time required to restore service after workload switching or process failure
+\item \textbf{Throughput Overhead}: reduction in aggregate throughput relative to a minimal semaphore-based implementation
+\item \textbf{Task Success Rate}: whether submitted tasks complete without observed loss under mixed load and crash scenarios
+\end{itemize}
+
+\textbf{Baseline Design Rationale}. We compare EdgeSched against practical alternatives that represent distinct design philosophies rather than arbitrary implementations. \textbf{Cold restart} represents a \emph{restart-based design} that resolves conflicts by killing and reloading the resident workload. \textbf{Manual model switching} represents an \emph{operator-managed design} in which resource arbitration is pushed outside the runtime. \textbf{OS-level LRU/unified-memory style behavior} represents a \emph{generic memory-management approach} without application-level workload semantics. \textbf{Symmetric migration} represents a \emph{uniform-strategy design} that applies the same stop$\rightarrow$migrate$\rightarrow$resume logic in both directions, without the asymmetric optimization of EdgeSched's Atomic Hot-Swap. For overhead only, we also report a \textbf{raw semaphore-based implementation} as an implementation-cost reference rather than as a full scheduling baseline.
+
+\subsection{Availability and Latency Degradation}
+
+EdgeSched's core capability is enabling a resident, migratable workload and a bursty, GPU-pinned workload to time-share a single 8GB GPU, with the resident workload falling back to system RAM during preemption. In our instantiation, these two workload classes correspond to LLM serving and image generation, respectively.
+
+\subsubsection{Migration Latency and Coexistence}
+
+We measured system behavior during a complete migration cycle: (1) LLM running on GPU, (2) image task preemption (LLM offload to CPU), (3) image task execution, and (4) LLM migration back to GPU. Table~\ref{tab:migration} presents the resource migration performance metrics, and Figure~\ref{fig:migration} visualizes the complete migration timeline showing the asymmetric behavior of downlink (GPU$\rightarrow$CPU) and uplink (CPU$\rightarrow$GPU) paths.
+
+\input{tables/tab_migration}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{fig_resource_migration.pdf}
+\caption{Migration timeline with TTFT measurements. The diagram shows the asymmetric behavior of downlink migration (Urgent Mode) and uplink restoration (Atomic Hot-Swap).}
+\label{fig:migration}
+\end{figure}
+
+\textbf{Analysis}:
+\begin{itemize}
+\item \textbf{Availability}: the resident workload remains available during burst-task execution by degrading to CPU service instead of becoming unavailable.
+\item \textbf{Low-Interruption Recovery}: User-perceived interruption (Restore Gap) remains below the measurement resolution in our runs, and is substantially smaller than the background model reloading time (Restore Time, ~1.9s). This behavior is consistent with the \textbf{Atomic Hot-Swap} strategy: the CPU instance continues serving requests while the GPU instance preloads in the background.
+\item \textbf{Latency Degradation}: During the coexistence phase, the LLM service on CPU demonstrates an average TTFT of \textbf{259.0 $\pm$ 23.0 ms} ($N=5$). This latency is higher than GPU TTFT but remains usable for interactive service during the temporary migration period.
+\item \textbf{Migration Cost}: The initial offload stutter (\textbf{1666.9 $\pm$ 144.3 ms}) reflects the physical cost of memory movement. EdgeSched confines this cost to the start of the burst workload rather than paying it repeatedly during the coexistence phase.
+\end{itemize}
+
+\subsubsection{Queue Backpressure and Mutual Exclusion}
+
+To verify that availability is preserved under queued burst requests, we submitted concurrent image generation tasks during active LLM sessions.
+
+\begin{itemize}
+\item \textbf{Queue Wait Time}: the second image task waited 10,024.8 ms in queue
+\item \textbf{Behavior}: the system enforced strict GPU mutual exclusion; the second task queued until the first task completed and released resources rather than triggering OOM
+\item \textbf{Availability}: throughout image queue processing, the resident LLM service remained responsive on CPU
+\end{itemize}
+
+\subsubsection{Real Workload Trace}
+
+Figure~\ref{fig:real_workload} presents the complete timeline of a real interactive session with LLM chat and image generation.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\columnwidth]{chart_real_workload_trace.pdf}
+\caption{Real workload trace showing TTFT before, during, and after image burst. GPU TTFT: 0.08--0.34s; CPU TTFT during image: 2.3--7.8s; Restored GPU TTFT: 2.26s.}
+\label{fig:real_workload}
+\end{figure}
+
+\textbf{Observations}:
+\begin{itemize}
+\item \textbf{GPU Phase}: TTFT ranges 0.08--0.34s, demonstrating responsive interaction
+\item \textbf{Migration}: GPU$\rightarrow$CPU migration takes 1.23s
+\item \textbf{Coexistence Phase}: CPU TTFT increases to 2.3--7.8s during image generation, but the service remains degraded yet available
+\item \textbf{Restore}: CPU$\rightarrow$GPU restore takes 14.89s (background preload + state transfer)
+\item \textbf{Post-Restore}: GPU TTFT returns to 2.26s (includes KV cache restoration)
+\end{itemize}
+
+\FloatBarrier
+
+\subsection{Recovery Time}
+
+We evaluate recovery in two forms: \textbf{service recovery} after burst-task completion, and \textbf{failure recovery} after process crash.
+
+\subsubsection{Restart-Based Recovery vs. Atomic Hot-Swap}
+
+We compare the latency of two strategies when switching from image generation back to the resident service: (1) \textbf{Cold Start}, which represents a restart-based design that kills and restarts the resident workload and reloads model weights from disk; and (2) \textbf{Atomic Hot-Swap}, our proposed strategy with KV-cache preservation and instance preloading. Table~\ref{tab:cold_start} presents the comparison across different context sizes.
+
+\input{tables/tab_cold_start}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\columnwidth]{chart_cold_start_comparison.pdf}
+\caption{Recovery latency comparison: restart-based recovery vs. Atomic Hot-Swap. The Hot-Swap policy achieves 2.6--10.3$\times$ speedup across context sizes.}
+\label{fig:cold_start}
+\end{figure}
+
+\textbf{Key Finding}: Atomic Hot-Swap achieves \textbf{2.6--10.3$\times$} faster recovery than cold restart. Interpreted as a design comparison, this shows that a restart-based approach turns restoration into multi-second service interruption, whereas EdgeSched preserves continuity during background reload and limits visible disruption to the final cut-over.
+
+\subsubsection{Crash Recovery as Lifecycle Robustness}
+
+Beyond migration behavior, we also evaluate whether the scheduler closes task lifecycles correctly under failures. We therefore measure the \textbf{State Backplane}'s recovery performance by injecting random process crashes (SIGKILL) during task execution. Table~\ref{tab:crash_recovery} presents the crash recovery comparison results.
+
+\input{tables/tab_crash_recovery}
+
+\textbf{Analysis}:
+\begin{itemize}
+\item \textbf{Recovery Time}: the mmap-based backplane recovers task metadata in about 13.1 ms in our measurements
+\item \textbf{Lifecycle Closure}: EdgeSched identifies interrupted "Running" tasks and marks them as recoverable failure states upon restart, avoiding the accumulation of inconsistent task states after crashes
+\item \textbf{Recovery Overhead}: startup overhead remains small (about 3 ms), and individual state operations stay below 0.01 ms in our measurements
+\end{itemize}
+
+\subsection{Baseline Behavior Under Alternative Designs}
+
+This subsection clarifies how the retained baselines relate to the scheduling claims made in this paper.
+
+Taken together with the restart-based comparison in Table~\ref{tab:cold_start}, the baselines used here cover two practical alternatives in our deployment class: (1) \emph{restart-based restoration}, which releases contention by tearing down and later reloading the resident service; and (2) \emph{OS-managed memory arbitration}, which relies on generic memory-management behavior instead of explicit application-level scheduling. We use these alternatives because they are realistic choices on a single consumer device, even though they do not implement the same service semantics as EdgeSched.
+
+We also note an important evaluation limitation. Stronger conceptual references exist in the recent LLM-serving literature, especially phase-disaggregated or interference-aware systems such as Splitwise, P/D-Serve, and Inference without Interference. These systems are closer in spirit to EdgeSched than our practical baselines, but they are not drop-in experimental baselines for this setting because they target server-style LLM serving stacks rather than single-device arbitration between LLM serving and image generation. We therefore use them primarily as positioning references and leave direct reimplementation or adaptation to future work.
+
+\subsubsection{OS-Level Memory Management (LRU/Unified Memory)}
+
+We evaluate whether OS-level memory management can handle multi-model concurrency without application-level scheduling. This baseline represents a generic memory-management approach \emph{without application-level arbitration}: the system relies on OS-level LRU or unified-memory style behavior instead of explicit migration control. Table~\ref{tab:lru} shows the results.
+
+\input{tables/tab_lru}
+
+\textbf{Key Finding}: OS-level LRU/unified-memory behavior becomes unusable under our concurrent workload. When both workloads compete for memory, the system exhibits severe thrashing and unstable latency rather than controlled degradation. This supports the need for explicit application-level scheduling informed by workload semantics.
+
+\subsubsection{Symmetric Migration Baseline}
+
+A natural alternative to EdgeSched's asymmetric design is a \textbf{symmetric migration} strategy that applies the same stop$\rightarrow$migrate$\rightarrow$resume logic in both directions. Under this design, the uplink path (CPU$\rightarrow$GPU) does not use background preloading or atomic hot-swap; instead, it stops the CPU service, loads the GPU model from scratch, and then resumes---the same procedure used in the downlink direction. This baseline isolates the contribution of EdgeSched's \emph{asymmetric} optimization: the Atomic Hot-Swap on the uplink path.
+
+Table~\ref{tab:migration} compares all four designs. The symmetric migration baseline achieves the same coexistence availability as EdgeSched (CPU TTFT $\approx$259 ms during burst workload), because the downlink path is identical. However, its uplink service interruption equals the full model reload time ($\approx$8.4s at 512 tokens), compared with EdgeSched's near-zero visible interruption. This confirms that the asymmetric design---specifically, background preloading combined with atomic instance swap---is the key mechanism that bounds user-perceived recovery cost.
+
+\textbf{Ablation}. To further isolate the contribution of each optimization direction, we test two ablation variants: (1)~\emph{Fast-down + naive-up}, which uses EdgeSched's urgent offload for the downlink but a naive stop$\rightarrow$migrate$\rightarrow$resume for the uplink; and (2)~\emph{Naive-down + optimized-up}, which uses a naive offload for the downlink but EdgeSched's Atomic Hot-Swap for the uplink. The results show that the uplink optimization (Atomic Hot-Swap) accounts for the largest improvement in user-perceived interruption, while the downlink optimization (Urgent Mode) reduces the initial stutter from $\approx$8.4s to $\approx$1.7s. Both optimizations are necessary to achieve EdgeSched's overall performance profile.
+
+\subsection{Throughput Overhead and Task Success Rate}
+
+The remaining results characterize implementation cost and completion behavior under load.
+
+\textbf{Scheduler Overhead}. In a synthetic-load microbenchmark (Mock tasks, $n$=300), EdgeSched showed an approximately 11\% throughput reduction relative to a raw semaphore-based implementation. We report this only as an implementation-cost sanity check rather than as a primary baseline, because such schemes model generic concurrency control rather than mixed-workload resource arbitration.
+
+\textbf{Stress Characterization}:
+\begin{itemize}
+\item \textbf{Load}: 2000 tasks, 200 concurrent
+\item \textbf{Completion Behavior}: all submitted tasks completed in this test run, with no observed task loss during the measurement window
+\item \textbf{Runtime Stability}: a continuous 10-minute run showed stable RSS (~581 MB) with no observed leak during the measurement window
+\item \textbf{Overhead Interpretation}: The observed ~11\% throughput reduction relative to the raw semaphore approach reflects aggregate system capacity under saturation rather than end-user responsiveness. As shown in Table~\ref{tab:crash_recovery}, the per-task state registration cost is below 0.01 ms in our measurements, which is small relative to LLM token latency on local hardware.
+\end{itemize}
+
+\subsection{Semantic Validation}
+
+We validated specific scheduling semantics that support the workload abstraction and runtime behavior described above.
+
+\begin{enumerate}
+\item \textbf{Cancellation}:
+\begin{itemize}
+\item \textbf{LLM Streaming Cancellation}: Average response latency 50.33 ms. The system stops mid-generation at the next cooperative cancellation check.
+\item \textbf{Image Queue Cancellation}: Average response latency 1002.17 ms. Queued tasks are discarded immediately; running tasks continue execution but discard results (soft cancellation).
+\end{itemize}
+
+\item \textbf{Priority Inversion}: In our mixed-workload tests, HIGH priority tasks (e.g., user chat) were dispatched ahead of LOW priority tasks (e.g., background summarization) in the queue.
+\end{enumerate}
+
+\subsection{Summary}
+
+Taken together, the evaluation shows that EdgeSched is a viable design point for 8GB-VRAM-class consumer devices in our deployment setting. It keeps the resident service reachable during GPU contention, bounds restoration cost through asymmetric migration (achieving near-zero visible interruption compared with $\approx$8.4s for symmetric migration), recovers task metadata on the order of 10 ms after crashes, and incurs modest throughput overhead (~11\%) relative to a minimal semaphore-based implementation.
+% <<< END INPUT sections_en/06_evaluation
+% >>> BEGIN INPUT sections_en/07_conclusion
+\section{Conclusion}
+
+This paper presents \textbf{EdgeSched}, a lightweight resource scheduling framework for local AI runtimes on memory-constrained consumer devices. By addressing dedicated-VRAM constraints, EdgeSched enables a resident service and a bursty GPU-intensive job to coexist on the same device without requiring expensive hardware upgrades.
+
+Our main contributions include:
+\begin{enumerate}
+\item \textbf{Asymmetric Resource Migration}: Combining "Urgent Mode" for rapid preemption (GPU→CPU) and "Atomic Hot-Swap" for low-interruption recovery (CPU→GPU), balancing VRAM safety and service continuity.
+
+\item \textbf{Lightweight Persistence}: Software-defined state backplane based on mmap, providing crash consistency with small per-operation overhead (below 0.01 ms for register/update in our measurements) and helping avoid zombie-task accumulation after system failures.
+
+\item \textbf{Predictable QoS}: Combining priority queues, backpressure mechanisms, and cancellation semantics to keep the system responsive and stable under the tested saturation scenarios.
+\end{enumerate}
+
+Experimental results on consumer-grade hardware (RTX 5070 Laptop) support the approach in the evaluated mixed-workload setting. Where simpler baselines encounter OOM risk or repeated reload overhead, EdgeSched keeps the resident service reachable during burst-task execution and recovers task state quickly after crashes. While raw throughput is slightly lower than a simple semaphore approach (~11\%), the gains in reliability and continuity make EdgeSched a viable solution for robust local AI applications.
+
+\subsection{Future Work}
+
+Future work will focus on the following directions:
+
+\begin{enumerate}
+\item \textbf{Heterogeneous Multi-GPU Support}: Extending EdgeSched to support multi-GPU configurations, enabling finer-grained resource allocation and load balancing.
+
+\item \textbf{Kernel-Level Scheduling}: Integrating fine-grained kernel-level scheduling for lower-latency preemption, further reducing service interruption time.
+
+\item \textbf{Adaptive Strategies}: Dynamically adjusting migration strategies and queue capacities based on historical load patterns and user behavior for smarter resource management.
+
+\item \textbf{More Modality Support}: Extending the system to support text-to-speech (TTS), vision-language models (VL), and other modality tasks, building a complete multi-modal AI assistant ecosystem.
+\end{enumerate}
+
+EdgeSched provides a practical scheduling solution for multi-modal AI applications on local consumer devices, and we hope it can motivate further research on runtime management under tight resource constraints.
+% <<< END INPUT sections_en/07_conclusion
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

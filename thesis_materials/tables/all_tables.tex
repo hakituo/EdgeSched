@@ -1,0 +1,69 @@
+\documentclass{article}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{geometry}
+
+\geometry{a4paper, margin=1in}
+
+\begin{document}
+
+\section*{EdgeSched Experiment Results Tables}
+
+% Table 1: Resource Migration
+\begin{table}[h]
+\centering
+\caption{Dynamic Resource Migration Results}
+\label{tab:migration}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metric} & \textbf{Value} & \textbf{Description} \\
+\midrule
+LLM GPU TTFT & 26.7 ms & GPU baseline performance \\
+LLM CPU TTFT & 189.8 ms & Performance after migration \\
+Migration Time & 2366.4 ms & GPU to CPU end-to-end \\
+Migration Window & 2990.7 ms & Max service interruption \\
+\midrule
+Restore Time & 1964.4 ms & CPU to GPU end-to-end \\
+Restore Window & 282.1 ms & Max service interruption \\
+Post-restore TTFT & 336.6 ms & First GPU request after restore \\
+\midrule
+Queue Wait Time & 17193.7 ms & Diffusion mutual exclusion queuing \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Table 2: Crash Recovery
+\begin{table}[h]
+\centering
+\caption{Crash Recovery Comparison Results}
+\label{tab:crash_recovery}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metric} & \textbf{With Backplane} & \textbf{Without Backplane} \\
+\midrule
+Total Recovery Time & 11.38 ms & 7.62 ms \\
+Pre-crash Tasks & 12 & 12 \\
+Recovered Tasks & 12 & 0 \\
+Recovery Rate & 100\% & 0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Table 3: Baseline Comparison
+\begin{table}[h]
+\centering
+\caption{Baseline Comparison Results (Mock Tasks, n=300)}
+\label{tab:baseline}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Scheme} & \textbf{Throughput} & \textbf{P99 Latency} & \textbf{Success Rate} \\
+\midrule
+Naive Async & 58.2 & 3993 & 100\% \\
+Threadpool & 78.7 & 100 & 100\% \\
+Semaphore & 42.2 & 7093 & 100\% \\
+\textbf{EdgeSched} & 38.5 & 7570 & 100\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}

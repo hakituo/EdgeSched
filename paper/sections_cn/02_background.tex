@@ -1,0 +1,43 @@
+\section{背景}
+
+\subsection{边缘设备特点}
+
+边缘设备通常具有以下特点：
+\begin{itemize}
+\item \textbf{资源受限}：主流笔记本配备8GB显存、16-32GB内存，远低于数据中心服务器
+\item \textbf{单机部署}：不需要分布式协调，但要求系统轻量高效
+\item \textbf{稳定性要求高}：家庭/工业场景下，系统崩溃会严重影响用户体验
+\end{itemize}
+
+\subsection{多模态任务特性}
+
+在边缘设备上，典型的AI任务可以按三个维度分类：
+
+\textbf{模型大类}：
+\begin{itemize}
+\item \textbf{LLM（Transformer）}：CPU/GPU均可推理，但边缘侧"可用的CPU兜底"很大程度依赖量化与高效推理栈（GGUF + llama.cpp最典型）
+\item \textbf{Diffusion}：图像生成（理论可CPU，但在边缘侧通常延迟不可接受，因此工程上视为GPU必需）
+\end{itemize}
+
+\textbf{运行语义}：
+\begin{itemize}
+\item \textbf{常驻任务（Resident）}：需要长期在线、持续响应，不能长时间无输出/无响应；默认对应LLM（交互式）
+\item \textbf{一次性任务（One-shot）}：提交后跑完就结束；典型是图像生成
+\end{itemize}
+
+\textbf{设备亲和}：
+\begin{itemize}
+\item \textbf{GPU必需（GPU-required）}：理论上可能能CPU跑，但在边缘设备上CPU时延不可接受，因此工程上视为必须GPU跑
+\item \textbf{CPU/GPU均可（CPU/GPU-capable）}：既能CPU跑也能GPU跑，但"是否达到边缘可用时延"高度依赖模型与推理栈
+\end{itemize}
+
+\subsection{设计目标}
+
+基于上述背景，EdgeSched的设计目标包括：
+
+\begin{enumerate}
+\item \textbf{轻量级}：调度器本体轻量（启动快、内存小），真实模型内存/显存另计
+\item \textbf{关键任务可用性优先}：GPU上尽量低TTFT；迁移到CPU允许退化但持续可用
+\item \textbf{高稳定性}：崩溃恢复时间 < 12ms，避免任务状态丢失
+\item \textbf{易用性}：简单API，开箱即用，无需复杂配置
+\end{enumerate}

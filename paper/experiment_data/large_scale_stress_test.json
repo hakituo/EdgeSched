@@ -1,0 +1,188 @@
+{
+  "name": "large_scale_stress_test",
+  "timestamp": "2026-02-25T22:00:54",
+  "seed": 42,
+  "tests": {
+    "high_concurrency_100": {
+      "test": "high_concurrency",
+      "config": {
+        "total_tasks": 1000,
+        "concurrency": 100,
+        "task_duration": 0.1
+      },
+      "metrics": {
+        "total_tasks": 1000,
+        "completed_tasks": 1000,
+        "failed_tasks": 0,
+        "cancelled_tasks": 0,
+        "success_rate": 1.0,
+        "throughput": 24.657707165459495,
+        "duration_s": 40.55527114868164
+      },
+      "latency": {
+        "n": 1000,
+        "avg_ms": 40004.545739889145,
+        "p50_ms": 40438.65728378296,
+        "p95_ms": 40528.094029426575,
+        "p99_ms": 40530.96125125884,
+        "min_ms": 24724.384307861328,
+        "max_ms": 40531.755208969116,
+        "std_dev_ms": 1888.3062643990934,
+        "ci_lower_ms": 39887.367488256714,
+        "ci_upper_ms": 40121.723991521576,
+        "confidence": 0.95
+      },
+      "resources": {
+        "cpu": {
+          "avg": 103.9125,
+          "max": 149.5,
+          "min": 65.2
+        },
+        "memory": {
+          "avg_mb": 518.16015625,
+          "max_mb": 518.34765625,
+          "min_mb": 517.84765625
+        },
+        "samples": 32
+      }
+    },
+    "high_concurrency_200": {
+      "test": "high_concurrency",
+      "config": {
+        "total_tasks": 2000,
+        "concurrency": 200,
+        "task_duration": 0.1
+      },
+      "metrics": {
+        "total_tasks": 2000,
+        "completed_tasks": 2000,
+        "failed_tasks": 0,
+        "cancelled_tasks": 0,
+        "success_rate": 1.0,
+        "throughput": 24.422696563295837,
+        "duration_s": 81.8910391330719
+      },
+      "latency": {
+        "n": 2000,
+        "avg_ms": 81422.01689779758,
+        "p50_ms": 81435.43350696564,
+        "p95_ms": 81765.45163393019,
+        "p99_ms": 81770.75532197952,
+        "min_ms": 81075.21653175354,
+        "max_ms": 81772.02868461609,
+        "std_dev_ms": 185.18992466270709,
+        "ci_lower_ms": 81413.89582349645,
+        "ci_upper_ms": 81430.13797209873,
+        "confidence": 0.95
+      },
+      "resources": {
+        "cpu": {
+          "avg": 109.96774193548387,
+          "max": 198.0,
+          "min": 61.5
+        },
+        "memory": {
+          "avg_mb": 581.0613659274194,
+          "max_mb": 581.09765625,
+          "min_mb": 580.09765625
+        },
+        "samples": 62
+      }
+    },
+    "long_duration": {
+      "test": "long_duration",
+      "config": {
+        "duration_minutes": 10,
+        "arrival_rate": 10.0,
+        "checkpoint_interval_s": 60.0
+      },
+      "metrics": {
+        "total_tasks": 5966,
+        "completed_tasks": 5966,
+        "failed_tasks": 0,
+        "throughput": 9.933683023960908,
+        "duration_s": 600.5828840732574
+      },
+      "resources": {
+        "cpu": {
+          "avg": 100.6931623931624,
+          "max": 121.0,
+          "min": 84.6
+        },
+        "memory": {
+          "avg_mb": 583.8754340277778,
+          "max_mb": 588.59765625,
+          "min_mb": 581.09765625
+        },
+        "samples": 117
+      },
+      "checkpoints": [
+        {
+          "elapsed_s": 60.06128001213074,
+          "total_tasks": 598,
+          "completed_tasks": 597,
+          "failed_tasks": 0
+        },
+        {
+          "elapsed_s": 120.11840677261353,
+          "total_tasks": 1195,
+          "completed_tasks": 1194,
+          "failed_tasks": 0
+        },
+        {
+          "elapsed_s": 180.18329191207886,
+          "total_tasks": 1792,
+          "completed_tasks": 1791,
+          "failed_tasks": 0
+        },
+        {
+          "elapsed_s": 240.24165511131287,
+          "total_tasks": 2389,
+          "completed_tasks": 2388,
+          "failed_tasks": 0
+        },
+        {
+          "elapsed_s": 300.3016691207886,
+          "total_tasks": 2986,
+          "completed_tasks": 2985,
+          "failed_tasks": 0
+        },
+        {
+          "elapsed_s": 360.3588788509369,
+          "total_tasks": 3583,
+          "completed_tasks": 3582,
+          "failed_tasks": 0
+        },
+        {
+          "elapsed_s": 420.41169142723083,
+          "total_tasks": 4180,
+          "completed_tasks": 4179,
+          "failed_tasks": 0
+        },
+        {
+          "elapsed_s": 480.46588945388794,
+          "total_tasks": 4777,
+          "completed_tasks": 4776,
+          "failed_tasks": 0
+        },
+        {
+          "elapsed_s": 540.5192110538483,
+          "total_tasks": 5374,
+          "completed_tasks": 5373,
+          "failed_tasks": 0
+        },
+        {
+          "elapsed_s": 600.5724565982819,
+          "total_tasks": 5966,
+          "completed_tasks": 5966,
+          "failed_tasks": 0
+        }
+      ]
+    }
+  },
+  "summary": {
+    "max_concurrency_tested": 200,
+    "max_duration_tested_minutes": 10,
+    "total_tasks_processed": 8966
+  }
+}

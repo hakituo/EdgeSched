@@ -1,0 +1,21 @@
+\begin{table}[t]
+\centering
+\caption{Dynamic Resource Migration Results (N=5)}
+\label{tab:migration}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Metric} & \textbf{EdgeSched} & \textbf{Symmetric Migration} \\
+\midrule
+LLM GPU TTFT (ms) & 112.9 $\pm$ 12.2 & 87.1 $\pm$ 10.4 \\
+CPU TTFT (ms) & 200.0 $\pm$ 19.6 & 209.0 $\pm$ 5.7 \\
+Downlink Stutter (ms) & 8774.3 $\pm$ 1768.8 & -- \\
+\midrule
+Restore Time (ms) & 11237.9 $\pm$ 1226.2 & 5728.3 $\pm$ 148.3 \\
+Restore Gap (ms) & $\approx$0 & 1308.9 $\pm$ 2415.0 \\
+\midrule
+Queue Wait Time (ms) & 10024.8 & -- \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}

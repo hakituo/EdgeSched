@@ -1,0 +1,56 @@
+\section{Implementation}
+\label{sec:implementation}
+
+\subsection{Technology Stack}
+
+EdgeSched is implemented in Python with an asynchronous serving stack. The prototype exposes WebSocket interfaces for interactive requests, uses a local LLM runtime for GGUF-based inference, and invokes a PyTorch-based image-generation backend for burst workloads. The implementation emphasis is not on framework novelty, but on runtime coordination: asynchronous request handling, explicit GPU/CPU migration control, bounded admission for image jobs, and lightweight persistent state for restart recovery. Experiments run on a consumer laptop equipped with an RTX 5070 Laptop GPU (8GB VRAM), a Ryzen 9 8940HX CPU, and 32GB system memory.
+
+\subsection{Key Module Implementation}
+
+\textbf{Dynamic Resource Migration}. When image tasks arrive, the system offloads the resident LLM by saving its state, releasing GPU memory, and restoring execution on CPU. During uplink restoration, Atomic Hot-Swap lets the CPU instance continue serving while the GPU instance preloads in the background. Algorithm~\ref{alg:migration} summarizes this mechanism.
+
+\begin{algorithm}[!t]
+\caption{Dynamic GPU-CPU Migration}
+\label{alg:migration}
+\begin{algorithmic}[1]
+\STATE \textbf{function} \textsc{OffloadToCPU}()
+\STATE \quad Save KV cache state
+\STATE \quad Release GPU VRAM
+\STATE \quad Load CPU backend asynchronously
+\STATE \textbf{end function}
+\STATE
+\STATE \textbf{function} \textsc{RestoreToGPU}()
+\STATE \quad Preload GPU instance in background
+\STATE \quad Wait until GPU ready
+\STATE \quad Atomic switch: CPU $\rightarrow$ GPU
+\STATE \textbf{end function}
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Task Queue Management}. Image queue uses bounded capacity to prevent resource exhaustion. When full, new tasks are immediately rejected with backpressure signals.
+
+\textbf{State Persistence}. StateBackplane uses mmap for zero-copy I/O. Task states are serialized via struct.pack and written to memory-mapped files, enabling low-overhead persistence and semantic recovery in about 44 ms in our measurements.
+
+\subsection{Deployment Configuration}
+
+\textbf{LLM Configuration}:
+\begin{itemize}
+\item Model: Qwen2.5-7B-Instruct (GGUF format, Q4\_K\_M quantization)
+\item Model weights: $\sim$4.7GB
+\item KV Cache: the fully migratable serialized state (\texttt{save\_state()}, which includes logits, embeddings, and KV memory) is not pure GPU KV VRAM; the pre-allocated GPU KV buffer is measured by a dedicated calibration matrix, and only validated calibration values are reported
+\item Total VRAM occupation: $\sim$6-7GB
+\item GPU layers: Default -1 (auto-allocate), typically loads 25-33 layers in 8GB VRAM environment
+\item First token timeout: 30 seconds
+\item Max generation tokens: 512
+\end{itemize}
+
+\textbf{Image Generation Configuration}:
+\begin{itemize}
+\item Model: SDXL Turbo 1.0 (fp16 precision, $\sim$6.7GB)
+\item Loading strategy: On-demand loading, unload after completion to release VRAM
+\item Max concurrent: 1
+\item Queue capacity: 8
+\item Total slots: 9 (concurrent + queued)
+\item Image size: 512$\times$512
+\item Inference steps: 20
+\end{itemize}

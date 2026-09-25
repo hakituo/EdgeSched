@@ -1,0 +1,8 @@
+{
+  "timestamp": "2026-05-05T04:52:12",
+  "llm_only_latency_s": 0.48037099838256836,
+  "image_only_latency_s": 11.512682914733887,
+  "concurrent_llm_latency_s": 0.0,
+  "concurrent_image_latency_s": 2.06253981590271,
+  "status": "Timeout (>60s) due to severe Thrashing"
+}

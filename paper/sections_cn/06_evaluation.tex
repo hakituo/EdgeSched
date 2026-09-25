@@ -1,0 +1,210 @@
+\section{评估}
+
+\subsection{实验设置}
+
+我们在具有代表性的边缘设备环境中评估EdgeSched，以验证其资源管理能力、负载下的稳定性以及故障恢复机制。
+
+\textbf{硬件环境}：
+\begin{itemize}
+\item \textbf{平台}：WSL2 (Ubuntu 24.04-E) 运行于Windows 11
+\item \textbf{CPU}：AMD Ryzen 9 8940HX (16 Cores, 32 Threads)
+\item \textbf{RAM}：32GB DDR5
+\item \textbf{GPU}：NVIDIA GeForce RTX 5070 Laptop (8GB VRAM)
+\item \textbf{存储}：NVMe SSD
+\end{itemize}
+
+\textbf{软件栈}：
+\begin{itemize}
+\item \textbf{Python}：3.10.19 (WSL2环境)
+\item \textbf{框架}：PyTorch 2.x, asyncio
+\item \textbf{LLM后端}：llama.cpp，运行\texttt{qwen2.5-7b-instruct-q4\_k\_m.gguf} (4-bit量化, 模型占用约4.7GB)
+\item \textbf{图像后端}：Stable Diffusion WebUI Forge (运行SDXL Turbo, 显存需求约6.7GB)
+\end{itemize}
+
+\textbf{评估指标}：
+\begin{itemize}
+\item \textbf{TTFT (首字延迟)}：从发出请求到生成第一个token的时间延迟
+\item \textbf{服务中断时间}：资源迁移过程中LLM服务无法响应的时长
+\item \textbf{恢复时间}：从进程重启到任务状态完全恢复的时间
+\item \textbf{吞吐量}：并发负载下每秒完成的任务数
+\end{itemize}
+
+\subsection{资源迁移与共存}
+
+EdgeSched的核心能力是支持内存密集型的LLM（常驻任务）与图像生成（突发任务）在单张8GB显卡上分时复用，LLM在抢占期间回退到系统内存（DDR）运行。
+
+\subsubsection{迁移延迟与用户体验}
+
+我们测量了完整迁移周期内的系统行为：(1) LLM在GPU上运行，(2) 图像任务抢占（LLM卸载到CPU），(3) 图像任务执行，(4) LLM回迁至GPU。表~\ref{tab:migration}展示了资源迁移性能。
+
+\begin{table}[htbp]
+\caption{资源迁移性能}
+\label{tab:migration}
+\centering
+\begin{tabular}{@{}lrl@{}}
+\toprule
+指标 & 数值 (ms) & 说明 \\
+\midrule
+\textbf{GPU TTFT (理想)} & 26.5 & 无图像模型时的GPU基线延迟 \\
+\textbf{GPU TTFT (实际)} & 115.2 & 有图像模型驻留时的延迟 \\
+\textbf{CPU TTFT (稳态)} & 198.2 & 图像生成期间的稳态响应延迟 \\
+\textbf{迁移卡顿} & 1800.8 & 从提交图像任务到CPU LLM就绪 \\
+\textbf{回迁耗时} & 2179.6 & CPU→GPU恢复的端到端耗时 \\
+\textbf{最大卡顿(回迁)} & 291.6 & 恢复过程中用户感知的最大服务停顿 \\
+\textbf{队列等待时间} & 10024.8 & 第二个图像任务的排队等待时间 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{分析}：
+\begin{itemize}
+\item \textbf{无缝恢复}：回迁卡顿(291.6 ms)显著低于总回迁耗时(2179.6 ms)。这验证了我们的\textbf{原子热切换}策略：CPU实例持续服务，直到GPU实例预加载完成才进行切换。
+\item \textbf{可接受的降级}：在共存阶段，CPU上的LLM服务展现出\textbf{稳态TTFT为198.2 ms}（首次请求后的平均值），仍处于交互延迟阈值(<200ms)内。虽然初始请求可能因CPU LLM实例初始化产生较高延迟，但后续请求受益于page cache而响应迅速。这确保了图像生成期间LLM服务保持响应。
+\item \textbf{迁移成本}：初始迁移卡顿(~1.8s)是资源竞争的主要代价。这包括：(1) 释放GPU LLM，(2) 加载图像模型到GPU，以及 (3) 初始化CPU LLM。EdgeSched确保这仅在突发任务开始时发生一次，而非影响每个token。
+\end{itemize}
+
+\subsubsection{队列背压与互斥}
+
+为了验证资源隔离，我们在LLM会话活跃期间提交了并发的图像生成任务。
+
+\begin{itemize}
+\item \textbf{队列等待时间}：第二个图像任务在队列中等待了10,024.8 ms
+\item \textbf{行为表现}：系统正确强制执行了GPU严格互斥。第二个任务没有导致OOM崩溃，而是排队等待直到第一个任务完成并释放资源
+\item \textbf{稳定性}：在整个图像生成队列处理期间，LLM服务始终保持响应(在CPU上)
+\end{itemize}
+
+
+\subsection{崩溃恢复}
+
+我们通过在任务执行期间注入随机进程崩溃(SIGKILL)来评估\textbf{状态背板}的恢复性能。表~\ref{tab:recovery}展示了崩溃恢复对比结果。
+
+\begin{table}[htbp]
+\caption{崩溃恢复对比}
+\label{tab:recovery}
+\centering
+\begin{tabular}{@{}lcc@{}}
+\toprule
+指标 & 无背板 & 有EdgeSched背板 \\
+\midrule
+\textbf{恢复耗时} & 7.73 ms & 13.08 ms \\
+\textbf{恢复任务数} & 0\% (0/10) & \textbf{100\% (10/10)} \\
+\textbf{状态一致性} & 丢失 & 保持一致 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{分析}：
+\begin{itemize}
+\item \textbf{极低开销}：基于mmap的背板仅增加了约5ms的启动时间
+\item \textbf{零僵尸任务}：EdgeSched成功识别所有被中断的"Running"任务，并在重启时将其标记为"Failed/Pending"，防止系统误认为任务仍在运行但Worker已死锁的"僵尸"状态
+\item \textbf{微基准测试}：单次状态操作(注册/更新)耗时$<$ 0.01 ms，证实持久化层不会阻塞高频调度循环
+\end{itemize}
+
+\subsection{系统扩展性与基线对比}
+
+我们使用合成负载(Mock任务, n=300)将EdgeSched与标准并发模式进行了对比。表~\ref{tab:baseline}展示了基线对比结果。
+
+\input{../thesis_materials/tables/tab_baseline}
+
+\textbf{压力测试结果}：
+\begin{itemize}
+\item \textbf{负载}：2000个任务，200并发
+\item \textbf{成功率}：\textbf{100\%}（无任务丢失）
+\item \textbf{稳定性}：持续运行10分钟无内存泄漏(RSS稳定在~581 MB)
+\item \textbf{开销}：相比原始信号量方案约11\%的吞吐下降，是维护优先级队列、任务生命周期和持久化保证的成本。对于可靠性高于原始吞吐的边缘场景，这一权衡是合理的
+\end{itemize}
+
+\subsection{替代方案基线对比}
+
+为了全面评估EdgeSched的设计选择，我们与三种替代方案进行对比，展示在内存受限设备上管理多模态负载的不同策略。
+
+\subsubsection{冷启动与原子热切换对比}
+
+我们比较了从图像生成切换回LLM服务时的两种策略恢复延迟：(1) \textbf{冷启动}：终止并重启LLM进程，从磁盘重新加载模型权重；(2) \textbf{原子热切换}：我们提出的策略，保留KV缓存并预加载实例。表~\ref{tab:cold_start}展示了不同上下文长度下的对比结果。
+
+\input{tables/tab_cold_start_cn}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{chart_cold_start_comparison.pdf}
+\caption{恢复延迟对比：冷启动 vs 原子热切换。热切换实现2.6--10.3$\times$加速。}
+\label{fig:cold_start}
+\end{figure}
+
+\textbf{关键发现}：原子热切换相比冷重启实现\textbf{2.6--10.3$\times$}的加速。优势在较小上下文长度时最为显著（512 tokens: 10.3$\times$），此时冷启动开销（7.83s模型加载 + 0.55s预填充）占主导。即使在较大上下文（3072 tokens），热切换仍保持4.5$\times$优势，避免了冗余的模型加载。
+
+\subsubsection{操作系统级内存管理 (LRU/统一内存)}
+
+我们评估操作系统级内存管理是否能在没有应用级调度的情况下处理多模型并发。表~\ref{tab:lru}展示了结果。
+
+\input{tables/tab_lru_cn}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{chart_lru_thrashing.pdf}
+\caption{OS LRU/统一内存在8GB VRAM并发LLM+图像负载下失败，导致严重颠簸和超时。}
+\label{fig:lru}
+\end{figure}
+
+\textbf{关键发现}：操作系统级LRU/统一内存在并发负载下\textbf{完全失败}。当LLM（~6GB）和图像模型（~6.7GB）同时竞争8GB VRAM时，系统进入严重的页面颠簸状态，持续发生页面错误，导致60秒后超时。这验证了\textbf{应用级资源仲裁}的必要性。
+
+\subsubsection{对称迁移基线}
+
+EdgeSched非对称设计的自然替代方案是\textbf{对称迁移}策略，即在两个方向上使用相同的"停服务→完整迁移→恢复"逻辑。在此设计下，上行路径（CPU$\rightarrow$GPU）不使用后台预加载或原子热切换，而是停止CPU服务、从磁盘加载GPU模型、再恢复服务——与下行路径相同的流程。该基线隔离了EdgeSched\emph{非对称}优化的贡献：上行路径的原子热切换。
+
+表~\ref{tab:migration}对比了四种设计。对称迁移基线在共存可用性上与EdgeSched相同（突发负载期间CPU TTFT $\approx$259 ms），因为下行路径一致。然而，其上行服务中断等于完整模型重载时间（512 tokens时$\approx$8.4s），而EdgeSched的可见中断接近零。这证实了非对称设计——特别是后台预加载结合原子实例切换——是约束用户感知恢复成本的关键机制。
+
+\textbf{消融实验}。为进一步隔离各优化方向的贡献，我们测试了两个消融变体：(1)~\emph{快速下行+朴素上行}，下行使用EdgeSched的紧急卸载，上行使用朴素的停服务→迁移→恢复；(2)~\emph{朴素下行+优化上行}，下行使用朴素卸载，上行使用EdgeSched的原子热切换。结果表明上行优化（原子热切换）对用户感知中断的改善贡献最大，而下行优化（紧急模式）将初始卡顿从$\approx$8.4s降至$\approx$1.7s。两个优化方向都是实现EdgeSched整体性能所必需的。
+
+\subsubsection{手动模型切换基线}
+
+我们使用llama.cpp命令行工具测量手动模型切换的延迟分解，代表没有自动化调度的基线。表~\ref{tab:manual_switch}展示了结果。
+
+\input{tables/tab_manual_switch_cn}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{chart_manual_llama_switch.pdf}
+\caption{手动llama.cpp切换基线延迟分解。完整周期耗时：18.73s。}
+\label{fig:manual_switch}
+\end{figure}
+
+\textbf{关键发现}：手动切换需要\textbf{18.73s}完成一个完整周期（LLM$\rightarrow$图像$\rightarrow$LLM），其中LLM重载（1.49s）是图像生成后的主要开销。EdgeSched的自动迁移将初始卸载卡顿降至~2s，后续图像任务无需额外的LLM重载开销。
+
+\subsubsection{真实工作负载追踪}
+
+图~\ref{fig:real_workload}展示了LLM对话与图像生成的真实交互会话完整时间线。
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{chart_real_workload_trace.pdf}
+\caption{真实工作负载追踪：图像突发前、中、后的TTFT。GPU TTFT: 0.08--0.34s；图像期间CPU TTFT: 2.3--7.8s；恢复后GPU TTFT: 2.26s。}
+\label{fig:real_workload}
+\end{figure}
+
+\textbf{观察结果}：
+\begin{itemize}
+\item \textbf{GPU阶段}：TTFT范围0.08--0.34s，展示响应式交互
+\item \textbf{迁移}：GPU$\rightarrow$CPU迁移耗时1.23s
+\item \textbf{共存阶段}：图像生成期间CPU TTFT增至2.3--7.8s，但仍保持可用
+\item \textbf{恢复}：CPU$\rightarrow$GPU恢复耗时14.89s（后台预加载 + 状态转移）
+\item \textbf{恢复后}：GPU TTFT恢复至2.26s（包含KV缓存恢复）
+\end{itemize}
+
+\subsection{语义验证}
+
+我们验证了对用户体验至关重要的特定调度语义：
+
+\begin{enumerate}
+\item \textbf{取消(Cancellation)}：
+\begin{itemize}
+\item \textbf{LLM流式取消}：平均响应延迟50.33 ms。系统成功在生成中途停止
+\item \textbf{图像队列取消}：平均响应延迟1002.17 ms。排队任务被立即丢弃；运行中任务继续执行但丢弃结果(软取消)
+\end{itemize}
+
+\item \textbf{优先级反转}：在混合负载中，HIGH优先级任务(如用户聊天)在分发队列中始终抢占LOW优先级任务(如后台摘要)
+\end{enumerate}
+
+\subsection{总结}
+
+评估表明，EdgeSched有效解决了"8GB显存墙"问题。它以少量吞吐(~11\%)和迁移延迟(~2s卡顿)为代价，换取了\textbf{有保证的系统稳定性}(100\%成功率，避免OOM)和\textbf{持续的服务可用性}(热切换恢复)。非对称迁移设计将用户感知的恢复中断从对称迁移的$\approx$8.4s降至接近零。系统可扩展至数千个任务，并在毫秒级内从崩溃中恢复，使其适合生产级边缘AI助手。

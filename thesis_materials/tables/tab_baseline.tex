@@ -1,0 +1,15 @@
+\begin{table}[t]
+\centering
+\caption{Baseline Comparison Results (Mock Tasks, n=300)}
+\label{tab:baseline}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Scheme} & \textbf{Throughput} & \textbf{P99 Latency} & \textbf{Success Rate} \\
+\midrule
+Naive Async & 56.4 & 3235 & 100\% \\
+Threadpool & 78.7 & 100 & 100\% \\
+Semaphore & 42.9 & 6971 & 100\% \\
+\textbf{EdgeSched} & 38.1 & 7560 & 100\% \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-05-05T01:10:02",
+  "total_elapsed_s": 22.9,
+  "iterations": 1,
+  "results": {
+    "symmetric_migration": {
+      "status": "completed",
+      "elapsed_s": 22.9
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-05-05T04:44:34",
+  "total_elapsed_s": 398.8,
+  "iterations": 5,
+  "results": {
+    "real_workload": {
+      "status": "failed",
+      "error": "'list' object is not a mapping",
+      "traceback": "Traceback (most recent call last):\n  File \"/home/leslie/mvp_core/experiments/run_forge_experiments.py\", line 333, in main\n    result = run_real_workload_experiment(args.iterations, env)\n  File \"/home/leslie/mvp_core/experiments/run_forge_experiments.py\", line 262, in run_real_workload_experiment\n    save_aggregated(\"real_workload_trace\", all_iterations[-1])\n  File \"/home/leslie/mvp_core/experiments/run_forge_experiments.py\", line 92, in save_aggregated\n    payload = {\"timestamp\": time.strftime(\"%Y-%m-%dT%H:%M:%S\"), **data}\nTypeError: 'list' object is not a mapping\n",
+      "elapsed_s": 398.8
+    }
+  }
+}

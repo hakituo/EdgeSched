@@ -1,0 +1,27 @@
+{
+  "llm_model_path": "/home/leslie/mvp_core/models/llm/qwen2.5-7b-instruct-q4_k_m.gguf",
+  "forge_base_url": "http://127.0.0.1:7860",
+  "image_width": 1024,
+  "image_height": 1024,
+  "steps": 8,
+  "gpu_phase_ttft_s": [
+    0.3112611770629883,
+    0.051157474517822266,
+    0.026287078857421875
+  ],
+  "manual_unload_time_s": 0.07686543464660645,
+  "image_tasks": [
+    {
+      "index": 1,
+      "latency_s": 10.767044305801392,
+      "path": "/home/leslie/mvp_core/output/images/manual_switch_1776348505289_1.png"
+    },
+    {
+      "index": 2,
+      "latency_s": 6.39197850227356,
+      "path": "/home/leslie/mvp_core/output/images/manual_switch_1776348511686_2.png"
+    }
+  ],
+  "llm_reload_time_s": 1.4908843040466309,
+  "restored_ttft_s": 0.03456735610961914
+}

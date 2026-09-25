@@ -1,0 +1,63 @@
+{
+  "name": "baseline_comparison_experiment",
+  "timestamp": "2026-02-25T21:48:05",
+  "seed": 42,
+  "config": {
+    "n_tasks": 300,
+    "task_duration": 0.1
+  },
+  "comparison": {
+    "naive_async": {
+      "throughput_tasks_per_s": 56.36556353997387,
+      "avg_latency_ms": 2051.32337808609,
+      "p50_latency_ms": 2144.8116302490234,
+      "p95_latency_ms": 3232.408285140991,
+      "p99_latency_ms": 3235.203952789306,
+      "memory_peak_mb": 2.103396415710449,
+      "success_rate": 1.0
+    },
+    "threadpool": {
+      "throughput_tasks_per_s": 78.67676547507081,
+      "avg_latency_ms": 100.18883466720581,
+      "p50_latency_ms": 100.17073154449463,
+      "p95_latency_ms": 100.32162666320801,
+      "p99_latency_ms": 100.46710729598998,
+      "memory_peak_mb": 0.974339485168457,
+      "success_rate": 1.0
+    },
+    "semaphore": {
+      "throughput_tasks_per_s": 42.94842834890519,
+      "avg_latency_ms": 3607.59481271108,
+      "p50_latency_ms": 3576.2650966644287,
+      "p95_latency_ms": 6771.57324552536,
+      "p99_latency_ms": 6971.23515367508,
+      "memory_peak_mb": 0.7768592834472656,
+      "success_rate": 1.0
+    },
+    "edgesched": {
+      "throughput_tasks_per_s": 38.067750602241894,
+      "avg_latency_ms": 7490.208612283071,
+      "p50_latency_ms": 7545.132517814636,
+      "p95_latency_ms": 7559.224104881287,
+      "p99_latency_ms": 7559.619162082672,
+      "memory_peak_mb": 4.954475402832031,
+      "success_rate": 1.0
+    }
+  },
+  "improvement": {
+    "vs_semaphore": {
+      "throughput_improvement_percent": -11.364042723551048,
+      "p99_latency_improvement_percent": -8.440168713824105,
+      "memory_overhead_percent": -537.7571213214894
+    },
+    "vs_naive_async": {
+      "throughput_improvement_percent": -32.462751702562784,
+      "p99_latency_improvement_percent": -133.6674680297967
+    }
+  },
+  "summary": {
+    "best_throughput": 78.67676547507081,
+    "best_p99_latency": 100.46710729598998,
+    "lowest_memory": 0.7768592834472656
+  }
+}

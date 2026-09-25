@@ -1,0 +1,718 @@
+{
+  "timestamp": "2026-05-05T08:32:06",
+  "test_type": "realistic_stress",
+  "duration_s": 626.2,
+  "duration_minutes": 10,
+  "seed": 42,
+  "summary": {
+    "llm_requests": 21,
+    "llm_successes": 21,
+    "llm_timeouts": 0,
+    "llm_availability": 1.0,
+    "image_requests": 17,
+    "image_successes": 17,
+    "image_failures": 0,
+    "image_completion_rate": 1.0,
+    "migration_count": 17,
+    "restore_count": 17,
+    "restore_successes": 17,
+    "crash_free": true
+  },
+  "latency": {
+    "llm_ttft_s": {
+      "count": 21,
+      "mean": 1.0076,
+      "stdev": 1.0336,
+      "min": 0.024,
+      "max": 3.3029
+    },
+    "image_s": {
+      "count": 17,
+      "mean": 18.2149,
+      "stdev": 11.8078,
+      "min": 5.1,
+      "max": 54.2243
+    },
+    "migration_s": {
+      "count": 17,
+      "mean": 1.7622,
+      "stdev": 1.0844,
+      "min": 0.8284,
+      "max": 4.4401
+    },
+    "restore_s": {
+      "count": 17,
+      "mean": 13.4201,
+      "stdev": 2.4357,
+      "min": 11.1471,
+      "max": 20.157
+    }
+  },
+  "resources": {
+    "rss_mb": {
+      "count": 123,
+      "mean": 5076.3138,
+      "stdev": 2433.6878,
+      "min": 595.7695,
+      "max": 8267.0625
+    },
+    "vram_used_mb": {
+      "count": 123,
+      "mean": 5245.7805,
+      "stdev": 2191.4,
+      "min": 1171.0,
+      "max": 7831.0
+    },
+    "samples": 123
+  },
+  "events": [
+    {
+      "timestamp_s": 5.637,
+      "task_type": "LLM",
+      "latency_s": 0.6252,
+      "phase": "gpu_before_image",
+      "round": 1,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 11.826,
+      "task_type": "LLM",
+      "latency_s": 0.1771,
+      "phase": "gpu_before_image",
+      "round": 2,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 15.029,
+      "task_type": "LLM",
+      "latency_s": 0.1957,
+      "phase": "gpu_before_image",
+      "round": 3,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 15.913,
+      "task_type": "MIGRATION",
+      "latency_s": 0.8841,
+      "phase": "gpu_to_cpu",
+      "round": 1,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 69.253,
+      "task_type": "IMAGE",
+      "latency_s": 54.2243,
+      "phase": "image_generation",
+      "round": 1,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 83.873,
+      "task_type": "RESTORE",
+      "latency_s": 14.6194,
+      "phase": "cpu_to_gpu",
+      "round": 1,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 88.318,
+      "task_type": "MIGRATION",
+      "latency_s": 4.4401,
+      "phase": "gpu_to_cpu",
+      "round": 2,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 115.89,
+      "task_type": "IMAGE",
+      "latency_s": 32.0116,
+      "phase": "image_generation",
+      "round": 2,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 127.675,
+      "task_type": "RESTORE",
+      "latency_s": 11.7853,
+      "phase": "cpu_to_gpu",
+      "round": 2,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 130.618,
+      "task_type": "MIGRATION",
+      "latency_s": 2.942,
+      "phase": "gpu_to_cpu",
+      "round": 3,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 138.482,
+      "task_type": "IMAGE",
+      "latency_s": 10.8054,
+      "phase": "image_generation",
+      "round": 3,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 151.705,
+      "task_type": "RESTORE",
+      "latency_s": 13.2229,
+      "phase": "cpu_to_gpu",
+      "round": 3,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 153.882,
+      "task_type": "LLM",
+      "latency_s": 2.1759,
+      "phase": "gpu_before_image",
+      "round": 4,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 159.618,
+      "task_type": "LLM",
+      "latency_s": 0.2219,
+      "phase": "gpu_before_image",
+      "round": 5,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 162.844,
+      "task_type": "MIGRATION",
+      "latency_s": 1.2221,
+      "phase": "gpu_to_cpu",
+      "round": 4,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 183.664,
+      "task_type": "IMAGE",
+      "latency_s": 22.0427,
+      "phase": "image_generation",
+      "round": 4,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 195.955,
+      "task_type": "RESTORE",
+      "latency_s": 12.2912,
+      "phase": "cpu_to_gpu",
+      "round": 4,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 198.809,
+      "task_type": "MIGRATION",
+      "latency_s": 2.8525,
+      "phase": "gpu_to_cpu",
+      "round": 5,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 203.079,
+      "task_type": "IMAGE",
+      "latency_s": 7.122,
+      "phase": "image_generation",
+      "round": 5,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 218.962,
+      "task_type": "RESTORE",
+      "latency_s": 15.8831,
+      "phase": "cpu_to_gpu",
+      "round": 5,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 221.535,
+      "task_type": "MIGRATION",
+      "latency_s": 2.5723,
+      "phase": "gpu_to_cpu",
+      "round": 6,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 238.537,
+      "task_type": "IMAGE",
+      "latency_s": 19.5743,
+      "phase": "image_generation",
+      "round": 6,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 249.685,
+      "task_type": "RESTORE",
+      "latency_s": 11.1471,
+      "phase": "cpu_to_gpu",
+      "round": 6,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 251.985,
+      "task_type": "MIGRATION",
+      "latency_s": 2.2991,
+      "phase": "gpu_to_cpu",
+      "round": 7,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 256.394,
+      "task_type": "IMAGE",
+      "latency_s": 6.7085,
+      "phase": "image_generation",
+      "round": 7,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 272.476,
+      "task_type": "RESTORE",
+      "latency_s": 16.0817,
+      "phase": "cpu_to_gpu",
+      "round": 7,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 274.389,
+      "task_type": "LLM",
+      "latency_s": 1.912,
+      "phase": "gpu_before_image",
+      "round": 6,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 275.917,
+      "task_type": "LLM",
+      "latency_s": 0.024,
+      "phase": "gpu_before_image",
+      "round": 7,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 280.891,
+      "task_type": "MIGRATION",
+      "latency_s": 0.9653,
+      "phase": "gpu_to_cpu",
+      "round": 8,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 299.921,
+      "task_type": "IMAGE",
+      "latency_s": 19.9956,
+      "phase": "image_generation",
+      "round": 8,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 311.51,
+      "task_type": "RESTORE",
+      "latency_s": 11.5884,
+      "phase": "cpu_to_gpu",
+      "round": 8,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 313.255,
+      "task_type": "LLM",
+      "latency_s": 1.7443,
+      "phase": "gpu_before_image",
+      "round": 8,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 314.107,
+      "task_type": "MIGRATION",
+      "latency_s": 0.8521,
+      "phase": "gpu_to_cpu",
+      "round": 9,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 320.667,
+      "task_type": "IMAGE",
+      "latency_s": 7.4115,
+      "phase": "image_generation",
+      "round": 9,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 333.302,
+      "task_type": "RESTORE",
+      "latency_s": 12.6358,
+      "phase": "cpu_to_gpu",
+      "round": 9,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 335.033,
+      "task_type": "LLM",
+      "latency_s": 1.73,
+      "phase": "gpu_before_image",
+      "round": 9,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 338.866,
+      "task_type": "MIGRATION",
+      "latency_s": 0.8284,
+      "phase": "gpu_to_cpu",
+      "round": 10,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 360.06,
+      "task_type": "IMAGE",
+      "latency_s": 22.0224,
+      "phase": "image_generation",
+      "round": 10,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 380.217,
+      "task_type": "RESTORE",
+      "latency_s": 20.157,
+      "phase": "cpu_to_gpu",
+      "round": 10,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 382.779,
+      "task_type": "MIGRATION",
+      "latency_s": 2.5617,
+      "phase": "gpu_to_cpu",
+      "round": 11,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 404.708,
+      "task_type": "IMAGE",
+      "latency_s": 24.4908,
+      "phase": "image_generation",
+      "round": 11,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 417.121,
+      "task_type": "RESTORE",
+      "latency_s": 12.4127,
+      "phase": "cpu_to_gpu",
+      "round": 11,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 419.823,
+      "task_type": "MIGRATION",
+      "latency_s": 2.7017,
+      "phase": "gpu_to_cpu",
+      "round": 12,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 428.095,
+      "task_type": "IMAGE",
+      "latency_s": 10.9734,
+      "phase": "image_generation",
+      "round": 12,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 441.104,
+      "task_type": "RESTORE",
+      "latency_s": 13.0087,
+      "phase": "cpu_to_gpu",
+      "round": 12,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 444.409,
+      "task_type": "LLM",
+      "latency_s": 3.3029,
+      "phase": "gpu_before_image",
+      "round": 10,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 447.989,
+      "task_type": "LLM",
+      "latency_s": 0.0719,
+      "phase": "gpu_before_image",
+      "round": 11,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 453.254,
+      "task_type": "LLM",
+      "latency_s": 0.2549,
+      "phase": "gpu_before_image",
+      "round": 12,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 454.281,
+      "task_type": "MIGRATION",
+      "latency_s": 1.0268,
+      "phase": "gpu_to_cpu",
+      "round": 13,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 471.034,
+      "task_type": "IMAGE",
+      "latency_s": 17.7798,
+      "phase": "image_generation",
+      "round": 13,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 482.905,
+      "task_type": "RESTORE",
+      "latency_s": 11.8713,
+      "phase": "cpu_to_gpu",
+      "round": 13,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 485.042,
+      "task_type": "LLM",
+      "latency_s": 2.1345,
+      "phase": "gpu_before_image",
+      "round": 13,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 488.073,
+      "task_type": "LLM",
+      "latency_s": 0.024,
+      "phase": "gpu_before_image",
+      "round": 14,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 491.825,
+      "task_type": "LLM",
+      "latency_s": 0.2454,
+      "phase": "gpu_before_image",
+      "round": 15,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 493.705,
+      "task_type": "MIGRATION",
+      "latency_s": 0.8771,
+      "phase": "gpu_to_cpu",
+      "round": 14,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 507.568,
+      "task_type": "IMAGE",
+      "latency_s": 14.7405,
+      "phase": "image_generation",
+      "round": 14,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 518.91,
+      "task_type": "RESTORE",
+      "latency_s": 11.3422,
+      "phase": "cpu_to_gpu",
+      "round": 14,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 520.835,
+      "task_type": "LLM",
+      "latency_s": 1.9228,
+      "phase": "gpu_before_image",
+      "round": 16,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 525.45,
+      "task_type": "LLM",
+      "latency_s": 0.104,
+      "phase": "gpu_before_image",
+      "round": 17,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 531.064,
+      "task_type": "MIGRATION",
+      "latency_s": 1.1034,
+      "phase": "gpu_to_cpu",
+      "round": 15,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 545.73,
+      "task_type": "IMAGE",
+      "latency_s": 15.7692,
+      "phase": "image_generation",
+      "round": 15,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 557.945,
+      "task_type": "RESTORE",
+      "latency_s": 12.2154,
+      "phase": "cpu_to_gpu",
+      "round": 15,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 560.217,
+      "task_type": "LLM",
+      "latency_s": 2.2701,
+      "phase": "gpu_before_image",
+      "round": 18,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 563.748,
+      "task_type": "LLM",
+      "latency_s": 0.0245,
+      "phase": "gpu_before_image",
+      "round": 19,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 565.633,
+      "task_type": "MIGRATION",
+      "latency_s": 0.8829,
+      "phase": "gpu_to_cpu",
+      "round": 16,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 569.851,
+      "task_type": "IMAGE",
+      "latency_s": 5.1,
+      "phase": "image_generation",
+      "round": 16,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 586.233,
+      "task_type": "RESTORE",
+      "latency_s": 16.3828,
+      "phase": "cpu_to_gpu",
+      "round": 16,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 588.039,
+      "task_type": "LLM",
+      "latency_s": 1.8044,
+      "phase": "gpu_before_image",
+      "round": 20,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 592.241,
+      "task_type": "LLM",
+      "latency_s": 0.1942,
+      "phase": "gpu_before_image",
+      "round": 21,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 593.687,
+      "task_type": "MIGRATION",
+      "latency_s": 0.9454,
+      "phase": "gpu_to_cpu",
+      "round": 17,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 611.623,
+      "task_type": "IMAGE",
+      "latency_s": 18.8811,
+      "phase": "image_generation",
+      "round": 17,
+      "success": true,
+      "error": ""
+    },
+    {
+      "timestamp_s": 623.12,
+      "task_type": "RESTORE",
+      "latency_s": 11.4973,
+      "phase": "cpu_to_gpu",
+      "round": 17,
+      "success": true,
+      "error": ""
+    }
+  ]
+}

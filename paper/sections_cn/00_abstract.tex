@@ -1,0 +1,11 @@
+\begin{abstract}
+边缘设备上部署大语言模型与图像生成模型面临显存约束与任务异构的双重挑战。8GB显存无法同时容纳LLM（4-bit量化约4.7GB + KV Cache）与图像生成模型（约6.7GB），而现有方案要么面向数据中心（Ray、Kubernetes），要么假设充足GPU资源（vLLM、FlexGen），缺乏针对边缘设备的轻量级调度解决方案。
+
+本文提出\textbf{EdgeSched}，一个面向边缘设备的多任务AI调度系统。针对显存硬约束与用户体验软约束的非对称性，我们设计了动态资源迁移机制：一种结合"紧急模式"（Urgent Mode）用于快速抢占，以及"原子热切换"（Atomic Hot-Swap）用于毫秒级恢复的策略。系统支持双任务调度、背压控制、取消语义和崩溃恢复（< 15ms），提供完整的任务生命周期管理。
+
+在RTX 5070 Laptop（8GB显存）上的实验表明，EdgeSched在混合负载下实现了100\%的成功率（基线方案因OOM失败），在模型恢复期间将服务中断控制在300ms以内，且相比原始信号量方案调度开销低于11\%。代码已开源：\url{https://github.com/[Your Repo]}
+\end{abstract}
+
+\begin{IEEEkeywords}
+边缘计算, 资源调度, 大语言模型, 图像生成, GPU内存管理
+\end{IEEEkeywords}

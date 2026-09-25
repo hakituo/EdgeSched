@@ -1,0 +1,35 @@
+{
+  "name": "crash_recovery_comparison",
+  "timestamp": "2026-02-25T22:01:15",
+  "with_backplane": {
+    "process_start_to_healthy_ms": 3.2503604888916016,
+    "healthy_to_first_request_ms": 3.7527084350585938,
+    "first_request_to_stable_ms": 9.83285903930664,
+    "total_recovery_time_ms": 13.083219528198242
+  },
+  "without_backplane": {
+    "process_start_to_healthy_ms": 0.6916522979736328,
+    "healthy_to_first_request_ms": 0.7355213165283203,
+    "first_request_to_stable_ms": 7.0362091064453125,
+    "total_recovery_time_ms": 7.728338241577148
+  },
+  "improvement": {
+    "mttr_reduction_percent": -69.288909455499,
+    "validation_success_rate": 1.0,
+    "validation_success_rate_without_backplane": 0.0
+  },
+  "validation": {
+    "with_backplane": {
+      "success": true,
+      "pre_crash_task_count": 10,
+      "recovered_task_count": 10,
+      "lost_count": 0
+    },
+    "without_backplane": {
+      "success": false,
+      "pre_crash_task_count": 10,
+      "recovered_task_count": 0,
+      "lost_count": 10
+    }
+  }
+}

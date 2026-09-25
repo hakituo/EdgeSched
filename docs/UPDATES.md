@@ -117,6 +117,16 @@
 
 倒序追加，新条目放最上面。
 
+## 2026-09-26（续）未跟踪文件圈定入库：285 个工作文件跟踪，wheel/运行时数据忽略
+
+- 背景：IDE 源代码管理面板仍显示大量目录装饰（绿点/`U`），对应剩余 292 个未跟踪文件；用户确认按建议一次性处置。
+- 改动：
+  - **跟踪入库（~285 个，约 9.5 M）**：`paper/` 全部 227 个（正文 tex/数据 JSON/图 PDF-PNG，正文数据重置后现存即当前真源）、`thesis_materials/` 18 个、`tests/` 6 个正式测试、`cpp_scheduler/` 22 个（api/optimization/main.cpp/integration 测试等未接入 CMake GLOB 的源码，先入库留档）、`docs/` 3 个评估报告、`services/biological_system.py`+`bio_state_store.py`、`domain/entities/character.py`、`memory/persistent_state.py`（生物系统 Python 桥，C++ 端参与编译）、`scripts/fix_real_workload_agg.py`（`01_paper_main/real_workload_trace.json` 生成脚本，论文证据溯源）、`assets/scheduler_trace.png`、`experiments/elastic_residency/tts_component_offload_matrix.py`（含配套测试）、根目录 `check_env.sh`/`run_test.sh`/`EXPERIMENT_RERUN_PLAN.md`/`THESIS_EXPERIMENT_GUIDE_DRAFT.md`/`TODO.md`/`todo.txt`。
+  - **删除重复（2 个）**：根目录 `System_Architecture_and_Performance_Report.pdf/.tex` 与 `paper/` 副本逐字节相同（diff 确认），保留 paper/ 正本。
+  - **取消跟踪（2 个）**：`data/nvram.dat`、`data/test_state_backplane.dat.bio` 为运行时 mmap 数据，`git rm --cached` 后保留本地文件，并加入 `.gitignore`（此前 gitignore 已有 `test_state_backplane.dat` 但漏了 `.bio` 变体与 `nvram.dat`，已补齐）。
+  - **忽略（141 M）**：`artifacts/wheels/llama_cpp_python-0.3.35-py3-none-linux_x86_64.whl`（CUDA wheel，本地保留免重编）。
+- 验证：处置后 `git status` 未跟踪归零；`pytest -o asyncio_mode=auto tests/ -q` 基线不变。
+
 ## 2026-09-26 未跟踪临时脚本清理：删除 16 个一次性/重复脚本，未跟踪文件澄清
 
 - 背景：git 重建后 status 折叠显示 147 行未跟踪目录，展开实为 4396 个文件；其中 2594 个是 `cpp_scheduler/deps/llama.cpp-master`（CMake 引用的本地依赖源码）、1494 个是 `stable-diffusion-webui-forge-main`（Forge 服务目录），两者均从未被跟踪、也不在 .gitignore，属基建噪音而非新增工作。用户要求先清理其中的临时脚本。

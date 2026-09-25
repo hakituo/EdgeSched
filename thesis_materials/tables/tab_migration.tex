@@ -1,0 +1,27 @@
+\begin{table}[!t]
+\centering
+\caption{Dynamic Resource Migration Results (RTX 5070 Laptop)}
+\label{tab:migration}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Metric} & \textbf{Value} & \textbf{Description} \\
+\midrule
+\multicolumn{3}{@{}l@{}}{\textit{GPU Baseline \& CPU Fallback}} \\
+LLM GPU TTFT (Ideal) & 26.5 ms & GPU baseline (no image model) \\
+LLM GPU TTFT (Practical) & 115.2 ms & With resident image model \\
+LLM CPU TTFT (Steady-state) & 198.2 ms & During image generation \\
+\midrule
+\multicolumn{3}{@{}l@{}}{\textit{Downlink Migration (GPU $\rightarrow$ CPU, Urgent Mode)}} \\
+Migration Stutter & 1800.8 ms & From image task to CPU LLM ready \\
+\midrule
+\multicolumn{3}{@{}l@{}}{\textit{Uplink Migration (CPU $\rightarrow$ GPU, Atomic Hot-Swap)}} \\
+Restore Time & 2179.6 ms & CPU to GPU end-to-end \\
+Restore Gap & 291.6 ms & Hot-Swap interruption \\
+\midrule
+\multicolumn{3}{@{}l@{}}{\textit{Queue Backpressure}} \\
+Queue Wait Time & 10024.8 ms & Diffusion mutual exclusion \\
+\bottomrule
+\end{tabular}
+\vspace{-0.3em}
+\end{table}

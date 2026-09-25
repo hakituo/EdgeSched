@@ -1,0 +1,41 @@
+\section{相关工作}
+
+\subsection{边缘计算与AI推理}
+
+边缘计算将计算能力下沉到网络边缘，以降低延迟并保护隐私\cite{shi2016edge}。随着大模型的发展，边缘智能（Edge Intelligence）成为研究热点\cite{zhou2019edge}。然而，现有工作主要关注云端到边缘的模型部署，缺乏对资源受限设备上多模态任务共存问题的深入探讨。
+
+\subsection{分布式调度框架}
+
+Ray\cite{moritz2018ray}和Kubernetes\cite{verma2015borg}是主流的分布式调度框架，但它们面向数据中心设计，启动时间在秒级到分钟级，内存占用GB级别，不适合边缘设备的资源受限场景。EdgeSched专注于单机边缘设备，启动时间在毫秒级，内存占用约27MB。
+
+\subsection{GPU内存管理与推理优化}
+
+vLLM\cite{kwon2023vllm}提出PagedAttention技术解决KV Cache碎片化问题，FlexGen\cite{sheng2023flexgen}实现了GPU-CPU Offloading方案。然而，这些方案主要面向服务器场景，假设有充足的GPU资源。EdgeSched针对8GB显存的边缘设备，需要更激进的资源迁移策略和任务调度机制。
+
+\subsection{故障恢复机制}
+
+传统分布式系统的容错方案\cite{cully2008remus}依赖外部存储和协调服务，开销较大。EdgeSched使用mmap实现轻量级状态持久化，无需外部依赖，恢复时间<12ms。
+
+\subsection{与现有方案对比}
+
+表~\ref{tab:comparison}展示了EdgeSched与现有方案的对比。
+
+\begin{table}[htbp]
+\caption{与现有方案对比}
+\label{tab:comparison}
+\centering
+\scriptsize
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+方案 & 目标场景 & 启动时间 & 内存占用 & GPU管理 & 崩溃恢复 \\
+\midrule
+Ray & 数据中心 & 秒级 & GB级 & 分布式 & 依赖外部 \\
+Kubernetes & 云端集群 & 分钟级 & GB级 & 容器隔离 & 依赖外部 \\
+vLLM & 服务器 & 秒级 & GB级 & PagedAttn & 无 \\
+FlexGen & 单GPU & 秒级 & 灵活 & Offloading & 无 \\
+\textbf{EdgeSched} & \textbf{边缘设备} & \textbf{毫秒级} & \textbf{27MB} & \textbf{动态迁移} & \textbf{mmap} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+EdgeSched填补了边缘设备上多模态AI调度系统的空白，提供了轻量级调度、动态资源迁移、轻量级崩溃恢复和完整的任务生命周期管理。

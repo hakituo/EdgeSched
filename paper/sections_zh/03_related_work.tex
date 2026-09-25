@@ -1,0 +1,58 @@
+\section{相关工作}
+
+\subsection{本地推理引擎与单模型优化}
+
+与本文最接近的一类相关工作，是在受限硬件上提升\emph{单个}模型本地执行效率的研究。
+
+\textbf{vLLM}\cite{kwon2023vllm} 通过 \textit{PagedAttention} 高效管理 KV cache，并提升高并发服务中的吞吐。然而，它的主要目标是单模型的高吞吐服务，而非在一块受限 GPU 上对异构任务进行服务级仲裁。
+
+\textbf{FlexGen}\cite{sheng2023flexgen} 通过激进的张量卸载到 CPU 和磁盘，让大模型可以在有限硬件上运行。它在容量优先或离线场景中很有效，但这种重 I/O 设计并不面向快速任务切换下的交互连续性保持。
+
+\textbf{llama.cpp}\cite{llamacpp} 通过量化和基于 mmap 的加载，让 LLM 能够在消费级 CPU/GPU 上实际运行。它与我们的场景高度相关，因为它是本地推理的底层基础设施；但它本身并不是一个面向多个异构服务的调度器。因此，在实验中我们将 \texttt{llama.cpp + manual switching} 作为一种实际基线，而不是把 \texttt{llama.cpp} 本身视为调度系统。
+
+其他优化工作，如 \textbf{PowerInfer}\cite{song2023powerinfer}、\textbf{Deja Vu}\cite{liu2023dejavu} 和 \textbf{MLC LLM}\cite{wu2023mlc}，则通过稀疏性或编译优化提升单模型执行效率。这些系统与本文工作是互补关系：它们优化的是单个模型的内部执行路径，而 EdgeSched 解决的是系统层面上多类工作负载的生命周期与资源所有权仲裁。
+
+一些较新的服务系统开始更接近本文关注的调度边界。\textbf{Splitwise}\cite{patel2024splitwise} 和 \textbf{P/D-Serve}\cite{jin2024pdserve} 通过拆分 prefill 与 decode 阶段来提高高吞吐 LLM 服务的资源利用率。\textbf{Inference without Interference}\cite{hu2024interference} 则研究了混合下游工作负载，并主张通过解耦推理路径来降低跨工作负载干扰。这些系统在概念上比纯单模型优化器更接近 EdgeSched，因为它们都承认不同阶段或不同请求类别可能需要不同控制策略。然而，它们的设计中心仍然是服务器式 LLM 服务与阶段感知资源分配，而非单机设备上“一个常驻服务”与“一个无关的 GPU 独占应用”之间的仲裁。
+
+这种区别对评估很重要：如果要寻找比手动切换或 OS 管理内存更强的外部参照，那么 Splitwise、P/D-Serve 和 Inference without Interference 这类系统在概念上最有参考价值。但与此同时，它们并不能直接作为我们的部署基线，因为它们通常假设的是面向 LLM 服务的栈、以批处理为主的请求流，或者分布式/服务器级执行环境，这与本文的 LLM 加图像生成场景并不相同。
+
+\subsection{应用层内存仲裁}
+
+传统操作系统调度为 CPU 进程提供了成熟机制，但在应用层面对 GPU 显存所有权的控制能力有限。在专用显存受限的前提下，如果纯粹依赖 OS 级分页、类似 swap 的行为或 unified-memory 风格的回退，当多个显存密集型工作负载竞争时，很容易出现严重抖动甚至超时。我们的实验通过 LRU/unified-memory 基线验证了这一现象。
+
+EdgeSched 要解决的是一个不同于单模型推理引擎的问题：在单台消费级设备上，如何在\emph{常驻、可迁移、时延敏感}的工作负载与\emph{突发、GPU 绑定、可排队}的工作负载之间进行仲裁。本文的关键贡献因此不是某个新的底层原语，而是服务角色不对称性带来的控制后果：调度器必须在下行路径上快速释放显存，而在上行路径上推迟可见中断。
+
+这也正是 EdgeSched 与简单工程拼装的区别所在。优先级队列、卸载和崩溃恢复在别处都能找到，但本文的论点是：在所研究的本地运行时场景中，两条迁移路径承载着不同的控制目标，因此有必要将紧急下行与面向连续性的恢复分开设计。
+
+\subsection{通用编排系统}
+
+像 \textbf{Ray}\cite{moritz2018ray} 和 \textbf{Kubernetes}\cite{verma2015borg} 这样的框架，主要面向集群或容器环境中的分布式编排。它们提供了通用的调度抽象、故障处理和弹性资源管理，但其设计中心是多节点协调，而不是单台消费级设备上的亚秒级资源仲裁。即便是 \textbf{KubeEdge}\cite{xiong2019kubeedge} 这样的边缘扩展，也仍继承了云原生编排体系的大量架构开销。
+
+我们提到这些系统主要是为了澄清工作范围：EdgeSched 并不面向分布式放置或集群级编排，而是专注于单节点、本地 AI 运行时以及有限专用显存条件下的问题。因此，Ray/Kubernetes 这类系统更适合作为\emph{定位性参考}，而不是本文部署场景中的直接实验基线。
+
+\subsection{比较总结}
+
+表~\ref{tab:comparison} 总结了代表性先前系统相对于 EdgeSched 的定位。
+
+\begin{table}[htbp]
+\caption{代表性系统比较}
+\label{tab:comparison}
+\centering
+\scriptsize
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+系统 & 主要关注点 & 部署范围 & 调度层级 & 多工作负载仲裁 & 开销特征 \\
+\midrule
+Ray & 分布式调度 & 集群 & 集群级 & 强 & 高 \\
+Kubernetes & 容器编排 & 集群 & 集群级 & 强 & 高 \\
+vLLM & 单模型服务优化 & 单机/服务器 & 模型级 & 弱 & 中 \\
+FlexGen & 单模型卸载 & 单机 & 模型级 & 弱 & 高 I/O \\
+llama.cpp & 本地单模型推理 & 单机 & 模型级 & 无 & 低 \\
+EdgeSched & 本地异构运行时仲裁 & 单机 & 运行时级 & 强 & 轻量 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+与现有工作相比，EdgeSched 的独特点不在于重新发明某个单独部件，而在于把一个明确的本地场景抽象为服务角色不对称问题，并据此推导出不对称迁移这一控制结构。

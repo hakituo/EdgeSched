@@ -1,0 +1,56 @@
+% EdgeSched 论文 - 中文版
+\documentclass[conference]{IEEEtran}
+
+% 中文支持
+\usepackage[UTF8]{ctex}
+\usepackage{CJKutf8}
+
+% 基础包
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{url}
+\usepackage{hyperref}
+
+% 代码高亮
+\usepackage{listings}
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    language=Python
+}
+
+\begin{document}
+
+\title{EdgeSched: 面向资源受限边缘设备的\\轻量级多模态AI任务调度系统}
+
+\author{
+\IEEEauthorblockN{作者姓名}
+\IEEEauthorblockA{\textit{学院名称} \\
+\textit{大学名称}\\
+城市, 国家 \\
+email@example.com}
+}
+
+\maketitle
+
+\input{sections_cn/00_abstract}
+\input{sections_cn/01_introduction}
+\input{sections_cn/02_background}
+\input{sections_cn/03_related_work}
+\input{sections_cn/04_system_design}
+\input{sections_cn/05_implementation}
+\input{sections_cn/06_evaluation}
+\input{sections_cn/07_conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

@@ -1,0 +1,56 @@
+\section{实现}
+\label{sec:implementation}
+
+\subsection{技术栈}
+
+EdgeSched 基于 Python 3.10 实现。核心框架方面，FastAPI 0.110+ 提供 WebSocket API，Uvicorn 作为 ASGI 服务器，Pydantic 2.6+ 用于数据校验。机器学习推理方面，llama-cpp-python 0.2+ 用于 LLM 推理（GGUF 格式），PyTorch 2.0+ 配合 Diffusers 0.25+ 用于图像生成（Stable Diffusion）。异步运行时方面，asyncio 实现基于协程的并发，aiohttp 作为异步 HTTP 客户端。硬件配置为：NVIDIA GeForce RTX 5070 Laptop（8GB VRAM）、AMD Ryzen 9 8940HX、32GB DDR5、Windows 11。
+
+\subsection{关键模块实现}
+
+\textbf{动态资源迁移}。当图像任务到来时，系统会卸载常驻 LLM：保存其状态、释放 GPU 显存，并在 CPU 上恢复执行。上行恢复阶段，Atomic Hot-Swap 确保 CPU 实例在 GPU 实例后台预加载期间仍可继续服务请求。算法~\ref{alg:migration} 给出了核心迁移逻辑。
+
+\begin{algorithm}[!t]
+\caption{动态 GPU-CPU 迁移}
+\label{alg:migration}
+\begin{algorithmic}[1]
+\STATE \textbf{function} \textsc{OffloadToCPU}()
+\STATE \quad Save KV cache state
+\STATE \quad Release GPU VRAM
+\STATE \quad Load CPU backend asynchronously
+\STATE \textbf{end function}
+\STATE
+\STATE \textbf{function} \textsc{RestoreToGPU}()
+\STATE \quad Preload GPU instance in background
+\STATE \quad Wait until GPU ready
+\STATE \quad Atomic switch: CPU $\rightarrow$ GPU
+\STATE \textbf{end function}
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{任务队列管理}。图像队列使用有界容量以防止资源耗尽。队列已满时，新任务会立即收到反压信号并被拒绝。
+
+\textbf{状态持久化}。StateBackplane 使用 mmap 实现零拷贝 I/O。任务状态通过 \texttt{struct.pack} 序列化并写入内存映射文件，从而以很低开销实现持久化，并在我们的测量中支持约 44 ms 的语义恢复。
+
+\subsection{部署配置}
+
+\textbf{LLM 配置}：
+\begin{itemize}
+\item 模型：Qwen2.5-7B-Instruct（GGUF 格式，Q4\_K\_M 量化）
+\item 模型权重：约 $\sim$4.7GB
+\item KV Cache：在我们测试的 4096 上下文长度配置下约为 1--2GB
+\item 总显存占用：约 $\sim$6--7GB
+\item GPU layers：默认 -1（自动分配），在 8GB 显存环境中通常加载 25--33 层
+\item 首 token 超时：30 秒
+\item 最大生成 token 数：512
+\end{itemize}
+
+\textbf{图像生成配置}：
+\begin{itemize}
+\item 模型：SDXL Turbo 1.0（fp16 精度，约 $\sim$6.7GB）
+\item 加载策略：按需加载，完成后卸载以释放显存
+\item 最大并发：1
+\item 队列容量：8
+\item 总槽位：9（并发 + 排队）
+\item 图像尺寸：512$\times$512
+\item 推理步数：20
+\end{itemize}
