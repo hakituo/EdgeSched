@@ -1,8 +1,8 @@
 ---
-description: EdgeSched/MVP Core 核心强制规则：项目定位、环境分工（Windows 编辑 / 本机 Linux 运行）、实验证据口径、修改与验证要求
+description: EdgeSched/MVP Core 核心强制规则：项目定位、原生 Linux 环境与 git 规则、实验证据口径、修改与验证要求
 alwaysApply: true
 enabled: true
-updatedAt: 2026-09-23T00:00:00.000Z
+updatedAt: 2026-08-29T10:00:00.000Z
 provider:
 ---
 
@@ -16,26 +16,26 @@ provider:
 - Python 控制面位于 `services/`；原生执行面位于 `cpp_scheduler/`；实验入口位于 `experiments/`；论文证据位于 `paper/experiment_data/`。
 - `main.py` 只是 FastAPI/WebSocket 演示入口，不代表论文全部实验的统一入口。
 - `config.py` 优先适配父仓库 `config/integrated_config.py`，独立运行时才使用环境变量回退配置。
-- 本目录是独立 git 仓库（remote: `origin` = `https://github.com/hakituo/EdgeSched`），与父仓库 `d:\AI\xiaoyou-core` 的版本管理分开；`.git` 不同步到 Linux，git 提交/推送只在 Windows 侧进行。
+- 本目录是独立 git 仓库（remote: `origin` = `https://github.com/hakituo/EdgeSched`），与父仓库 `/home/leslie/xiaoyou-core` 的版本管理分开；**2026-09-25 起 `.git` 就在原生 Linux 工作树 `/home/leslie/mvp_core` 内，git 提交/推送直接在 Linux 侧进行**；Windows 旧副本不再权威，`sync_to_wsl2_safe.ps1` 自动提交流程已废止。
 - 禁止调用父仓库 `scripts/doc_records/update_project_records.py` 修改父目录的 `UPDATES.md` 或 `Question_Reviewer/`；更新记录只维护在本目录的 `docs/`、README 和实验 manifest。
 
 ## 环境与运行
 
-- 真实模型、CUDA、C++ 编译和论文实验在**本机原生 Linux**（与 Windows 双系统）运行：代码 `/home/leslie/mvp_core`，主环境 `/home/leslie/.venvs/mvp_core-cu128`。WSL2（`Ubuntu-24.04-E`）自 2026-09-23 起停用，仅作历史参考。
-- Forge 使用独立环境 `/home/leslie/.venvs/forge-cu128`，服务目录为 `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/`。
-- Windows 侧只做编辑、静态验证和结果收集；可用父仓库 `venv_core` 运行不依赖 GPU 的验证。
-- 双系统下 Windows 与 Linux 不会同时在线，同步发起端在 **Linux 侧**：`bash scripts/sync_from_windows.sh` 从挂载的 D 盘仓库（`/mnt/d/AI/xiaoyou-core/legacy/mvp_core`）增量同步到 `$HOME/mvp_core`。禁止 `--delete`、镜像覆盖或清理 Linux 侧模型目录。
-- Windows 侧收尾统一用 `scripts/commit_and_push.ps1`（只做 `git add/commit/push`，不再负责把代码推进运行环境）。
+- 2026-09-25 起主开发环境是本机原生 Linux `/home/leslie/mvp_core`（非 WSL2），编辑、运行、git 都在此处；真实模型、CUDA、C++ 编译和论文实验均在本机运行。主环境为 `/home/leslie/xiaoyou-core/.venv`（共享，Python 3.13 / torch 2.12+cu130），`/home/leslie/.venvs/mvp_core-cu128` 是指向它的软链。
+- Forge 使用独立环境 `/home/leslie/.venvs/forge-cu128`（Python 3.10 / torch 2.10+cu128），服务目录为 `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/`。
+- GGUF 与 Forge 部分额外权重是指向 970 EVO 的软链，跑实验前确认 970 EVO 已挂载；`experiment_results` 已在本地实体目录，不依赖外挂盘。
+- 文本文件统一 LF（根目录 `.gitattributes`，2026-09-25 全量归一），`core.fileMode=false`；不要把 CRLF 或批量 mode 变更带入提交。
 - 不使用全局 Python，不修改任何虚拟环境；确需修改依赖时先与用户讨论。
-- 统一使用中文注释，优先编写 Windows 与 Linux 均可运行的代码。
+- 统一使用中文注释；代码以本机 Linux 运行为准（Windows 旧流程已废止）。
 
 ## 提交与更新记录
 
-- **commit 必须写清这次改动做了什么**：运行 `scripts/commit_and_push.ps1` 必须带 `-Message "一句话说明"`，例如 `-Message '修复 Phase-Aware 阶段切换的显存估算偏差'`；需要随代码留存细节时再补 `-Detail`。
-- 不带 `-Message`，或提交信息是 `auto`/`update`/`更新`/`自动提交`/`同步` 这类无信息文案时，脚本在 `git add` 之前直接报错退出（exit 2），不允许再产生看不懂的 commit。
+- **commit 必须写清这次改动做了什么**：`git commit -m "一句话说明"`，例如 `git commit -m "修复 Phase-Aware 阶段切换的显存估算偏差"`；细节写 commit body 或 `docs/UPDATES.md`。
+- 提交信息禁止 `auto`/`update`/`更新`/`自动提交`/`同步` 这类无信息文案。
 - commit 主题行只写一句话，不写文件清单和时间戳（`git show --stat`、`git log` 本来就有）。
 - **详细记录写 `docs/UPDATES.md`**（背景/改动/验证/备注，倒序追加），它是本仓库唯一的更新记录文件；禁止调用父仓库 `scripts/doc_records/update_project_records.py`。
-- 工作区存在其他会话或其他 agent 的未提交改动时，先 `git stash push -m "wip-other" -- <无关路径>` 搁置，提交推送成功后立即 `git stash pop` 恢复，不要把无关改动一起推上去。
+- 工作区存在其他会话或其他 agent 的未提交改动时，只显式 `git add` 本任务相关文件，不要 `git add -A` 把无关改动一起推上去。
+- 提交/推送只在用户明确要求时执行。
 
 ## 实验与证据规则
 
@@ -50,7 +50,7 @@ provider:
 - 调度主路径：`services/task_scheduler.py`、`services/admission_controller.py`、`services/resource_manager.py`、`services/state_backplane.py`。
 - C++ 桥接：`services/cpp_scheduler_engine.py`、`services/cpp_scheduler_wrapper.py`、`cpp_scheduler/bindings/python_bindings.cpp`。
 - Phase-Aware：`services/phase_aware/` 与 `cpp_scheduler/core/phase_strategy.*`，Python/C++ 契约变更必须双向检查。
-- 每次优化补充或更新 `tests/` 下的验证；默认先跑静态/Mock 测试，真实 GPU/Forge 测试在 Linux 侧单独执行（Windows 侧无法代跑，也没有 WSL2 兜底）。
+- 每次优化补充或更新 `tests/` 下的验证；默认先跑静态/Mock 测试，真实 GPU/Forge 测试在本机 Linux 直接执行。
 - 修改目录、入口、环境、数据口径或模块职责时，同步更新 `docs/PROJECT_INDEX.md`、`docs/PROJECT_CONTEXT.md` 和相关 README。
 - 不把 `cpp_scheduler/build/`、模型、运行日志、临时输出或本地 mmap 数据当作源码。
 

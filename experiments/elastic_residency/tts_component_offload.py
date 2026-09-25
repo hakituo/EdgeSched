@@ -745,7 +745,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--model",
-        default="/home/leslie/mvp_core/models/Qwen3-TTS-12Hz-0.6B-Base",
+        # 2026-09-25 起 TTS 权重统一指向 xiaoyou-core/models（两份内容一致，单一真源）
+        default="/home/leslie/xiaoyou-core/models/Qwen3-TTS-12Hz-0.6B-Base",
     )
     parser.add_argument(
         "--ref-audio",

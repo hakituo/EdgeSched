@@ -339,31 +339,34 @@ small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；�
 和 Profile 五轮画像（5/5 全通过）。当前先离线筛容量与阶段切换候选，不重复运行基础画像。
 两个阶段生成预算与 n_ctx 不同，分别保存，不能混为同一性能曲线；详见 [协议](VISION_9B_PROBE_20260906.md)。
 
-**2026-09-23 起运行环境由 WSL2 换为本机原生 Linux**（与 Windows 双系统，另一块 SSD 整盘 ext4）。
-WSL2 发行版 `Ubuntu-24.04-E` 仅作历史参考：不要再按 `\\wsl.localhost\...`、`wsl -e` 或「Windows 侧推送代码到运行环境」规划任务。
-
 | 用途 | 路径/环境 |
 |---|---|
-| Windows 编辑副本（代码真源，git 仓库） | `D:\AI\xiaoyou-core\legacy\mvp_core` |
-| Linux 运行副本 | `/home/leslie/mvp_core` |
-| Linux 侧挂载 Windows D 盘 | `/mnt/d`（`/mnt/d/AI/xiaoyou-core/legacy/mvp_core` 即上面那份真源） |
-| 主实验环境 | `/home/leslie/.venvs/mvp_core-cu128`（2026-09-17 起软链到加速隔离环境：`/home/leslie/qwen3tts-cugraph-probe/faster-qwen3-tts/.venv`；Python 3.12.3 / torch 2.11.0+cu128 / transformers 5.15.1 / llama_cpp 0.3.35(CUDA) / sounddevice / faster-whisper / onnxruntime） |
-| 遗留环境 | **已于 2026-09-17 删除**（原 Python 3.10.19 / torch 2.10 / transformers 4.57.3，是唯一装了上游 `qwen_tts` 的环境）。旧后端脚本（`--tts-backend upstream_dynamic`、`run_small_9b_tts_compat/t4_isolate`、`services/tts/qwen3_tts_worker.py`）重跑需自建环境并显式指定解释器；旧 B2 矩阵生成器 `tts_component_offload_matrix.py` 已于同日删除 |
-| Forge 环境 | `/home/leslie/.venvs/forge-cu128` |
-| GGUF 模型 | `/home/leslie/mvp_core/models/llm` |
+| **主开发副本（唯一权威）** | `/home/leslie/mvp_core`，本机原生 Linux（Ubuntu-24.04-E，非 WSL2）；编辑、运行、git 提交/推送均在此处，`.git` 在工作树内（origin = `https://github.com/hakituo/EdgeSched`） |
+| Windows 旧副本（已停用） | `D:\AI\xiaoyou-core\legacy\mvp_core`：2026-09-25 前的权威仓库，`.git` 已复制到 Linux 并校验；此后不再参与提交，`sync_to_wsl2_safe.ps1` 流程废止，保留仅作历史备份 |
+| 行尾/权限 | 仓库根 `.gitattributes` 统一文本 LF（2026-09-25 全量归一）；`core.fileMode=false`、`core.symlinks=true` |
+| 主实验环境 | `/home/leslie/.venvs/mvp_core-cu128`（稳定路径，**2026-09-25 起为软链**，实际指向 `/home/leslie/xiaoyou-core/.venv`：uv 管理 / Python 3.13.15 / torch 2.12.0+cu130 / torchvision 0.27+cu130 / transformers 4.57.3 / llama_cpp 0.3.35(CUDA 12.8 源码编译) / faster-qwen3-tts 0.2.6 / qwen-tts 0.1.1 / sounddevice / faster-whisper / onnxruntime。mvp 侧补装 diffusers 0.37.1、qwen-vl-utils、loguru、safetensors 0.8、pybind11。numpy 保持 1.26.4 不动） |
+| 遗留环境 | ① 2026-09-17 删除的 Python 3.10.19 / torch 2.10 / transformers 4.57.3 旧主环境；② 2026-09-17–24 软链目标 `/home/leslie/qwen3tts-cugraph-probe/faster-qwen3-tts/.venv`（Python 3.12 / torch 2.11+cu128 / transformers 5.15.1 的加速隔离环境）在系统迁移后已不存在（现为空的 3.10 venv）。旧后端脚本（`--tts-backend upstream_dynamic`、`run_small_9b_tts_compat/t4_isolate`、`services/tts/qwen3_tts_worker.py`）重跑前仍须按 TTS 文档准备环境；但 `cuda_graph_static` 加速后端**已验证可直接在共享 3.13 venv 运行**（faster-qwen3-tts 0.2.6 + transformers 4.57.3，稳态 RTF 0.3136，与历史 5.x 隔离环境 0.303–0.317 一致，见 7.1 与 TTS 文档；不要升级 transformers 5.x） |
+| Forge 环境 | `/home/leslie/.venvs/forge-cu128`（2026-09-25 用 Python 3.10.21 重建，预装 torch 2.10.0+cu128 / torchvision 0.25.0+cu128，其余依赖由 Forge `launch.py` 首次启动时按 `requirements_versions.txt` 安装；setuptools 钉 69.5.1、numpy 钉回 1.26.2，CLIP 需免隔离预装，坑点详见 `docs/UPDATES.md` 2026-09-25 条目。初始化已用 `launch.py --exit` 验证，**真实出图 smoke 未跑**） |
+| GGUF 模型 | `/home/leslie/mvp_core/models/llm` 下 4 个文件均为软链，真实权重在 970 EVO `/media/leslie/970EVO/xiaoyou-models/llm`（2026-09-25 sha256 四份逐一比对一致后替换；已实测 llama.cpp 经软链 mmap+生成正常）；代码路径不变，可用性依赖 970 EVO 挂载 |
 | 当前 9B + 视觉副本 | 上述原生目录中的 `Qwen3.5-9B-q4_k_m.gguf` / `Qwen3.5-9B-f16.mmproj`；2026-09-06 从 D: 复制并核验两侧 SHA-256，见 [复核记录](VISION_9B_PROBE_20260906.md) |
+| TTS 模型 | `/home/leslie/xiaoyou-core/models/Qwen3-TTS-12Hz-0.6B-Base`（2026-09-25 起全部实验脚本默认指向；与 mvp_core 下旧副本 `diff -rq` 一致；可用 `XIAOYOU_BENCH_TTS_PATH` 覆盖） |
 | 辅助模型 | `/home/leslie/mvp_core/models/auxiliary`（Faster-Whisper Small、BGE-small-zh-v1.5） |
-| 图像模型 | `/home/leslie/mvp_core/models/Image` |
+| 图像模型 | `/home/leslie/mvp_core/models/Image`；970 EVO 额外权重（`/media/leslie/970EVO/xiaoyou-models/Image` 的 krea2/z-image checkpoint、4 个 VAE、openposeXL controlnet）已软链进 Forge `models/`，依赖盘处于挂载状态 |
 | Forge 服务 | `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/` |
 
-同步分成两端，因为双系统下 Windows 与 Linux 不会同时在线：
+**2026-09-25 起不再有 Windows→Linux 同步流程**：主开发与 git 操作都在 `/home/leslie/mvp_core` 原生 Linux 完成，直接 `git add`（显式路径）/ `git commit -m "一句话说明"` / `git push origin main`。`scripts/sync_to_wsl2_safe.ps1` 已废止，禁止再用于提交；其 `/models/` 排除语义只作为 `.gitignore` 的历史背景（根目录模型排除写成 `/models/`，避免误伤 `domain/models/`）。提交信息要求不变：一句话写清改动、禁止 auto/更新/同步 等无信息文案、细节写 `docs/UPDATES.md`；存在其他会话未提交改动时只暂存本任务文件。
 
-- **Linux 侧拉取**：`bash scripts/sync_from_windows.sh` 从挂载的 `/mnt/d/AI/xiaoyou-core/legacy/mvp_core` 增量同步到 `$HOME/mvp_core`，只覆盖不删除——Linux 独有的模型、Forge、`experiment_results` 软链与 C++ 构建产物绝不能被抹平。根目录模型排除必须写成 `/models/`，避免误排除 `domain/models/` 等源码包；Python 缓存和测试临时目录不参与同步。支持 `--dry-run` 预演与 `--ensure-links` 补软链。
-- **Windows 侧收尾**：`scripts/commit_and_push.ps1` 只做 `git add/commit/push`，**必须带 `-Message "一句话说明这次改了什么"`**（`-Detail` 可选作 commit 正文）；缺 `-Message` 或文案无信息（auto/update/更新/自动提交 等）时脚本在 `git add` 之前报错退出，不再生成看不懂的 commit。工作区存在其他会话的改动时先 `git stash push -m "wip-other" -- <无关路径>` 搁置，提交后恢复。详细过程（背景/改动/验证）写 `docs/UPDATES.md`。真实运行前仍应核对目标文件时间戳或哈希。
+### 7.1 当前 Linux 运行快照
 
-`requirements-linux-cu128.txt`（主环境）与 `requirements-linux-forge.txt`（Forge）是当前依赖真源，均由 Linux 侧实际环境 `pip freeze` 净化而来，两者刻意保持隔离（主环境 torch 2.11.0+cu128 / numpy 2.5.3，Forge torch 2.10.0+cu128 / numpy 1.26.2）。`requirements-wsl-cu128.txt` 描述的是 2026-09-17 软链换名后已搁置的旧主环境，文件头已标注失效。
+2026-09-25（系统迁移后重建环境）：
 
-### 7.1 WSL2 时期运行快照（历史，2026-09-23 前；仅作追溯，不代表当前环境）
+- 主环境改为直接复用父项目 venv `/home/leslie/xiaoyou-core/.venv`（uv，Python 3.13.15，torch 2.12.0+cu130，驱动 595.91.07 / CUDA 13.2），`/home/leslie/.venvs/mvp_core-cu128` 重建为指向它的软链；`torch.cuda.is_available()` 正常识别 RTX 5070 Laptop（8 GiB，sm_120）。
+- 在共享 venv 中用 `/usr/local/cuda-12.8` 源码编译安装 `llama-cpp-python==0.3.35`（`GGML_CUDA=on`、`GGML_CUDA_ARCHITECTURES=120`），`llama_supports_gpu_offload()=True` 并枚举出本卡；另补 diffusers 0.37.1、qwen-vl-utils 0.0.14、loguru、safetensors 0.8.0、torchvision 0.27.0+cu130、pybind11。未升级 numpy（保持 1.26.4），未安装代码零导入的 blendmodes/peft。
+- Forge 独立环境 `/home/leslie/.venvs/forge-cu128` 用 Python 3.10.21 重建并预装 cu128 torch（RTX 5070 不能用 launch.py 默认的 2.3.1+cu121）。
+- `cpp_scheduler/build_wsl2.sh` 改为 3.13 共享 venv + pybind11 cmake 路径 + `CMAKE_CUDA_ARCHITECTURES=120`；系统补装 `libuv1-dev` 后全量构建通过，`scheduler_py.cpython-313-x86_64-linux-gnu.so` 可导入。
+- 加速 TTS 后端无需 transformers 5.x：共享 venv 内 faster-qwen3-tts 0.2.6（依赖声明 `transformers>=4.57`）在 4.57.3 下实测两图捕获成功、经 mvp 集成入口合成有效音频，稳态 RTF 0.3136 与历史 5.x 隔离环境（0.303–0.317）一致；S0 v2 `cuda_graph_static` 在现环境可直接重跑。刻意不升级 transformers（qwen-tts 0.1.1 钉死 4.57.3，且是 xiaoyou-core 主项目环境）。
+- TTS 权重默认路径切到 `/home/leslie/xiaoyou-core/models/Qwen3-TTS-12Hz-0.6B-Base`（8 个实验入口 + TTS 文档；旧 mvp_core 副本内容一致保留）；模型存储收敛到外挂盘：970 EVO 上的 krea2/z-image checkpoint、VAE、controlnet 共 7 个权重软链进 Forge `models/`；`models/llm/` 下 4 个 GGUF/mmproj（约 9.3 G）sha256 校验一致后也替换为指向 970 EVO 的软链（llama.cpp 经软链 mmap+生成实测正常）。上述均依赖 970 EVO 挂载。
+- **git 主仓库在 Linux 重建**：先从 Windows 副本复制 `.git`（NTFS stat 导致 status 长期虚报 200+ 假 M），最终按用户意见改为从 GitHub `git clone --no-checkout` 取干净 `.git`（HEAD bcb45b0 与本地一致）并 `git reset` 重建 index，幻影消失；新增 `.gitattributes` 并把已跟踪文本全量归一 LF。最终未提交差异：27 改 / 6 删 / 148 新增（迁移期遗留，去留另行决定）；`core.fileMode=false`、`core.symlinks=true`、`core.ignorecase=false`。`experiment_results` 同时从 D 盘软链改为本地实体目录（1.7 G，复制后与 HEAD 一致）。WSL2 双副本与 `sync_to_wsl2_safe.ps1` 自动提交流程废止。
 
 2026-08-28 在 `Ubuntu-24.04-E` 做过只读核验：
 

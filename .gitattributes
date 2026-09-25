@@ -1,0 +1,21 @@
+# 2026-09-25 起主开发仓库在原生 Linux，统一以 LF 入库/检出。
+# text=auto 让 git 自动识别文本与二进制；下列二进制类型显式标记，避免被行尾归一误伤。
+* text=auto eol=lf
+
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.pdf   binary
+*.wav   binary
+*.mp3   binary
+*.ogg   binary
+*.gguf  binary
+*.safetensors binary
+*.ckpt  binary
+*.bin   binary
+*.dat   binary
+*.so    binary
+*.a     binary
+*.o     binary
+*.pyc   binary

@@ -1,3 +1,10 @@
+# 2026-09-25 起主环境复用 /home/leslie/xiaoyou-core/.venv（Python 3.13，uv 管理）。
+# 本文件是“独立环境”的完整清单；向共享 venv 补装时不要整体执行，否则会降级
+# torch/pillow/onnxruntime 或把 numpy 升到 2.x，影响父项目。当前共享 venv 的实际口径：
+#   numpy 1.26.4（不升 2.x）、pillow 11.3、onnxruntime 1.26、safetensors 0.8；
+#   blendmodes/peft 在 mvp 源码中零导入，未安装；torch 由共享 venv 提供 2.12+cu130。
+# 缺包按 docs/PROJECT_CONTEXT.md 7.1 的 2026-09-25 快照清单单独补装。
+
 # Core Framework
 fastapi>=0.110.0
 uvicorn>=0.27.0
@@ -6,9 +13,8 @@ websockets>=11.0
 
 # Machine Learning & AI
 torch>=2.0.0
-# qwen-tts 的运行时契约；旧版 transformers 会在导入时缺少 ALL_ATTENTION_FUNCTIONS。
-# 这里是通用/Windows 侧参考值；Linux 实验环境的精确版本以 requirements-linux-cu128.txt
-# 为准（实际为 transformers 5.15.1、torch 2.11.0+cu128）。
+# qwen-tts 0.1.1 的运行时契约；旧版 transformers 会在导入时缺少
+# ALL_ATTENTION_FUNCTIONS。WSL/CUDA 的精确 PyTorch 版本见 requirements-wsl-cu128.txt。
 transformers==4.57.3
 accelerate==1.12.0
 diffusers>=0.25.0
@@ -22,11 +28,9 @@ sentencepiece>=0.1.99
 protobuf>=4.25.0
 qwen-vl-utils
 # 0.3.35 起支持本项目 Qwen3.5 GGUF 的 qwen35 架构。
-# CUDA 环境不得直接接受 CPU wheel，构建要求见 requirements-linux-cu128.txt。
+# CUDA 环境不得直接接受 CPU wheel，构建要求见 requirements-wsl-cu128.txt。
 llama-cpp-python==0.3.35
-# 实际安装的发行名是 qwen-tts-hf（0.1.1 对应 0.1.1.post1），不是 PyPI 上的 qwen-tts；
-# 旧写法会导致环境里查不到实际使用的那个包。
-qwen-tts-hf==0.1.1.post1
+qwen-tts==0.1.1
 
 # Elastic-residency auxiliary CPU stages. These versions match the verified
 # Windows-side runtime and are installed into the WSL2 experiment environment.

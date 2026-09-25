@@ -1,6 +1,6 @@
 # EdgeSched 更新记录
 
-本文件是 `legacy/mvp_core`（EdgeSched 独立仓库）的**详细**更新记录，与父仓库 `d:\AI\xiaoyou-core\UPDATES.md` 无关，两者不要互写。
+本文件是 EdgeSched 独立仓库（`/home/leslie/mvp_core`，origin = `https://github.com/hakituo/EdgeSched`）的**详细**更新记录，与父仓库 `/home/leslie/xiaoyou-core/UPDATES.md` 无关，两者不要互写。
 
 ## 记录分工
 
@@ -8,84 +8,11 @@
 | --- | --- | --- |
 | `docs/UPDATES.md`（本文件） | 背景、根因、方案、影响范围、验证方式 | — |
 | git commit 主题行 | 一句话：**这次改动做了什么** | 文件清单（`git show --stat` 可查）、时间戳（`git log` 自带） |
-| commit 正文（脚本 `-Detail`） | 只有需要随代码留存的过程信息时才写 | 大段复盘（写本文件） |
+| commit 正文 | 只有需要随代码留存的过程信息时才写 | 大段复盘（写本文件） |
 
 ## 条目格式
 
-每条按「背景 / 改动 / 验证 / 备注」写，倒序追加在最上面。
-
-## 2026-09-25 修正依赖清单里主环境的 Python 版本（3.10 → 3.12）
-
-- 背景：`requirements-linux-cu128.txt` 文件头与 apt 段一直写 Python 3.10，`environment.yml` 也写
-  `python=3.10`，与 Linux 侧**实际主环境**不符。2026-09-17 把 `~/.venvs/mvp_core-cu128` 软链扶正到
-  加速隔离环境（`qwen3tts-cugraph-probe/faster-qwen3-tts/.venv`）时解释器就已经换成 3.12.3，
-  但当时只更新了 `docs/UPDATES.md`、`docs/PROJECT_CONTEXT.md`、`docs/TTS_SUBSYSTEM.md` 三处说明，
-  依赖文件没跟着改。照旧文件重建环境会建出 3.10 解释器，装不进 torch 2.11 / transformers 5.15.1。
-- 改动：
-  - `requirements-linux-cu128.txt`：文件头改成 `Python 3.12`；apt 系统依赖改成
-    `python3.12 python3.12-venv python3.12-dev ffmpeg`；新增「Python 版本」警示段，写明 Forge 的
-    3.10.19 是刻意保留、不得统一到 3.12。包版本列表**未动**（与实测一致）。
-  - `environment.yml`：`python=3.10` → `python=3.12`，消除与 `-r requirements-linux-cu128.txt` 的矛盾。
-- 验证：本机核对 WSL2 `Ubuntu-24.04-E`（Ubuntu 24.04.1）——`/usr/bin/python3` = 3.12.3，系统同时存在
-  `python3.10` 与 `python3.12`；`.venvs/mvp_core-cu128` 软链目标的 `pyvenv.cfg` `version = 3.12.3`、
-  `lib/python3.12/site-packages`，实测 torch 2.11.0+cu128 / transformers 5.15.1 / numpy 2.5.3 /
-  Pillow 12.3.0 / sounddevice 0.5.5 / onnxruntime 1.30.0 / gradio 6.27.0 / accelerate 1.12.0 /
-  llama_cpp_python 0.3.35 / qwen-tts-hf 0.1.1.post1，与本文件的包版本逐项吻合。
-  对照 `.venvs/forge-cu128`：`pyvenv.cfg` `version = 3.10.19`、`lib/python3.10/`、torch 2.10.0+cu128 /
-  numpy 1.26.2 / Pillow 9.5.0 / gradio 4.40.0 / transformers 4.46.1 / xformers 0.0.35 /
-  diffusers 0.31.0，确认 Forge 确实该保持 3.10，不动。
-- 备注：
-  - 未改：`requirements-wsl-cu128.txt`（已标废，历史内容写 3.10 是当时真相）、
-    `docs/VISION_9B_PROBE_20260906.md`（2026-09-06 那批跑的就是 3.10.19）、`paper/archive/` 下的旧草稿，
-    这些都是历史身份记录，改动会破坏证据链。
-  - 上面那份 WSL2 是迁移前的残留快照（`/home/leslie/mvp_core` 停在 2026-09-09、主环境 venv 停在
-    2026-09-17），本次只用作版本核对，不代表当前运行环境的真源；当前真环境是双系统本机原生 Linux。
-  - 遗留待办（`docs/TTS_SUBSYSTEM.md` 已记）：`cpp_scheduler` 的 WSL 扩展按旧 py3.10 构建，
-    在新主环境下使用需重新编译。
-
-## 2026-09-23 运行环境由 WSL2 迁移到本机原生 Linux
-
-- 背景：用户装好本机原生 Linux（与 Windows 双系统，磁盘 0 整盘 ext4 + 独立 EFI），不再使用 WSL2
-  `Ubuntu-24.04-E`。动机之一是 WSL2 只有虚拟 Pulse 设备、没有真实采样时钟：`playback_clock_probe` 的
-  `outputBufferDacTime` 跨度比不单调（1.2335/1.1704/1.0900），换采样率与延迟档都过不了 ±5% 容差，
-  S0 设备体验指标只能长期 pending；真机才有机会解锁该项。
-- 迁移方式：双系统下 Windows 读不了 ext4、Linux 读不了 WSL2 的 `ext4.vhdx`，NTFS 是唯一双向通道。
-  先把代码与模型导出到 `D:\_lx_migrate\`（`payload/` 四个 tar + `manifest/` 指纹 + `env/` 依赖清单 +
-  `linux_setup/` 三个执行脚本），Linux 侧挂载 D 盘后解包。
-  - 搬：代码 537M、模型 18.7G（llm/Image/Qwen3-TTS/auxiliary）、加速 TTS 源码 30M、output 200K。
-    四个包都有 sha256 与逐文件大小清单，解包后由 `03_verify.sh` 逐项比对。
-  - 有意不搬：两个 venv（`mvp_core-cu128` 8.1G、`forge-cu128`）与 `cpp_scheduler/build*` 1.1G——
-    venv 的 `bin/python` 是绝对软链、shebang 写死路径，而且主环境本身就是软链到
-    `qwen3tts-cugraph-probe/faster-qwen3-tts/.venv`，跨机还会撞 CUDA/torch ABI。
-  - 导出改走 tar 单流：`/mnt/d` 是 9p/drvfs（`msize=65536`），逐个小文件同步极慢（5742 个文件的
-    `mvp_core` 用 rsync 要跑几分钟且没有可见进度，看起来像卡死），合并成单流后稳定 45~55 MB/s，
-    代码打包从数分钟降到 14 秒。
-- 仓库改动（同步方向反转，发起端从 Windows 移到 Linux）：
-  - 新增 `scripts/sync_from_windows.sh`：Linux 侧挂载 D 盘后从 `/mnt/d/AI/xiaoyou-core/legacy/mvp_core`
-    增量拉取到 `$HOME/mvp_core`，保留根锚定 `/models/` 排除、永不 `--delete`。
-  - 新增 `scripts/commit_and_push.ps1`：Windows 侧只做 `git add/commit/push`，提交信息门禁
-    （`-Message` 必填 + 无信息文案黑名单）原样保留。
-  - 旧 `scripts/sync_to_wsl2_safe.ps1` 头部标注「已停用」，暂不删除：`scripts/experiments/run_*.ps1`（9 个）
-    与 `tests/**/*_launcher.ps1`（6 个）仍在调用它并 `wsl -e bash` 启动实验，双系统下已不可用，
-    需改写成 Linux 侧 `.sh` 启动器并在新机器实跑验证后才可删除。
-  - 依赖真源重建：新增 `requirements-linux-cu128.txt` 与 `requirements-linux-forge.txt`（按实际环境
-    `pip freeze` 净化）。**核对发现原 `requirements-wsl-cu128.txt` 描述的是一个已经不存在的主环境**——
-    它是 2026-09-17 软链换名前的旧主环境，与实际在跑的加速环境不一致：transformers 4.57.3 vs 实际 5.15.1、
-    torch 2.10.0+cu128 vs 2.11.0+cu128、torchvision 写明要装而实际未装、diffusers/peft 写明要装而实际未装、
-    onnxruntime 1.23.2 vs 1.30.0、ctranslate2 4.7.2 vs 4.8.2。旧文件已标注失效并指向新真源。
-  - `requirements.txt`：实际安装的发行名是 `qwen-tts-hf==0.1.1.post1` 而非 `qwen-tts==0.1.1`，已修正；
-    指向 CUDA 精确版本的注释也改指新文件。
-  - 测试：`tests/scripts/verify_wsl_sync_policy.py` → `verify_sync_policy.py`（校验新同步/提交契约，
-    并断言同步脚本里不含 `--delete`）；`tests/scripts/verify_wsl_requirements.py` →
-    `verify_requirements_contract.py`（校验新依赖真源、Forge 与主环境隔离、旧清单已标记失效）。
-  - 文档：`AGENTS.md`、`.codebuddy/rules/`（两份）、`.trae/skills/xiaoyou-mvp-core/SKILL.md`、`README.md`、
-    `docs/PROJECT_INDEX.md`、`docs/PROJECT_CONTEXT.md`（第 7 节）按新环境改写；历史实验文档与
-    `paper/experiment_data/**` 里的 WSL2 字样保持原样——那是当时环境的真实记录，不是待改的错字。
-- 验证：中转包侧的 sha256、逐文件大小清单、依赖快照与复现命令均已生成；**尚未验证**：Linux 上的解包、
-  环境重建与 GPU 实跑（新系统未启动，属迁移后待办）。仓库侧两个新验证脚本需在 Windows `venv_core` 下通过。
-- 备注：新 Linux 的用户名同为 `leslie`，运行路径 `/home/leslie/mvp_core` 与 WSL2 时期完全一致，
-  所以脚本与文档里的绝对路径一个字都不用改；`experiment_results` 仍软链回 Windows 仓库收集产物。
-
+```
 ## 2026-09-21 归因分析（按长度归一 + 句数对齐）与设备时钟诊断
 
 - 背景：v2 正式比较中混合 `K24:T0` 全面占优，但两配置输出不同（80 token/9 句 vs 65 token/8 句），
@@ -189,6 +116,63 @@
 ```
 
 倒序追加，新条目放最上面。
+
+## 2026-09-25（再续）git 主仓库迁回原生 Linux：复制 .git、行尾归一、废止 WSL2 同步提交流程
+
+- 背景：用户明确本机（无 WSL 内核特征，原生 Ubuntu-24.04-E）是以后唯一开发环境，不再使用 WSL2 双副本；要求把 Windows 副本 `D:\AI\xiaoyou-core\legacy\mvp_core\.git` 复制到 `/home/leslie/mvp_core`，并改写与此冲突的项目规则。
+- 改动：
+  - `.git` 整目录 `cp -a` 复制到 Linux 工作树（37 M），`git fsck --connectivity-only` 通过；remote `origin` = `https://github.com/hakituo/EdgeSched`，分支 main，HEAD `bcb45b0`；用户信息沿用 hakituo。
+  - git 本地配置改为 Linux 语义：`core.symlinks=true`、`core.fileMode=false`（NTFS 历史使全仓带 755 位，不跟踪 mode 以免噪音）、`core.ignorecase=false`。
+  - 新增根 `.gitattributes`（`* text=auto eol=lf` + 常见二进制显式标记）；对已跟踪文本文件做一次性 CRLF→LF 机械归一（`grep -I` 跳过二进制，已删除文件跳过）。归一后 diff 从 613 M 降到 **51 个真实内容改动**，无行尾/mode 噪音。
+  - 规则改写：`AGENTS.md`（环境与运行/提交与更新记录/验证段）、`README.md`（运行环境表、提交命令、验证命令）、`docs/PROJECT_CONTEXT.md`（环境表、同步边界段、7.1 快照）、`docs/PROJECT_INDEX.md`、`.trae/skills/xiaoyou-mvp-core/SKILL.md`、`.codebuddy/rules/mvp-core-project/RULE.mdc`、`.codebuddy/rules/mvp-core-docs-index/RULE.mdc`、`experiments/README.md`（SM-A provenance 流程的命令改 bash/Linux 路径）、`docs/NINE_B_MODEL_COMPARISON.md`。统一口径：主开发/运行/git 都在 `/home/leslie/mvp_core`；提交显式 `git add` 本任务文件、一句话 commit、禁止 auto/更新/同步 文案、只在用户明确要求时 push。
+  - `scripts/sync_to_wsl2_safe.ps1` 头部加废止注释并在 param 后直接 `throw`，误运行立即失败（文件保留作历史参考）；`scripts/experiments/run_*.ps1` 等 8 个 Windows 包装脚本未改动（流程上已停用）。
+- 中途问题与最终方案：Windows 复制来的 index 带有 NTFS stat 信息（dev/ino=0、size/mtime 陈旧），即使全量 LF 归一和 `--really-refresh`，status 仍长期虚报 200+ 个"M"（三方 blob 相同）。改用用户建议：从 GitHub 重新 `git clone --no-checkout`（HEAD `bcb45b0` 与本地一致，认证可用），用干净 `.git` 替换并 `git reset` 重建 index，幻影立即消失。
+- `experiment_results` 实体化：原为指向 D 盘的目录软链，git 不穿透目录软链做工作树比对，导致其中 19 个已跟踪归档被误报删除；已将 1.7 G 内容复制为本地实体目录（复制后与 HEAD 完全一致，无差异），不再依赖 D 盘挂载。
+- 最终工作树遗留（**未提交**，等用户决定去留）：**27 M**（本会话的规则/文档/TTS 路径/backend/requirements 改动 + 2 个运行时 `data/*.dat`）、**6 D**（`requirements-linux-cu128.txt`、`requirements-linux-forge.txt`、`scripts/commit_and_push.ps1`、`scripts/sync_from_windows.sh`、`tests/scripts/verify_requirements_contract.py`、`tests/scripts/verify_sync_policy.py`——迁移期已从 Linux 工作树移除但 HEAD 仍跟踪）、**148 ??**（`paper/` 87、cpp_scheduler 17、tests 8、根目录散落 test_*.sh/todo/TODO/thesis 材料等）。
+- 备注：
+  - Windows 旧副本保留但不再权威，不要再在其中提交，避免双历史分叉。
+  - `.gitattributes` 让后续 checkout/add 自动维持 LF；如 Windows 侧仍偶尔查看仓库，建议其编辑器不做 CRLF 转换。
+  - 旧 `.git` 验证无误后已删除（GitHub 上有完整备份）。
+
+## 2026-09-25（续）加速 TTS 后端在共享 3.13 venv 验证通过 + TTS 模型路径切换 + 970 EVO 模型复用
+
+- 背景：用户追问为何不直接在共享 venv 升级 transformers 5.x，并告知 TTS 模型在 `/home/leslie/xiaoyou-core/models`、970 EVO（`/media/leslie/970EVO/xiaoyou-models`）上有可用模型，要求查版本差异后决定是否升级。
+- 调研与实测（结论：**0.2.6 + 4.57.3 可用，不升级 5.x**）：
+  - PyPI/GitHub（andimarafioti/faster-qwen3-tts）：0.2.6（2026-04）依赖 `qwen-tts>=0.1.1` 与 `transformers>=4.57`；0.3.x/0.4.0（2026-08）已转向 `qwen-tts-hf`（transformers 5 兼容构建）。0.2.6 是唯一兼容当前共享栈的版本线，故主环境刻意保持 0.2.6。
+  - 不升级的硬约束：`qwen-tts 0.1.1` 精确钉死 `transformers==4.57.3`，且该 venv 是 xiaoyou-core 主项目环境；升 5.x 须同时换 qwen-tts-hf，会破坏上游路径与主项目其他模块，且没有任何性能收益（实测对比见下）。
+  - 真实 smoke（模型用 `/home/leslie/xiaoyou-core/models/Qwen3-TTS-12Hz-0.6B-Base`，RTX 5070 / bf16 / x-vector / eager）：直接 API 与经 mvp 集成入口 `build_synth("cuda_graph_static")` 两条路均成功——predictor 与 talker 两个 CUDA Graph 捕获通过（旧障碍 `StaticLayer.lazy_initialization` 签名错误不复现），输出有效音频；**稳态 RTF 0.3136（合成 1.73 s / 音频 5.52 s）与历史 5.x 隔离环境同口径 0.303–0.317 一致**；首个请求 6 s 级一次性开销（历史口径本就单列 graph_capture_s = 6.045 s）。
+- 改动：
+  - `experiments/tts/qwen3_tts_backends.py`：新增 `resolve_faster_qwen3_tts()`，加载优先级改为「环境 pip 包 → 旧 probe 目录回退」，并记录 `faster_backend_source/version/origin` 进产物元数据；`from_pretrained` 调用按签名过滤形参（0.2.6 无 `local_files_only`）；能力探测走同一解析。
+  - TTS 默认模型路径改为 `/home/leslie/xiaoyou-core/models/Qwen3-TTS-12Hz-0.6B-Base`（8 个入口：`tts_component_offload{,_matrix}`、`llm_tts_colocated`、`s0_parent/child`、`smoke_qwen3_tts_base`、`profile_qwen3_tts_{cudagraph,gpu_sentence_lengths}`；`XIAOYOU_BENCH_TTS_PATH` 仍可覆盖）。两处副本 `diff -rq` 核验一致（各 2.4 G）。
+  - 970 EVO 模型：把盘上额外图像权重软链进 Forge `models/`：2 个 checkpoint（krea2 turbo nvfp4 7.7 G、z-image turbo fp8 6.2 G）、4 个 VAE（ae/krea2Real/qwen_image/anime，共约 1.5 G）、1 个 openposeXL controlnet（774 M）。个人 lora 与论文无关，未链接。
+  - LLM 权重去重（用户要求不存两份）：`models/llm/` 下 4 个文件（mmproj-BF16 0.67 G、4B Q4 2.74 G、9B mmproj 0.92 G、9B Q4 5.63 G，共约 9.3 G）先逐份 sha256 与 970 EVO `xiaoyou-models/llm/` 比对（4/4 完全一致），再删本地实体并替换为绝对路径软链，代码/脚本里的原路径全部不变。
+- 验证：
+  - 直接调用：加载+图捕获 7.5 s，第一句 16.1 s（含首次额外初始化）、第二句稳态 1.73 s 合成 5.52 s 音频，RTF 0.3136；
+  - 集成调用：`accelerated_placement_capability` 报 site-packages/0.2.6；`build_synth` 返回 `faster_backend_source=site-packages`、graph_capture_s=6.045，合成 4.88 s 音频正常（峰值 0.436）；
+  - 软链全部跟随可读（`ls -lL` 显示真实大小）；TTS 8 个入口的 CLI help 默认路径正确。
+  - LLM：4/4 sha256 一致；软链替换后用 llama.cpp 经原路径 `models/llm/Qwen3.5-4B-Q4_K_M.gguf`（软链→NTFS）真实加载并生成，输出连贯中文，证明 mmap 路径对实验代码透明。
+- 备注：
+  - S0 v2 / 50 字·100 字画像等正式重跑仍按既有协议执行并落 manifest；本次结论只覆盖「环境可用 + 20 字级 RTF 对齐历史」，不替代正式批次。
+  - 970 EVO 是 NTFS 外挂盘，GGUF 与 Forge 额外权重的软链可用性依赖挂载；论文主 checkpoint（SDXL Turbo）与辅助模型仍在 nvme 本地，盘未挂载时仅 LLM 实验和额外 Forge 权重受影响。
+  - 本轮改动未 git commit（git 提交只在 Windows 侧做）。
+
+## 2026-09-25 系统迁移后环境重建：主环境复用 xiaoyou-core 3.13 共享 venv、Forge 独立重建、C++ 调度器重编
+
+- 背景：系统迁移（当前 WSL2）后原主环境软链与加速隔离环境均已不存在：`/home/leslie/.venvs/` 只剩一个空的 `forge-cu128`（Python 3.12、0 包），`qwen3tts-cugraph-probe/faster-qwen3-tts/.venv` 变成空的 Python 3.10 venv；C++ `build/` 产物也不存在。用户决定主环境直接复用父项目 venv `/home/leslie/xiaoyou-core/.venv`（uv 管理，Python 3.13.15，torch 2.12.0+cu130），缺的包装进去即可；Forge 仍单独装环境。
+- 改动：
+  - 盘点确认共享 venv 已满足 requirements.txt 的绝大部分（transformers 4.57.3、accelerate 1.12、qwen-tts 0.1.1、faster-qwen3-tts 0.2.6、faster-whisper、onnxruntime、sounddevice、scipy 等 214 个包），`torch.cuda.is_available()` 正常识别 RTX 5070 Laptop（驱动 595.91.07 / CUDA 13.2）。
+  - 用 uv 向共享 venv 补装：diffusers 0.37.1（刻意 `<0.38`，避免拖入 huggingface-hub 1.x）、qwen-vl-utils 0.0.14、loguru 0.7.3、safetensors 0.7→0.8、torchvision 0.27.0+cu130、pybind11 3.1.0；**numpy 保持 1.26.4 不动**，未装源码零导入的 blendmodes/peft（blendmodes==2025 会强制 numpy 2.x）。
+  - 用 `/usr/local/cuda-12.8`（nvcc）源码编译 `llama-cpp-python==0.3.35`：`GGML_CUDA=on`、`GGML_CUDA_ARCHITECTURES=120`，耗时约 3 分 41 秒；`llama_supports_gpu_offload()=True` 并枚举到本卡（compute capability 12.0）。
+  - 重建主环境稳定入口：`/home/leslie/.venvs/mvp_core-cu128`（软链）→ `/home/leslie/xiaoyou-core/.venv`，沿用 2026-09-17 确立的「换环境只改软链」约定，现有 shell/ps1 脚本零改动。
+  - Forge：删除空的 3.12 venv，用 `/usr/bin/python3.10`（3.10.21）+ `uv venv --seed` 重建 `/home/leslie/.venvs/forge-cu128`，预装 torch 2.10.0+cu128 / torchvision 0.25.0+cu128（launch.py 默认的 2.3.1+cu121 不支持 sm_120），其余 requirements 由 `launch.py --exit` 首次启动自动安装。三个安装坑（重建时必遇）：① seed 自带 setuptools 84 已删 `pkg_resources`，老 OpenAI CLIP 仓库构建失败，须先钉 `setuptools==69.5.1` 并手动 `pip install --no-build-isolation <CLIP zip>`（launch 的 pip 调用对隔离构建无法关闭）；② legacy_preprocessor 的可选依赖会把 numpy 带到 2.2.6，与核心钉版 `numpy==1.26.2`/blendmodes 2022/scikit-image 0.21 冲突，装完扩展后须 `uv pip install numpy==1.26.2` 钉回（二次 `--exit` 验证不会再升级）；③ insightface 自动安装失败仅为 warning，属可选预处理依赖，不影响核心。
+  - C++：系统补装 `libuv1-dev`（CMake 配置报缺）；改 `cpp_scheduler/build_wsl2.sh` 指向共享 venv、注入 pybind11 cmake 目录与 `-DCMAKE_CUDA_ARCHITECTURES=120`，全量构建通过，产物 `build/scheduler_py.cpython-313-x86_64-linux-gnu.so`（906 KB），设置 `LD_LIBRARY_PATH=build/bin:build/llama.cpp/src` 后导入成功，API 枚举正常。
+  - 文档：AGENTS、README、PROJECT_CONTEXT（环境表 + 7.1 快照）、PROJECT_INDEX、cpp_scheduler/README、thesis_guide/01、TTS_SUBSYSTEM、requirements*.txt 头部注释、.trae 与 .codebuddy 规则同步为新口径；历史日期记录（08-28 计划、09-06 复核、UPDATES 旧条目）不改写。
+- 验证：
+  - 共享 venv：llama_cpp GPU offload=True、torch CUDA=True、diffusers/qwen_vl_utils/loguru/torchvision 均可导入；scheduler_py 在 3.13 导入成功。
+  - C++ 编译 100% 通过（cmake + nvcc，sm_120）。本轮只做绑定/导入级验证，**未跑真实 GGUF 推理与 Forge 出图**。
+- 备注：
+  - S0 v2 加速后端（`cuda_graph_static`，依赖 transformers 5.x 的隔离环境）迁移后已失；共享 venv 里是 faster-qwen3-tts 0.2.6 + transformers 4.57.3，能否替代未验证。重跑 S0 v2 前须先重建加速栈，历史数值只能引用。
+  - 共享 venv 同时服务父项目 xiaoyou-core，本次刻意不升级 numpy/pillow 等既有包；后续装包需同样先做 dry-run 差分。
 
 ## 2026-09-17 TTS 加速后端同环境对照：逐句 RTF 从 1.7 降到 0.31
 

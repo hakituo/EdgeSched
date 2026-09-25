@@ -48,7 +48,7 @@ CPU profiling 必须同时设置线程数和物理核亲和性。当前 WSL 拓�
 ## WSL2 真实运行
 
 环境：`/home/leslie/.venvs/mvp_core-cu128`
-模型：`/home/leslie/mvp_core/models/Qwen3-TTS-12Hz-0.6B-Base`
+模型：`/home/leslie/xiaoyou-core/models/Qwen3-TTS-12Hz-0.6B-Base`（2026-09-25 起脚本默认值；与 mvp_core 下旧副本经 `diff -rq` 核验完全一致，仍可用 `XIAOYOU_BENCH_TTS_PATH` 覆盖）
 参考音频：`/home/leslie/mvp_core/models/tts_refs/ref_calm.wav`
 
 准确转写已知时，运行默认 ICL GPU smoke：
@@ -112,7 +112,7 @@ GPU 句长 profiling：
 # 两条路径同进程先后测量（推荐；用脚本入口自动同步与落 provenance）
 ./scripts/experiments/run_tts_backend_compare.ps1 -Mode both        # Windows 侧发起
 # 或直接跑
-/home/leslie/qwen3tts-cugraph-probe/faster-qwen3-tts/.venv/bin/python -u \
+/home/leslie/.venvs/mvp_core-cu128/bin/python -u \
   -m experiments.tts.profile_qwen3_tts_cudagraph --paths upstream_dynamic cuda_graph_static
 ```
 
@@ -121,7 +121,9 @@ GPU 句长 profiling：
 **边界（必须随数字一起报告）**
 
 - 加速路径依赖 `qwen-tts-hf 0.1.1.post1` + `transformers>=5.15.1` + cu128 torchaudio，**不能装进旧的 `mvp_core-cu128`**（上游 `qwen-tts 0.1.1` 会在图捕获时报 `StaticLayer.lazy_initialization()` 签名不匹配；默认 torchaudio wheel 是 CUDA 13 构建；transformers 5.17 会让 `MimiConfig` 缺 `rope_theta`），因此使用仓库外隔离环境 `/home/leslie/qwen3tts-cugraph-probe/faster-qwen3-tts/.venv`。
-- **2026-09-17 起主环境路径已扶正**：`/home/leslie/.venvs/mvp_core-cu128` 改为指向该隔离环境的软链；同日**遗留环境 `mvp_core-cu128_legacy` 已删除**（释放约 9G），它是唯一装了上游 `qwen_tts` 的环境。因此脚本里写 `/home/leslie/.venvs/mvp_core-cu128/bin/python` 就是在加速环境里跑（Python 3.12 / torch 2.11 / transformers 5.15.1）；换环境只需改这条软链。需要上游 `qwen_tts` 的旧后端脚本（`upstream_dynamic`、旧 B2 矩阵、worker 画像、应用 `services/tts/qwen3_tts_worker.py`）重跑需自建环境并用 `-Python` 指定。注意 `cpp_scheduler` 的 WSL 扩展是按旧 py3.10 构建的，若要用需在新主环境重编。
+- **2026-09-17 起主环境路径已扶正**：`/home/leslie/.venvs/mvp_core-cu128` 改为指向该隔离环境的软链；同日**遗留环境 `mvp_core-cu128_legacy` 已删除**（释放约 9G），它是唯一装了上游 `qwen_tts` 的环境。因此脚本里写 `/home/leslie/.venvs/mvp_core-cu128/bin/python` 就是在加速环境里跑（Python 3.12 / torch 2.11 / transformers 5.15.1）；换环境只需改这条软链。需要上游 `qwen_tts` 的旧后端脚本（`upstream_dynamic`、旧 B2 矩阵、worker 画像、应用 `services/tts/qwen3_tts_worker.py`）重跑需自建环境并用 `-Python` 指定。注意 `cpp_scheduler` 的 WSL2 扩展是按旧 py3.10 构建的，若要用需在新主环境重编。
+- **2026-09-25 环境再次变更（当前有效）**：系统迁移后加速隔离环境 `/home/leslie/qwen3tts-cugraph-probe/` 已变为空 venv（transformers 5.x 历史栈）；主环境软链改指 `/home/leslie/xiaoyou-core/.venv`（Python 3.13 / torch 2.12+cu130 / transformers 4.57.3），其中 `faster-qwen3-tts 0.2.6` 的依赖声明是 `transformers>=4.57`、`qwen-tts>=0.1.1`，**已在 4.57.3 下实测通过（不需要 transformers 5.x，也不要升级——见下条"为什么不能升 5.x"）**：predictor/talker 两个 CUDA Graph 均捕获成功，经 mvp 集成入口 `build_synth("cuda_graph_static")` 合成有效音频（峰值 0.436）；单卡 RTX 5070 / bf16 / x-vector / eager 口径下**稳态 RTF 0.3136（合成 1.73 s / 音频 5.52 s）与历史隔离环境的 0.303–0.317 一致**；首个请求有 6 s 级一次性图相关开销（历史口径单列 graph_capture_s）。S0 v2 / `cuda_graph_static` 可在现环境直接重跑，历史数值现在有了现环境复现证据；`qwen3tts-cugraph-probe` 目录保留作历史回退路径，代码里 `DEFAULT_FASTER_PATH` 仅在环境没装包时回退到它。
+- **为什么不能在共享 venv 升级 transformers 5.x**：`qwen-tts 0.1.1` 精确钉死 `transformers==4.57.3`，且该 venv 是 xiaoyou-core 主项目的运行环境；升 5.x 必须同时把 qwen-tts 换成 `qwen-tts-hf`（faster-qwen3-tts 0.4.0 起的默认依赖），会破坏上游路径和主项目其他模块。0.2.6 是唯一同时兼容「CUDA Graph 加速 + 4.57.3 + 上游 qwen-tts 同环境共存」的版本线（0.3.x/0.4.0 已转向 qwen-tts-hf/transformers 5），所以主环境**刻意保持 faster-qwen3-tts==0.2.6，不要顺手升级**。
 - 静态 KV cache 与上游走不同 kernel 路径，**不是位精确**。同环境实测：上游动态路径 3/3 轮 PCM SHA 完全一致、样本数恒为 113280 / 255360 / 453120；加速后端 3/3 轮 SHA 全不同，样本数 111360/122880/128640、249600/261120、443520/472320/491520，相对上游同一文本**最大偏差 +13.6%（20 字）、最小 −2.3%**。**这只证明「不位精确」，既不等于质量不合格，也不等于统计结果不可复现**；长度差异需另行核查（重复同句、交替长短文本、检查状态重置是否完整），并同时报音频时长、合成耗时与文本/听感一致性，不能只看 SHA。
 - **2026-09-17 已接入 `s0_pipeline`**（此前为「尚未接入」）：新增 `--tts-backend {cuda_graph_static,upstream_dynamic}`，默认 `cuda_graph_static`（当前接入后端）；加速路径复用 `AcceleratedSentenceSynthesizer`（只覆盖 `_generate`），协议升到 `s0_protocol_v2`，正式配置由 4 档降为 2 档（`K24:T0`、`K0:T0`），`K24:T3`/`K24:T4` 因后端无分部件放置接口而排除。隔离环境已补装 CUDA 编译的 `llama-cpp-python==0.3.35`（`llama_supports_gpu_offload()=True`）与 `sounddevice==0.5.5`，S0 为保持 LLM 与 TTS 同进程共置默认跑在该环境。音频一致性口径见 `experiments/tts/check_tts_output_correctness.py`（主环境 ASR 回转核对）。
 

@@ -29,7 +29,7 @@ n_ctx=640，LLM 14 物理核、系统 2 物理核；保留 SMT，与旧端点协
 - small 来源：Windows `D:\AI\xiaoyou-core\models\llm\Qwen3.5-9B-Q4_K_M.gguf`，SHA-256 `1a35ab892c0c4eec814d6594d34461193593a19110cd1d1285414efceb8a26ab`。
 - small 运行副本：WSL `/home/leslie/mvp_core/models/llm/comparison_1a35ab89/model.gguf`。
 
-用户运行时，先以 `sync_to_wsl2_safe.ps1 -SkipGit` 同步源码，再核对 large、small 来源哈希，
+用户运行时，在本机原生 Linux `/home/leslie/mvp_core` 确认工作树为干净 HEAD（2026-09-25 起不再有 Windows→WSL2 同步步骤），再核对 large、small 来源哈希，
 把 small 复制到独立目录并校验。已存在且哈希相同则复用；不同则报错，绝不覆盖。
 两份模型均从 WSL 原生路径读取、按顺序单独加载；不测 Windows 挂载盘相对原生磁盘的差异。
 模型哈希核验会预读整个文件，既有驻留入口也在每单元加载前计算哈希，因此不能声称测到了磁盘冷启动成本。

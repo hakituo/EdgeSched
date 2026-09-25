@@ -19,9 +19,8 @@ provider:
 
 ## 提交与更新记录
 
-- 同步/提交前先看 `docs/UPDATES.md`：它是本仓库唯一的详细更新记录入口，commit 只写一句话。
-- Windows 侧收尾用 `.\scripts\commit_and_push.ps1 -Message "这次改了什么"`，缺参数会被脚本拒绝；
-  把改动送到 Linux 运行环境由 Linux 侧执行 `bash scripts/sync_from_windows.sh`（WSL2 已停用）。
+- 提交前先看 `docs/UPDATES.md`：它是本仓库唯一的详细更新记录入口，commit 只写一句话。
+- 2026-09-25 起直接在原生 Linux `/home/leslie/mvp_core` 用 git 提交（显式 `git add` + `git commit -m "一句话说明"`）；`scripts/sync_to_wsl2_safe.ps1` 已废止，不要再运行。
 
 ## 实验与子系统文档
 

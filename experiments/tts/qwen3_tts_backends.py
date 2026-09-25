@@ -7,12 +7,17 @@
 - ``upstream_synth``：与 B2 冻结口径一致的上游调用（x-vector 克隆 +
   非流式完整波形 + ``do_sample=False``）；
 - ``cuda_graph_synth``：外部 MIT 项目 ``faster-qwen3-tts`` 的静态 KV cache
-  + CUDA Graph 路径，只把它挂到 ``sys.path``，不安装进本仓库环境。
+  + CUDA Graph 路径。2026-09-25 起优先使用主环境 pip 安装的 0.2.6
+  （与 qwen-tts 0.1.1 / transformers 4.57.3 共存，不需要 transformers 5.x）；
+  只有环境里没装时才回退到仓库外本地 checkout（挂 ``sys.path``）。
 """
 
 from __future__ import annotations
 
 import gc
+import importlib
+import importlib.util
+import inspect
 import sys
 import time
 from pathlib import Path
@@ -22,8 +27,41 @@ from typing import Any, Callable
 PATH_UPSTREAM = "upstream_dynamic"
 PATH_CUDA_GRAPH = "cuda_graph_static"
 
-#: 外部加速项目的默认位置（仓库外，不参与本仓库 git）。
+#: 外部加速项目本地 checkout 的回退位置（仓库外，不参与本仓库 git）。
+#: 环境已 pip 安装 faster-qwen3-tts 时此路径不参与解析。
 DEFAULT_FASTER_PATH = "/home/leslie/qwen3tts-cugraph-probe/faster-qwen3-tts"
+
+
+def resolve_faster_qwen3_tts(faster_path: str) -> tuple[Any, dict[str, Any]]:
+    """解析加速包：优先环境已安装版本，回退到本地 checkout。
+
+    返回 (module, provenance)；两者都没有时抛 FileNotFoundError。
+    """
+
+    spec = importlib.util.find_spec("faster_qwen3_tts")
+    if spec is not None:
+        module = importlib.import_module("faster_qwen3_tts")
+        return module, {
+            "source": "site-packages",
+            "version": getattr(module, "__version__", "unknown"),
+            "origin": str(Path(spec.origin or "?").parent),
+            "checkout_path": None,
+        }
+    resolved = Path(faster_path).expanduser().resolve()
+    if not (resolved / "faster_qwen3_tts").is_dir():
+        raise FileNotFoundError(
+            "环境未安装 faster-qwen3-tts，且找不到本地 checkout: "
+            f"{resolved}（主环境可 uv pip install faster-qwen3-tts==0.2.6）"
+        )
+    if str(resolved) not in sys.path:
+        sys.path.insert(0, str(resolved))
+    module = importlib.import_module("faster_qwen3_tts")
+    return module, {
+        "source": "local_checkout",
+        "version": getattr(module, "__version__", "unknown"),
+        "origin": str(resolved / "faster_qwen3_tts"),
+        "checkout_path": str(resolved),
+    }
 
 SynthFn = Callable[[str], tuple[Any, int]]
 
@@ -73,25 +111,25 @@ def upstream_synth(args: Any) -> tuple[SynthFn, dict[str, Any]]:
 
 
 def cuda_graph_synth(args: Any) -> tuple[SynthFn, dict[str, Any]]:
-    """CUDA Graph 静态路径：外部项目 FasterQwen3TTS，仅挂 ``sys.path``。"""
+    """CUDA Graph 静态路径：FasterQwen3TTS（优先环境 pip 包，回退本地 checkout）。"""
 
-    faster_path = Path(args.faster_qwen3_tts_path).expanduser().resolve()
-    if not (faster_path / "faster_qwen3_tts").is_dir():
-        raise FileNotFoundError(f"找不到 faster-qwen3-tts: {faster_path}")
-    if str(faster_path) not in sys.path:
-        sys.path.insert(0, str(faster_path))
     import torch
-    from faster_qwen3_tts import FasterQwen3TTS
+
+    faster_module, provenance = resolve_faster_qwen3_tts(args.faster_qwen3_tts_path)
+    FasterQwen3TTS = faster_module.FasterQwen3TTS
+    # 不同版本 from_pretrained 形参不同（如 0.2.6 无 local_files_only），按签名过滤。
+    supported = set(inspect.signature(FasterQwen3TTS.from_pretrained).parameters)
+    requested = {
+        "device": "cuda",
+        "dtype": torch.bfloat16,
+        "attn_implementation": args.attn_implementation,
+        "max_seq_len": args.max_seq_len,
+        "local_files_only": True,
+    }
+    load_kwargs = {k: v for k, v in requested.items() if k in supported}
 
     started = time.perf_counter()
-    model = FasterQwen3TTS.from_pretrained(
-        args.model,
-        device="cuda",
-        dtype=torch.bfloat16,
-        attn_implementation=args.attn_implementation,
-        max_seq_len=args.max_seq_len,
-        local_files_only=True,
-    )
+    model = FasterQwen3TTS.from_pretrained(args.model, **load_kwargs)
     load_s = time.perf_counter() - started
     capture_started = time.perf_counter()
     model.generate_voice_clone(
@@ -119,12 +157,14 @@ def cuda_graph_synth(args: Any) -> tuple[SynthFn, dict[str, Any]]:
             repetition_penalty=args.repetition_penalty,
         )
 
-    return synth, {
+    meta = {
         "load_s": round(load_s, 3),
         "prompt_build_s": None,
         "graph_capture_s": round(capture_s, 3),
         "torch_module_loaded": True,
     }
+    meta.update({f"faster_backend_{k}": v for k, v in provenance.items()})
+    return synth, meta
 
 
 def release_gpu() -> None:
@@ -145,19 +185,9 @@ def accelerated_placement_capability(faster_path: str) -> dict[str, Any]:
     ``gguf_codec_path`` 只用于 GGML 后端挑权重文件，不是设备放置。
     """
 
-    resolved = Path(faster_path).expanduser().resolve()
-    if not (resolved / "faster_qwen3_tts").is_dir():
-        return {
-            "checked": False,
-            "reason": f"找不到 faster-qwen3-tts: {resolved}",
-        }
-    if str(resolved) not in sys.path:
-        sys.path.insert(0, str(resolved))
     try:
-        import inspect
-
-        from faster_qwen3_tts import FasterQwen3TTS
-
+        faster_module, provenance = resolve_faster_qwen3_tts(faster_path)
+        FasterQwen3TTS = faster_module.FasterQwen3TTS
         parameters = sorted(
             inspect.signature(FasterQwen3TTS.from_pretrained).parameters
         )
@@ -167,6 +197,7 @@ def accelerated_placement_capability(faster_path: str) -> dict[str, Any]:
     return {
         "checked": True,
         "engine": PATH_CUDA_GRAPH,
+        **{f"faster_backend_{k}": v for k, v in provenance.items()},
         "component_placement_supported": any(
             key in parameters for key in component_keys
         ),

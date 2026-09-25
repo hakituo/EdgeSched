@@ -64,41 +64,28 @@ ResourceIsolationScheduler (C++ execution plane)
 
 ## 运行环境
 
-真实模型、CUDA、C++ 构建和论文实验在**本机原生 Linux**（与 Windows 双系统）运行。
-2026-09-23 起取代 WSL2（`Ubuntu-24.04-E`），两侧路径刻意保持一致，因此换环境没有改动脚本里的任何绝对路径。
+**2026-09-25 起主开发环境就是本机原生 Linux（Ubuntu-24.04-E）**，编辑、运行、git 提交都在此处，不再使用 WSL2 双副本流程：
 
 | 用途 | 路径 |
 |---|---|
-| 代码（Linux 运行副本） | `/home/leslie/mvp_core` |
-| 代码（Windows 真源，git 仓库） | `d:\AI\xiaoyou-core\legacy\mvp_core` |
-| 主虚拟环境 | `/home/leslie/.venvs/mvp_core-cu128` |
-| Forge 虚拟环境 | `/home/leslie/.venvs/forge-cu128` |
-| GGUF 模型 | `/home/leslie/mvp_core/models/llm` |
-| 图像模型 | `/home/leslie/mvp_core/models/Image` |
+| 代码与 git 仓库 | `/home/leslie/mvp_core`（`.git` 在工作树内，origin = `https://github.com/hakituo/EdgeSched`） |
+| 主虚拟环境 | `/home/leslie/xiaoyou-core/.venv`（共享，Python 3.13 / torch 2.12+cu130；`/home/leslie/.venvs/mvp_core-cu128` 为指向它的软链） |
+| Forge 虚拟环境 | `/home/leslie/.venvs/forge-cu128`（Python 3.10 / torch 2.10+cu128） |
+| GGUF 模型 | `/home/leslie/mvp_core/models/llm`（软链到 970 EVO，跑实验前确认盘已挂载） |
+| 图像模型 | `/home/leslie/mvp_core/models/Image`；Forge 额外权重软链自 970 EVO |
 | Forge | `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/` |
 
-双系统下 Windows 与 Linux 不会同时在线，所以同步由 **Linux 侧发起**：挂载 Windows 的 D 盘后执行
+提交直接在 Linux 完成，不再走 `scripts/sync_to_wsl2_safe.ps1`（该 Windows→WSL2 同步+自动提交流程已废止）：
 
 ```bash
-bash scripts/sync_from_windows.sh                      # 增量覆盖
-bash scripts/sync_from_windows.sh --dry-run --ensure-links
+git add <本任务相关文件>      # 显式路径，不要 git add -A
+git commit -m "一句话说明这次改了什么"
+git push origin main
 ```
 
-该脚本不删除 Linux 侧独有的 `models/`、Forge、`experiment_results` 与 C++ 编译产物；不要改成镜像删除模式。
+提交信息禁止 `auto`/`更新`/`同步` 这类无信息文案；工作区另有其他会话的未完成改动时只暂存本任务文件。详细过程（背景/改动/验证）记入 `docs/UPDATES.md`。文本文件统一 LF（见根目录 `.gitattributes`）。
 
-Windows 侧只做编辑、静态验证和 git 收尾：
-
-```powershell
-.\scripts\commit_and_push.ps1 -Message "一句话说明这次改了什么"
-```
-
-`-Message` 必填（`-Detail` 可选，作为 commit 正文）；缺它或写成 `auto`/`更新` 这类无信息文案时脚本直接报错退出，不产生提交。工作区另有其他会话的改动时先 `git stash push -m "wip-other" -- <无关路径>` 搁置，提交推送后 `git stash pop` 恢复。详细过程（背景/改动/验证）记入 `docs/UPDATES.md`。
-
-可复现实验依赖使用 `requirements-linux-cu128.txt`。它锁定当前已验证的 PyTorch CUDA 12.8、Qwen3-TTS、Transformers 和 llama-cpp-python 版本，并强制后者从源码构建 CUDA 版；安装前还需按文件头部说明安装 SoX、PortAudio 与 ALSA。通用依赖中的 ONNX Runtime、Faster-Whisper/CTranslate2、sounddevice、blendmodes 和 Pillow 以 `requirements.txt` 的固定兼容版本为准。
-
-⚠ `requirements-wsl-cu128.txt` 描述的是 2026-09-17「软链换名」后已被搁置的旧主环境（`transformers 4.57.3` / `torch 2.10.0+cu128`），**不要照它重建**。
-
-原生 Linux 的另一个直接收益：WSL2 只有虚拟 Pulse 设备、`outputBufferDacTime` 不具备真实采样时钟，S0 的设备体验指标一直 pending；真机上先用 `aplay -l` 与 `speaker-test -c 2` 确认声卡可用，再解锁该项。
+可复现实验依赖参考 `requirements-wsl-cu128.txt`（文件名保留历史命名）。它锁定当前已验证的 PyTorch CUDA 12.8、Qwen3-TTS、Transformers 和 llama-cpp-python 版本，并强制后者从源码构建 CUDA 版。安装前还需按文件头部说明安装 SoX、PortAudio 与 ALSA→Pulse 桥接；通用依赖中的 ONNX Runtime、Faster-Whisper/CTranslate2、sounddevice、blendmodes 和 Pillow 以 `requirements.txt` 的固定兼容版本为准。音频输出走本机 ALSA/PulseAudio；静音链路通过不等于真实并发 TTS 已满足无 underrun。
 
 ## 演示服务
 
@@ -140,21 +127,19 @@ TTS 的音色画像、x-vector 消融、CPU/GPU smoke 和证据边界见 [Qwen3-
 
 ## 验证
 
-静态契约验证（项目索引、同步与提交契约、依赖契约）：
+静态项目索引验证：
 
-```powershell
-..\..\venv_core\Scripts\python.exe tests\scripts\verify_project_context.py
-..\..\venv_core\Scripts\python.exe tests\scripts\verify_sync_policy.py
-..\..\venv_core\Scripts\python.exe tests\scripts\verify_requirements_contract.py
+```bash
+PYTHONPATH=/home/leslie python tests/scripts/verify_project_context.py
 ```
 
 不依赖真实模型的高频测试：
 
-```powershell
-..\..\venv_core\Scripts\python.exe -m pytest tests\test_chat_service.py tests\test_phase_aware_quick.py -q
+```bash
+PYTHONPATH=/home/leslie python -m pytest tests/test_chat_service.py tests/test_phase_aware_quick.py -q -o asyncio_mode=auto
 ```
 
-C++ 绑定、真实 GGUF、迁移和 Forge 测试必须在运行环境（本机 Linux）单独运行，不能用 Mock 结果替代；Windows 侧没有 WSL2 可代跑。
+C++ 绑定、真实 GGUF 和 Forge 测试在本机 Linux 直接运行（GPU/设备访问需在沙箱外执行），不能用 Mock 结果替代。
 
 ## 论文
 

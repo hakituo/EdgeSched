@@ -452,7 +452,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--model",
         default=os.environ.get(
             "XIAOYOU_BENCH_TTS_PATH",
-            "/home/leslie/mvp_core/models/Qwen3-TTS-12Hz-0.6B-Base",
+            "/home/leslie/xiaoyou-core/models/Qwen3-TTS-12Hz-0.6B-Base",
         ),
     )
     parser.add_argument(

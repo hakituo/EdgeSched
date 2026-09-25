@@ -1,38 +1,33 @@
-# ⚠ 已失效，仅作历史留存：不要把本文件当作当前环境的依赖真源。
+# EdgeSched WSL2 依赖（2026-09-25 更新）
 #
-# 2026-09-17「软链换名」把 ~/.venvs/mvp_core-cu128 指向加速隔离环境
-# （qwen3tts-cugraph-probe/faster-qwen3-tts/.venv）之后，本文件描述的那个主环境就已经
-# 被搁置了；2026-09-23 环境从 WSL2 迁到本机原生 Linux 时，实际环境是
-# transformers 5.15.1 / torch 2.11.0+cu128 / torchvision 未装 / diffusers 与 peft 未装，
-# 与本文件写的 4.57.3 / 2.10.0+cu128 对不上。
-#
-# 当前真源：requirements-linux-cu128.txt（主环境）、requirements-linux-forge.txt（Forge）。
-#
-# ---------------------------------------------------------------------------
-# 以下为历史内容，原样保留：
-#
-# EdgeSched 真实实验环境：Ubuntu-24.04-E + Python 3.10 + CUDA 12.8。
+# 当前主环境直接复用父项目 uv venv：/home/leslie/xiaoyou-core/.venv
+# （Python 3.13 / torch 2.12.0+cu130 / torchvision 0.27+cu130，torchaudio 沿用 venv 内版本），
+# 稳定路径 /home/leslie/.venvs/mvp_core-cu128 是指向它的软链。torch 三件套已在该 venv 中，
+# 不要用本文件把它们降级到 cu128；只补装缺失的上层依赖（uv pip install）。
 #
 # 系统依赖（pip 无法安装）：
 #   sudo apt-get update
 #   sudo apt-get install -y sox libsox-fmt-all libportaudio2 \
-#     libasound2-plugins pulseaudio-utils alsa-utils
+#     libasound2-plugins pulseaudio-utils alsa-utils libuv1-dev
 #
-# llama-cpp-python 必须使用本机 CUDA 12.8 编译器构建，推荐命令：
+# llama-cpp-python 必须使用本机 CUDA 12.8 编译器构建（venv 内已装，重建命令）：
 #   PATH=/usr/local/cuda-12.8/bin:$PATH \
 #   CUDACXX=/usr/local/cuda-12.8/bin/nvcc \
-#   CMAKE_ARGS="-DGGML_CUDA=on" FORCE_CMAKE=1 \
-#   python -m pip install -r requirements-wsl-cu128.txt
+#   CMAKE_ARGS="-DGGML_CUDA=on -DGGML_CUDA_ARCHITECTURES=120" FORCE_CMAKE=1 \
+#   uv pip install --python /home/leslie/xiaoyou-core/.venv/bin/python \
+#     --no-binary llama-cpp-python llama-cpp-python==0.3.35
 #
 # 这里强制从源码构建 llama-cpp-python，避免静默安装 CPU-only wheel。
-# flash-attn 尚未在 RTX 5070 Laptop + torch 2.10.0+cu128 上完成验证，
-# 因此当前不纳入可复现实验依赖。
+# 下方 torch==2.10.0+cu128 固定组仅适用于「独立重建 Python 3.10 实验环境」
+# （Forge 环境 /home/leslie/.venvs/forge-cu128 即按此组合）。
+# flash-attn 尚未在 RTX 5070 Laptop 上完成验证，不纳入可复现实验依赖。
 
 --extra-index-url https://download.pytorch.org/whl/cu128
 --no-binary llama-cpp-python
 
 -r requirements.txt
 
-torch==2.10.0+cu128
-torchvision==0.25.0+cu128
-torchaudio==2.10.0+cu128
+# 以下三行默认注释：共享主环境已自带 cu130 版本；独立重建 Python 3.10 环境（如 Forge）时再放开。
+# torch==2.10.0+cu128
+# torchvision==0.25.0+cu128
+# torchaudio==2.10.0+cu128
