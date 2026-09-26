@@ -93,6 +93,7 @@ LLM_GPU/TTS_CPU 与 LLM_CPU/TTS_GPU 的旧结果定位、TTS 核数证据缺口�
 | `experiments/elastic_residency/vision/gguf_reader.py` | GGUF 头部元数据只读解析 | 纯标准库；只解析 KV 与张量计数，数组折叠为类型与数量，缺字段保持 `None` |
 | `paper/compile_en.bat` | Windows 英文论文编译 | LaTeX 产物属于生成文件 |
 | `cpp_scheduler/build_wsl2.sh` | WSL2 原生扩展构建 | 使用 `mvp_core-cu128`（软链→共享 3.13 venv）、CUDA 12.8、sm_120 |
+| `.github/workflows/sync-local-linux.yml` / `sync-local.yml` | EdgeSched 双端自动同步（2026-09-26 新增） | push 到 main 后各端 self-hosted runner 自动 ff-only 追平：Linux → `/home/leslie/mvp_core`、Windows → `D:\AI\xiaoyou-core\legacy\mvp_core`；本机 `git status --porcelain` 非空时跳过，不覆盖未提交改动；remote 名为 `origin` |
 
 ## 真源优先级
 

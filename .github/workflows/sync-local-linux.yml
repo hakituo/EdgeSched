@@ -1,0 +1,47 @@
+name: Sync Local EdgeSched (Linux)
+
+# 与 sync-local.yml（Windows）对等：push 到 main 后让这台 Linux 开发机的
+# 本地工作副本自动 ff-only 追平 origin/main。
+# runner 为本机 systemd 服务（开机自启、免登录），标签 self-hosted, Linux, X64。
+# EdgeSched 是独立仓库，路径与 xiaoyou-core 不同，注意不要混用。
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: [self-hosted, Linux, X64]
+
+    steps:
+      - name: Sync local EdgeSched repo
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        run: |
+          set -euo pipefail
+          repo="/home/leslie/mvp_core"
+          cd "$repo"
+
+          # 本地有未提交修改时取消本次同步，绝不覆盖本机在做的工作
+          dirty=$(git -c "safe.directory=$repo" status --porcelain)
+          if [ -n "$dirty" ]; then
+            echo "本地存在未提交修改，取消自动同步"
+            exit 0
+          fi
+
+          pair="x-access-token:$GH_TOKEN"
+          basic=$(printf '%s' "$pair" | base64 -w0)
+
+          # 仓库拉取认证：临时注入 basic extraheader，不落盘到 git 配置
+          git -c "safe.directory=$repo" \
+              -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $basic" \
+              fetch origin main
+
+          # 只允许快进：分叉时直接失败，由人工处理，不做自动合并
+          git -c "safe.directory=$repo" merge --ff-only origin/main

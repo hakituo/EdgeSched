@@ -35,6 +35,27 @@
   usbipd 直通 USB 音频设备。
 - 测试：569 通过、6 跳过。
 
+## 2026-09-26 补齐 EdgeSched 双端（Linux/Windows）自动同步 workflow
+
+- 背景：2026-09-25 起主开发环境切到本机原生 Linux `/home/leslie/mvp_core`，Windows 侧保留
+  `D:\AI\xiaoyou-core\legacy\mvp_core` 做双端开发。父仓库 `xiaoyou-core` 早有 `sync-local.yml` /
+  `sync-local-linux.yml` 做双端自动同步，但 EdgeSched 是**独立仓库**且此前**没有 `.github/` 目录**，
+  完全不在自动同步范围内，两端只能手动 push/pull，Windows 侧因此落后到 `bcb45b0`。
+- 改动：新增 `.github/workflows/sync-local-linux.yml`（→ `/home/leslie/mvp_core`）与
+  `sync-local.yml`（→ `D:\AI\xiaoyou-core\legacy\mvp_core`），沿用父仓库模板语义：push 到 main 触发，
+  各端 self-hosted runner 执行 `fetch` + `merge --ff-only`；**本机 `git status --porcelain` 非空时
+  取消同步**（`exit 0`，绝不覆盖本机未提交工作）；分叉时不自动合并、直接失败交人工处理。
+  注意本仓库 remote 名为 `origin`（不是父仓库的 `origin-private`）。
+- 同步修正的两侧 CRLF 污染（不入库、非本仓库 diff）：Windows 两份副本的工作区文件被写成 CRLF，
+  导致 `porcelain` 非空（xiaoyou-core 1834 个文件、mvp_core 193 个），同步 workflow 每次静默
+  `exit 0` 且 job 仍显示成功。核查确认**仓库内提交的 blob 一直是 LF**，污染只在 Windows 工作区，
+  故对两份副本设 `core.autocrlf=input` 后 `git reset --hard` 重新 checkout 即可，`porcelain` 分别
+  降至 0，未产生 normalize commit、未改动任何提交内容。
+- 验证：两个 workflow 经 YAML 解析通过，runs-on 标签正确（Linux X64 / Windows X64），且 `.github/`
+  未被 `.gitignore` 排除（`git check-ignore` 无命中）。
+- 备注：Windows 侧副本仍需手动 `git pull --ff-only` 追平到最新，或等待下一次 push 由 workflow 自动
+  拉动；本机无 GitHub 凭据，Linux 侧无法代为拉取。
+
 ## 2026-09-20 S0 v2 正式成对比较（加速后端）与 B2 来源门修复
 
 - B2 重跑 `b2_tts_t0_20260920_222648`：数值与上一批一致（RTF 0.3236/0.3138/0.3082，卡级增量

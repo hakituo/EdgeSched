@@ -1,0 +1,61 @@
+name: Sync Local EdgeSched (Windows)
+
+# 与 sync-local-linux.yml（Linux）对等：push 到 main 后让这台 Windows 开发机的
+# 本地工作副本自动 ff-only 追平 origin/main。
+# runner 标签 self-hosted, Windows, X64。
+# EdgeSched 是独立仓库，路径为 D:\AI\xiaoyou-core\legacy\mvp_core，注意不要混用。
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: [self-hosted, Windows, X64]
+
+    steps:
+      - name: Sync local EdgeSched repo
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        run: |
+          $ErrorActionPreference = "Stop"
+          $repo = "D:\AI\xiaoyou-core\legacy\mvp_core"
+          Set-Location $repo
+
+          $dirty = git -c "safe.directory=$repo" status --porcelain
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "读取本地仓库状态失败，停止自动同步"
+            exit $LASTEXITCODE
+          }
+
+          if ($dirty) {
+            Write-Host "本地存在未提交修改，取消自动同步"
+            exit 0
+          }
+
+          $pair = "x-access-token:$env:GH_TOKEN"
+          $basic = [Convert]::ToBase64String(
+            [Text.Encoding]::ASCII.GetBytes($pair)
+          )
+
+          git -c "safe.directory=$repo" `
+              -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $basic" `
+              fetch origin main
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "拉取 origin/main 失败，停止自动同步"
+            exit $LASTEXITCODE
+          }
+
+          git -c "safe.directory=$repo" merge --ff-only origin/main
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "合并 origin/main 失败，自动同步未完成"
+            exit $LASTEXITCODE
+          }
