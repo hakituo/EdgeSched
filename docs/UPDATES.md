@@ -35,6 +35,51 @@
   usbipd 直通 USB 音频设备。
 - 测试：569 通过、6 跳过。
 
+## 2026-09-27 系统重装后重建 GPU 环境：驱动重装、torch cu130→cu128 迁移、Forge 环境再建
+
+- 背景：用户重装系统为 Ubuntu 24.04.5（内核 `7.0.0-31-generic`），`/home` 由备份恢复，原根分区
+  `nvme1n1p2`（ext4）变为 NTFS，新根为 `nvme1n1p3`（ext4，278 G）。恢复后 GPU 链路整体失效：
+  无 NVIDIA 驱动（nouveau 在跑、无 `/dev/nvidia*`）、`/usr/local/cuda*` 不存在、
+  `forge-cu128` 的 `bin/python` 指向已不存在的 `/usr/bin/python3.10`。970 EVO 另作 Ventoy 用途，
+  相关权重软链断裂（用户确认权重本体保留，本次不处理）。
+- 重建与迁移：
+  - 重装 `nvidia-driver-595-open`（595.91.07），dkms 编译通过，重启后 `nvidia-smi` 与
+    `/dev/nvidia*` 正常。
+  - 主 venv（`/home/leslie/xiaoyou-core/.venv`，即软链 `/home/leslie/.venvs/mvp_core-cu128`）由
+    **cu130 迁移到 cu128**：torch `2.12.0+cu130` → **`2.11.0+cu128`**、torchvision `0.27.0+cu130` →
+    `0.26.0+cu128`、torchaudio `2.11.0+cu128`、triton `3.6.0`、pillow `12.3.0`，cu13 依赖包全部移除。
+    迁移动因：cu128 分支无 torch 2.12，且本机 `cpp_scheduler` 产物与 `llama-cpp-python==0.3.35`
+    均按 CUDA 12 编译，统一到 12.x 后**无需安装系统 CUDA toolkit**。
+  - **系统不装 CUDA toolkit**：CUDA 12 运行时全部由 venv 内 `nvidia-*-cu12` pip 包提供
+    （`libcudart.so.12`、`libcublas.so.12`、`libcudnn.so.9` 等，位于
+    `.../site-packages/nvidia/*/lib`），该批目录已写入
+    `/etc/ld.so.conf.d/xiaoyou-nvidia-cu12.conf` 并 `ldconfig`。
+  - `forge-cu128` 重建：`uv python install 3.10`（3.10.21，uv 托管，不碰系统）+ `uv venv --python
+    3.10 --seed`，预装 torch 2.10.0+cu128 / torchvision 0.25.0+cu128，并按 2026-09-25 记录的坑点①
+    预先钉 `setuptools==69.5.1`（seed 默认的 84.0.0 会导致老 CLIP 构建失败）。
+- **中途踩坑（同类替换时必遇）**：卸载 cu13 依赖包时，`nvidia-cudnn-cu12` 与 `nvidia-cudnn-cu13`
+  安装的是**同一个 `nvidia/cudnn/` 目录且文件名重叠**（均为 `libcudnn.so.9`），卸载 cu13 版按 RECORD
+  删文件会把 cu12 版同名文件一并删掉，`nccl`/`cusparselt`/`nvshmem` 同理 —— 表现为 `import torch`
+  报 `libcudnn.so.9: cannot open shared object file`，而 pip 元数据里包仍在。修法：按 torch
+  2.11.0+cu128 声明的版本（`cudnn==9.19.0.56`、`cusparselt==0.7.1`、`nccl==2.28.9`、
+  `nvshmem==3.4.5`）用 `--reinstall` 重装。**结论：今后做同类大版本替换，卸载后务必对 cu12 包
+  `--reinstall` 一遍，或直接让 uv 一次解析安装。**
+- 验证（均实测，非推断）：
+  - `torch 2.11.0+cu128`：`cuda.is_available()=True`、设备 `RTX 5070 Laptop GPU`、sm_120、
+    7.53 GiB；1000×1000 矩阵乘法在 CUDA 上执行成功。
+  - `llama_cpp 0.3.35`：`llama_supports_gpu_offload()=True`，`ggml_cuda_init` 枚举出本卡
+    （7707 MiB 可用）；**不设 `LD_LIBRARY_PATH` 亦可加载**（依赖 ld.so.conf.d 固化）。
+  - `cpp_scheduler`：`libggml-cuda.so.0.9.11` 与 `scheduler_py.cpython-313-x86_64-linux-gnu.so`
+    的 `ldd` 均无 `not found`，`scheduler_py` 导入成功（未重新编译，复用 2026-09-25 产物）。
+  - `forge-cu128`：`torch 2.10.0+cu128` / `torchvision 0.25.0+cu128`、`cuda.is_available()=True`、
+    sm_120、`setuptools 69.5.1`。
+- 文档同步：更新 `paper/thesis_experiment_guide/01_research_scope_and_workloads.md`（两处环境行）
+  与 `docs/PROJECT_CONTEXT.md`（主实验环境、Forge 环境、GGUF 模型、图像模型四行，并新增 7.1 的
+  2026-09-27 快照，原 2026-09-25 快照标注为已被取代）。
+- 备注：Forge 本体扩展未安装、真实出图 smoke 未跑（待 `launch.py` 首次启动；扩展装完后须把 numpy
+  钉回 1.26.2）；970 EVO 未接入，`models/llm/` 与 Forge 额外权重软链断裂，待权重迁回后恢复。本次为
+  纯环境/文档改动，**不产生任何新实验数据，既有 cu130 口径的实验结论不受影响**。
+
 ## 2026-09-26 补齐 EdgeSched 双端（Linux/Windows）自动同步 workflow
 
 - 背景：2026-09-25 起主开发环境切到本机原生 Linux `/home/leslie/mvp_core`，Windows 侧保留

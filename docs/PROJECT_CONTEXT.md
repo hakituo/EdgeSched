@@ -344,21 +344,30 @@ small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；�
 | **主开发副本（唯一权威）** | `/home/leslie/mvp_core`，本机原生 Linux（Ubuntu-24.04-E，非 WSL2）；编辑、运行、git 提交/推送均在此处，`.git` 在工作树内（origin = `https://github.com/hakituo/EdgeSched`） |
 | Windows 旧副本（已停用） | `D:\AI\xiaoyou-core\legacy\mvp_core`：2026-09-25 前的权威仓库，`.git` 已复制到 Linux 并校验；此后不再参与提交，`sync_to_wsl2_safe.ps1` 流程废止，保留仅作历史备份 |
 | 行尾/权限 | 仓库根 `.gitattributes` 统一文本 LF（2026-09-25 全量归一）；`core.fileMode=false`、`core.symlinks=true` |
-| 主实验环境 | `/home/leslie/.venvs/mvp_core-cu128`（稳定路径，**2026-09-25 起为软链**，实际指向 `/home/leslie/xiaoyou-core/.venv`：uv 管理 / Python 3.13.15 / torch 2.12.0+cu130 / torchvision 0.27+cu130 / transformers 4.57.3 / llama_cpp 0.3.35(CUDA 12.8 源码编译) / faster-qwen3-tts 0.2.6 / qwen-tts 0.1.1 / sounddevice / faster-whisper / onnxruntime。mvp 侧补装 diffusers 0.37.1、qwen-vl-utils、loguru、safetensors 0.8、pybind11。numpy 保持 1.26.4 不动） |
+| 主实验环境 | `/home/leslie/.venvs/mvp_core-cu128`（稳定路径，**2026-09-25 起为软链**，实际指向 `/home/leslie/xiaoyou-core/.venv`：uv 管理 / Python 3.13.15 / **torch 2.11.0+cu128 / torchvision 0.26.0+cu128（2026-09-27 由 cu130 迁移，见 `docs/UPDATES.md` 2026-09-27 条目）** / transformers 4.57.3 / llama_cpp 0.3.35(CUDA 12.8 源码编译) / faster-qwen3-tts 0.2.6 / qwen-tts 0.1.1 / sounddevice / faster-whisper / onnxruntime。mvp 侧补装 diffusers 0.37.1、qwen-vl-utils、loguru、safetensors 0.8、pybind11。numpy 保持 1.26.4 不动。**CUDA 12 运行时不依赖系统 toolkit**：`nvidia-*-cu12` pip 包提供 `libcudart.so.12` / `libcublas.so.12` 等，`.../site-packages/nvidia/*/lib` 已写入 `/etc/ld.so.conf.d/xiaoyou-nvidia-cu12.conf` 并 `ldconfig`，`llama_cpp` 与 `cpp_scheduler` 的 `.so` 均可直接加载） |
 | 遗留环境 | ① 2026-09-17 删除的 Python 3.10.19 / torch 2.10 / transformers 4.57.3 旧主环境；② 2026-09-17–24 软链目标 `/home/leslie/qwen3tts-cugraph-probe/faster-qwen3-tts/.venv`（Python 3.12 / torch 2.11+cu128 / transformers 5.15.1 的加速隔离环境）在系统迁移后已不存在（现为空的 3.10 venv）。旧后端脚本（`--tts-backend upstream_dynamic`、`run_small_9b_tts_compat/t4_isolate`、`services/tts/qwen3_tts_worker.py`）重跑前仍须按 TTS 文档准备环境；但 `cuda_graph_static` 加速后端**已验证可直接在共享 3.13 venv 运行**（faster-qwen3-tts 0.2.6 + transformers 4.57.3，稳态 RTF 0.3136，与历史 5.x 隔离环境 0.303–0.317 一致，见 7.1 与 TTS 文档；不要升级 transformers 5.x） |
-| Forge 环境 | `/home/leslie/.venvs/forge-cu128`（2026-09-25 用 Python 3.10.21 重建，预装 torch 2.10.0+cu128 / torchvision 0.25.0+cu128，其余依赖由 Forge `launch.py` 首次启动时按 `requirements_versions.txt` 安装；setuptools 钉 69.5.1、numpy 钉回 1.26.2，CLIP 需免隔离预装，坑点详见 `docs/UPDATES.md` 2026-09-25 条目。初始化已用 `launch.py --exit` 验证，**真实出图 smoke 未跑**） |
-| GGUF 模型 | `/home/leslie/mvp_core/models/llm` 下 4 个文件均为软链，真实权重在 970 EVO `/media/leslie/970EVO/xiaoyou-models/llm`（2026-09-25 sha256 四份逐一比对一致后替换；已实测 llama.cpp 经软链 mmap+生成正常）；代码路径不变，可用性依赖 970 EVO 挂载 |
+| Forge 环境 | `/home/leslie/.venvs/forge-cu128`（**2026-09-27 重装系统后再建**：`uv python install 3.10` + `uv venv --python 3.10 --seed` 创建，预装 torch 2.10.0+cu128 / torchvision 0.25.0+cu128（RTX 5070 不能用 launch.py 默认的 2.3.1+cu121），`setuptools` 已钉 69.5.1 以规避 84 版移除 `pkg_resources` 导致的老 CLIP 构建失败；其余依赖仍由 Forge `launch.py` 首次启动时按 `requirements_versions.txt` 安装，扩展装完后须把 numpy 钉回 1.26.2，CLIP 需免隔离预装，坑点详见 `docs/UPDATES.md` 2026-09-25 与 2026-09-27 条目。**Forge 本体扩展尚未安装、真实出图 smoke 未跑**） |
+| GGUF 模型 | `/home/leslie/mvp_core/models/llm` 下 4 个文件均为软链，真实权重在 970 EVO `/media/leslie/970EVO/xiaoyou-models/llm`（2026-09-25 sha256 四份逐一比对一致后替换；已实测 llama.cpp 经软链 mmap+生成正常）。**2026-09-27 起该盘被改作 Ventoy，软链当前断裂；权重本体保留，待迁回后恢复**；代码路径不变，可用性依赖 970 EVO 挂载 |
 | 当前 9B + 视觉副本 | 上述原生目录中的 `Qwen3.5-9B-q4_k_m.gguf` / `Qwen3.5-9B-f16.mmproj`；2026-09-06 从 D: 复制并核验两侧 SHA-256，见 [复核记录](VISION_9B_PROBE_20260906.md) |
 | TTS 模型 | `/home/leslie/xiaoyou-core/models/Qwen3-TTS-12Hz-0.6B-Base`（2026-09-25 起全部实验脚本默认指向；与 mvp_core 下旧副本 `diff -rq` 一致；可用 `XIAOYOU_BENCH_TTS_PATH` 覆盖） |
 | 辅助模型 | `/home/leslie/mvp_core/models/auxiliary`（Faster-Whisper Small、BGE-small-zh-v1.5） |
-| 图像模型 | `/home/leslie/mvp_core/models/Image`；970 EVO 额外权重（`/media/leslie/970EVO/xiaoyou-models/Image` 的 krea2/z-image checkpoint、4 个 VAE、openposeXL controlnet）已软链进 Forge `models/`，依赖盘处于挂载状态 |
+| 图像模型 | `/home/leslie/mvp_core/models/Image`；970 EVO 额外权重（`/media/leslie/970EVO/xiaoyou-models/Image` 的 krea2/z-image checkpoint、4 个 VAE、openposeXL controlnet）已软链进 Forge `models/`。**2026-09-27 起 970 EVO 未接入，上述软链处于断裂状态**，迁回后恢复 |
 | Forge 服务 | `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/` |
 
 **2026-09-25 起不再有 Windows→Linux 同步流程**：主开发与 git 操作都在 `/home/leslie/mvp_core` 原生 Linux 完成，直接 `git add`（显式路径）/ `git commit -m "一句话说明"` / `git push origin main`。`scripts/sync_to_wsl2_safe.ps1` 已废止，禁止再用于提交；其 `/models/` 排除语义只作为 `.gitignore` 的历史背景（根目录模型排除写成 `/models/`，避免误伤 `domain/models/`）。提交信息要求不变：一句话写清改动、禁止 auto/更新/同步 等无信息文案、细节写 `docs/UPDATES.md`；存在其他会话未提交改动时只暂存本任务文件。
 
 ### 7.1 当前 Linux 运行快照
 
-2026-09-25（系统迁移后重建环境）：
+2026-09-27（**用户重装系统后重建环境；本段为当前有效状态**）：
+
+- 系统重装为 Ubuntu 24.04.5（内核 7.0.0-31-generic），`/home` 由备份恢复；原根分区 `nvme1n1p2`（ext4）现为 NTFS，当前根为 `nvme1n1p3`（ext4，278 G）。
+- NVIDIA 驱动重装 `nvidia-driver-595-open`（595.91.07）：dkms 编译通过、`nvidia-smi` 正常、`/dev/nvidia*` 齐全；GPU 仍为 RTX 5070 Laptop（8151 MiB，sm_120）。
+- 主 venv 由 **cu130 迁移到 cu128**：torch `2.12.0+cu130` → **`2.11.0+cu128`**、torchvision `0.27.0+cu130` → `0.26.0+cu128`、torchaudio `2.11.0+cu128`，cu13 依赖包全部移除；`torch.cuda.is_available()=True` 并实测矩阵运算通过。迁移动因：cu128 分支没有 torch 2.12，而本机 C++ 产物与 `llama-cpp-python` 都按 CUDA 12 编译，统一到 12.x 后无需安装系统 CUDA toolkit。
+- **系统不再需要 CUDA toolkit**：CUDA 12 运行时全部来自 venv 内 `nvidia-*-cu12` pip 包（`libcudart.so.12`、`libcublas.so.12`、`libcudnn.so.9` 等），其 `.../site-packages/nvidia/*/lib` 已写入 `/etc/ld.so.conf.d/xiaoyou-nvidia-cu12.conf` 并 `ldconfig`；此后 `llama_cpp`（0.3.35，`GPU offload=True`）与 `cpp_scheduler` 的 `scheduler_py` / `libggml-cuda.so` 均无需 `LD_LIBRARY_PATH` 即可加载，`ldd` 无 `not found`。
+- Forge 独立环境 `/home/leslie/.venvs/forge-cu128` 用 uv 托管的 Python 3.10.21 重建（旧 venv 因指向已不存在的系统 `/usr/bin/python3.10` 而失效），预装 torch 2.10.0+cu128 / torchvision 0.25.0+cu128、`setuptools` 钉 69.5.1；Forge 本体扩展待 `launch.py` 首次启动安装，真实出图 smoke 未跑。
+- 970 EVO（`/media/leslie/970EVO`）已改作 Ventoy 用途，`models/llm/` 四个 GGUF 软链与 Forge 额外权重软链当前断裂；权重本体保留，迁回后恢复，本次不重跑依赖它们的实验。
+
+2026-09-25（系统迁移后重建环境，**历史快照，其 cu130 环境已被上条取代**）：
 
 - 主环境改为直接复用父项目 venv `/home/leslie/xiaoyou-core/.venv`（uv，Python 3.13.15，torch 2.12.0+cu130，驱动 595.91.07 / CUDA 13.2），`/home/leslie/.venvs/mvp_core-cu128` 重建为指向它的软链；`torch.cuda.is_available()` 正常识别 RTX 5070 Laptop（8 GiB，sm_120）。
 - 在共享 venv 中用 `/usr/local/cuda-12.8` 源码编译安装 `llama-cpp-python==0.3.35`（`GGML_CUDA=on`、`GGML_CUDA_ARCHITECTURES=120`），`llama_supports_gpu_offload()=True` 并枚举出本卡；另补 diffusers 0.37.1、qwen-vl-utils 0.0.14、loguru、safetensors 0.8.0、torchvision 0.27.0+cu130、pybind11。未升级 numpy（保持 1.26.4），未安装代码零导入的 blendmodes/peft。

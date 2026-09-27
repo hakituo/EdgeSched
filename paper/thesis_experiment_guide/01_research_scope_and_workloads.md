@@ -58,8 +58,8 @@ EdgeSched 面向单用户、单机、资源受限的本地多模态 AI 助手。
 - 主机内存：32GB DDR5
 - 正式实验约束：WSL2 实际可用内存上限约 16GB；必须在 manifest 中记录当次内存上限与 swap 状态
 - WSL2 运行副本：`/home/leslie/mvp_core`
-- 调度与实验环境：`/home/leslie/.venvs/mvp_core-cu128`（2026-09-25 起为软链，实际是 `/home/leslie/xiaoyou-core/.venv`：Python 3.13 / torch 2.12+cu130）
-- Forge 环境：`/home/leslie/.venvs/forge-cu128`（Python 3.10 / torch 2.10+cu128）
+- 调度与实验环境：`/home/leslie/.venvs/mvp_core-cu128`（2026-09-25 起为软链，实际是 `/home/leslie/xiaoyou-core/.venv`：Python 3.13.15 / torch 2.11.0+cu128，2026-09-27 由 cu130 迁移；CUDA 12 运行时不装系统 toolkit，由 `nvidia-*-cu12` pip 包提供并经 `/etc/ld.so.conf.d/xiaoyou-nvidia-cu12.conf` 固化）
+- Forge 环境：`/home/leslie/.venvs/forge-cu128`（Python 3.10.21 / torch 2.10.0+cu128；2026-09-27 重装系统后重建）
 
 论文不得只写“32GB RAM”而隐藏 WSL2 的有效内存约束。宿主机容量与实验进程实际可用容量需要同时报告。
 
