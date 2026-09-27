@@ -360,7 +360,7 @@ small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；�
 
 2026-09-27（**用户重装系统后重建环境；本段为当前有效状态**）：
 
-- 系统重装为 Ubuntu 24.04.5（内核 7.0.0-31-generic），`/home` 由备份恢复；原根分区 `nvme1n1p2`（ext4）现为 NTFS，当前根为 `nvme1n1p3`（ext4，278 G）。
+- 系统重装为 Ubuntu 24.04.5（内核 7.0.0-31-generic），`/home` 由备份恢复；原根分区（ext4）现为 NTFS 卷 `E2BE475FBE472B7D`，当前根为 ext4 分区（UUID `ff6b633b-4bf8-451f-a8c0-5f78f69d110a`，278 G）。**NVMe 设备号（`nvme0`/`nvme1`）随 PCI 枚举顺序变化，本次重启即发生互换，定位分区请用 UUID，不要用设备名。**
 - NVIDIA 驱动重装 `nvidia-driver-595-open`（595.91.07）：dkms 编译通过、`nvidia-smi` 正常、`/dev/nvidia*` 齐全；GPU 仍为 RTX 5070 Laptop（8151 MiB，sm_120）。
 - 主 venv 由 **cu130 迁移到 cu128**：torch `2.12.0+cu130` → **`2.11.0+cu128`**、torchvision `0.27.0+cu130` → `0.26.0+cu128`、torchaudio `2.11.0+cu128`，cu13 依赖包全部移除；`torch.cuda.is_available()=True` 并实测矩阵运算通过。迁移动因：cu128 分支没有 torch 2.12，而本机 C++ 产物与 `llama-cpp-python` 都按 CUDA 12 编译，统一到 12.x 后无需安装系统 CUDA toolkit。
 - **系统不再需要 CUDA toolkit**：CUDA 12 运行时全部来自 venv 内 `nvidia-*-cu12` pip 包（`libcudart.so.12`、`libcublas.so.12`、`libcudnn.so.9` 等），其 `.../site-packages/nvidia/*/lib` 已写入 `/etc/ld.so.conf.d/xiaoyou-nvidia-cu12.conf` 并 `ldconfig`；此后 `llama_cpp`（0.3.35，`GPU offload=True`）与 `cpp_scheduler` 的 `scheduler_py` / `libggml-cuda.so` 均无需 `LD_LIBRARY_PATH` 即可加载，`ldd` 无 `not found`。

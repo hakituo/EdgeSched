@@ -38,7 +38,10 @@
 ## 2026-09-27 系统重装后重建 GPU 环境：驱动重装、torch cu130→cu128 迁移、Forge 环境再建
 
 - 背景：用户重装系统为 Ubuntu 24.04.5（内核 `7.0.0-31-generic`），`/home` 由备份恢复，原根分区
-  `nvme1n1p2`（ext4）变为 NTFS，新根为 `nvme1n1p3`（ext4，278 G）。恢复后 GPU 链路整体失效：
+  （ext4）变为 NTFS 卷 `E2BE475FBE472B7D`，新根为 ext4 分区（UUID
+  `ff6b633b-4bf8-451f-a8c0-5f78f69d110a`，278 G）。**注意 NVMe 设备号（`nvme0`/`nvme1`）取决于
+  PCI 枚举顺序、并不稳定，本次重启后两块盘的编号即发生互换，故本记录统一用 UUID/卷标描述分区，
+  不用设备名**（`fstab` 亦按 UUID 挂载，不受影响）。恢复后 GPU 链路整体失效：
   无 NVIDIA 驱动（nouveau 在跑、无 `/dev/nvidia*`）、`/usr/local/cuda*` 不存在、
   `forge-cu128` 的 `bin/python` 指向已不存在的 `/usr/bin/python3.10`。970 EVO 另作 Ventoy 用途，
   相关权重软链断裂（用户确认权重本体保留，本次不处理）。
