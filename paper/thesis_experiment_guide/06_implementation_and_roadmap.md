@@ -183,9 +183,9 @@ percentage 下 `cuCtxGetExecAffinity` 客户端 context 实测有效 SM 数
 domain socket 108 字节 `sun_path` 上限，daemon 会静默不写 PID 文件；
 `MpsRuntime.start` 已加 fail-fast 守卫，正式运行须显式传短 `--temp-root`
 （如 `/tmp/edgesched_mps`）。75%/25% 档驱动取整为 26/8，与请求估计 27/9
-不同，SM-B 设计档位时以实测为准。v5 唯一未过的 acceptance check 是
-`git_provenance_complete`（运行工作区含未提交修改），正式归档前需先提交
-再以干净 commit 重跑。
+不同，SM-B 设计档位时以实测为准。正式归档 run 为干净 commit `bb17b62` 上的
+`sm_a_20261013_native_linux_v6`，全部 acceptance checks 通过
+（`passed=true`、`git_provenance_complete=true`）。
 
 已实现与待实现边界：
 

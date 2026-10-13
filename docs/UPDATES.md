@@ -54,8 +54,9 @@
 - 验证：`tests/elastic_residency/` 全量 **531 passed、5 skipped**（含枚举漂移
   重试链、候选轨迹、平台误判回归测试）；守卫在默认长路径下 5s 内 fail-fast
   且无目录残留；v5 run 证据含 `affinity_type_candidates_tried=[{type:0,rc:0}]`。
-- 备注：v5 唯一未过的 acceptance check 是 `git_provenance_complete`（运行工作区
-  含未提交修改）；正式归档前需先提交本次修复再以干净 commit 重跑一次。
+- 备注：修复已提交（`bb17b62`）；正式 run `sm_a_20261013_native_linux_v6` 以干净
+  commit + 完整 provenance 重跑，**全部 acceptance checks 通过**
+  （`passed=true`、`git_provenance_complete=true`、verdict=GO），可作论文引用记录。
   `paper/experiment_data/01_paper_main/` 未动；SM-B 按门禁可以启动，
   SM-C/D/E 待 SM-B 结果再排。
 
