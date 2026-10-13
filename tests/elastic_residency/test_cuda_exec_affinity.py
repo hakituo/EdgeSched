@@ -15,11 +15,23 @@ from experiments.elastic_residency.sm.cuda_exec_affinity import (
 
 
 class _FakeCudaLibrary:
-    """记录调用参数的最小 CUDA Driver 替身。"""
+    """记录调用参数的最小 CUDA Driver 替身。
 
-    def __init__(self, *, query_rc: int = 0, num_sms: int = 24) -> None:
+    ``query_rc_by_type`` 模拟枚举编号漂移：只有传入的 type 命中表内项时
+    使用对应返回码，其余用 ``query_rc``。默认全部成功（等价于真实驱动
+    上 SM_COUNT=0 首次即中的行为）。
+    """
+
+    def __init__(
+        self,
+        *,
+        query_rc: int = 0,
+        num_sms: int = 24,
+        query_rc_by_type: dict[int, int] | None = None,
+    ) -> None:
         self.query_rc = query_rc
         self.num_sms = num_sms
+        self.query_rc_by_type = dict(query_rc_by_type or {})
         self.init_calls: list[Any] = []
         self.query_calls: list[tuple[Any, Any]] = []
 
@@ -29,9 +41,10 @@ class _FakeCudaLibrary:
 
         def cu_ctx_get_exec_affinity(param: Any, second: Any) -> int:
             self.query_calls.append((param, second))
-            if self.query_rc == 0:
+            rc = self.query_rc_by_type.get(second, self.query_rc)
+            if rc == 0:
                 param._obj.num_sms = self.num_sms
-            return self.query_rc
+            return rc
 
         self.cuInit = cu_init
         self.cuCtxGetExecAffinity = cu_ctx_get_exec_affinity
@@ -60,7 +73,9 @@ def test_second_argument_is_the_affinity_type_enum(
     _param, second = fake_library.query_calls[0]
     assert isinstance(second, int), "第二个参数必须是 int 枚举，不能是指针/byref"
     assert not isinstance(second, bool)
-    assert second == CU_EXEC_AFFINITY_TYPE_SM_COUNT == 1
+    # MPS 场景 SM_COUNT 枚举值是 0（DPDK 2021 cuExecAffinityParamType 起），
+    # 不是 1；传 1 会被驱动以 UNSUPPORTED_EXEC_AFFINITY 拒绝。
+    assert second == CU_EXEC_AFFINITY_TYPE_SM_COUNT == 0
     assert not hasattr(second, "value"), "不得传入 ctypes 包装对象"
     assert result["requested_affinity_type"] == CU_EXEC_AFFINITY_TYPE_SM_COUNT
 
@@ -144,3 +159,52 @@ def test_library_unavailable_is_unsupported(monkeypatch: pytest.MonkeyPatch) -> 
     assert result["context_sm_count_unavailable_reason"] == (
         "cuda_driver_library_unavailable"
     )
+
+
+def test_enum_drift_retries_next_candidate_and_records_trail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """枚举编号漂移（0 被拒、1 成功）时必须重试下一候选并记录轨迹。"""
+
+    library = _FakeCudaLibrary(query_rc_by_type={0: 224, 1: 0}, num_sms=18)
+    monkeypatch.setattr(
+        module, "load_cuda_library", lambda *_a, **_k: (library, "libcuda.so.1")
+    )
+    result = query_context_exec_affinity_sm_count()
+    assert result["context_effective_sm_count"] == 18
+    assert result["requested_affinity_type"] == 1
+    assert result["cu_query_returncode"] == 0
+    assert result["affinity_type_candidates_tried"] == [
+        {"type": 0, "returncode": 224},
+        {"type": 1, "returncode": 0},
+    ]
+
+
+def test_all_candidates_fail_records_last_returncode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """全部候选失败时以最后一次返回码作为原因，不得伪造测量值。"""
+
+    library = _FakeCudaLibrary(query_rc=224)
+    monkeypatch.setattr(
+        module, "load_cuda_library", lambda *_a, **_k: (library, "libcuda.so.1")
+    )
+    result = query_context_exec_affinity_sm_count()
+    assert result["context_effective_sm_count"] is None
+    assert result["context_sm_count_unavailable_reason"] == (
+        "cuCtxGetExecAffinity_rc_224"
+    )
+    assert [item["type"] for item in result["affinity_type_candidates_tried"]] == [
+        0,
+        1,
+    ]
+
+
+def test_successful_query_does_not_retry_other_candidates(
+    fake_library: _FakeCudaLibrary,
+) -> None:
+    """首个候选即成功时不得继续尝试其他枚举值。"""
+
+    result = query_context_exec_affinity_sm_count()
+    assert result["context_effective_sm_count"] == 24
+    assert [second for _param, second in fake_library.query_calls] == [0]

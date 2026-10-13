@@ -77,13 +77,17 @@ def test_cleanup_failure_is_recorded_not_swallowed(tmp_path: Path) -> None:
     assert handle.snapshot()["cleanup_succeeded"] is False
 
 
-def test_unconfirmed_shutdown_retains_pid_file_and_private_root(tmp_path: Path) -> None:
+def test_unconfirmed_shutdown_retains_pid_file_and_private_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """controller 未确认退出时，私有目录与 PID 必须保留供人工处理。"""
 
     class KeepPidFile(ScriptedRunner):
         def __call__(self, spec: CommandSpec, env: Mapping[str, str]) -> CommandResult:
             return CommandResult(tuple(spec.argv), spec.stdin, 0, "", "")
 
+    # controller 始终“存活”：quit 后仍未确认退出，必须 fail-closed 保留现场。
+    ProcessRegistry(alive={CONTROLLER_PID}).install(monkeypatch)
     handle = build_handle(tmp_path, KeepPidFile())
     assert handle.cleanup() is False
     assert handle.controller_pid_file.exists() is True
@@ -237,7 +241,7 @@ def test_post_quit_server_query_nonzero_is_fail_closed(
 
 
 def test_context_manager_always_cleans_up(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    short_tmp: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # LaunchRecorder 写出的 controller PID 是 4321；写出时标记存活，
     # quit 时“进程退出”，随后清理成功。
@@ -246,7 +250,7 @@ def test_context_manager_always_cleans_up(
         identities={4321: {"pid": 4321, "starttime": 1, "executable": "/ctl"}},
     ).install(monkeypatch)
     runtime = build_runtime(
-        tmp_path,
+        short_tmp,
         QuitKillsController(registry),
         launcher=LaunchRecorder(registry=registry),
     )
@@ -255,12 +259,16 @@ def test_context_manager_always_cleans_up(
     assert handle.cleanup_succeeded is True
     assert not any(
         path.is_dir() and path.name.startswith("edgesched_mps_")
-        for path in tmp_path.iterdir()
+        for path in short_tmp.iterdir()
     )
 
 
-def test_snapshot_records_readiness_and_post_quit_evidence(tmp_path: Path) -> None:
-    handle = build_handle(tmp_path, ScriptedRunner())
+def test_snapshot_records_readiness_and_post_quit_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 假 controller PID 的存活状态由 registry 控制，不探测环境 PID。
+    registry = ProcessRegistry(alive={CONTROLLER_PID}).install(monkeypatch)
+    handle = build_handle(tmp_path, QuitKillsController(registry))
     handle.wait_until_controller_ready(timeout_s=0.2)
     handle.cleanup()
     snapshot = handle.snapshot()

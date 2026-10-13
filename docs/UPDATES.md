@@ -13,6 +13,52 @@
 ## 条目格式
 
 ```
+## 2026-10-13 原生 Linux SM-A 首跑 GO：修复 exec affinity 枚举值错误与 MPS socket 路径陷阱
+
+- 背景：SM-A（GPU 计算份额能力探针）在 WSL2 因 `nvidia-cuda-mps-control` 不存在暂定
+  NO_GO，指南要求原生 Linux 恢复后重跑。本机（Ubuntu 24.04 原生、RTX 5070 Laptop
+  sm_120、driver 595.91.07、MPS control binary 13020）完整运行
+  `experiments/elastic_residency/sm/` 探针（正式 run `sm_a_20261013_native_linux_v5`，
+  100/75/50/25% 四配置，`--temp-root /tmp/edgesched_mps`）。
+- **最终结论：verdict=GO**，七个 go_conditions 全真、`unsupported_reasons` 为空。
+  不受控基线实测 36 个物理 SM；MPS active-thread percentage 下
+  `cuCtxGetExecAffinity` 客户端 context 实测有效 SM 数 **36/26/18/8**
+  （100/75/50/25%），四档 distinct、单调，`verified=true`，daemon 清理 0 失败。
+  按 SM-A 门禁可以进入 SM-B（受控 SM 隔离曲线）。注意 75%/25% 的驱动取整
+  （26/8）与请求估计（27/9）不同，以实测为准。
+- **根因 1（exec affinity 枚举值错误，曾导致误判 NO_GO）**：
+  `cuda_exec_affinity.py` 里 `CU_EXEC_AFFINITY_TYPE_SM_COUNT` 被写成 **1**，
+  而该枚举自 MPS 场景引入起就是 **0**（DPDK 2021 年 cuExecAffinityParamType
+  patch，注释即 "useful for MPS to detect number of SMs associated to a CUDA
+  context"）。传 1 时驱动一律返回 224 UNSUPPORTED_EXEC_AFFINITY，中间两次
+  run（v3/v4）因此误报 NO_GO。修正：主值改 0，并按候选序 (0, 1) 尝试、
+  首个成功者生效，完整轨迹（`affinity_type_candidates_tried`）写入证据。
+- **根因 1b（`cuDeviceGetExecAffinitySupport` 误导）**：该 API 签名确是
+  `(int* pi, type, dev)`，但**没有 current context 时对 SM_COUNT 返回 0**，
+  曾有 context 的进程里返回 1。曾据无 context 的 0 写下「平台不支持 exec
+  affinity」的错误结论（已从代码与指南中移除）；该 API 回答的是设备级显式
+  亲和性创建支持，不能用来否证 MPS 分配的 SM 数查询。
+- **根因 2（socket 路径陷阱）**：默认 `--output-root`（`experiment_results/...`）
+  叠加 `mkdtemp` 私有目录后，MPS control socket 路径达 158–160 字节，超过 Unix
+  domain socket `sun_path` 108 字节硬上限；daemon 绑不上 socket 时**不立即退出**，
+  只是不写 PID 文件，导致每配置空等 15s 并报误导性的
+  `controller_pid_file_missing`（v1/v2 无效 run 已删除）。`MpsRuntime.start`
+  现增加路径 fail-fast 守卫（按最长 socket 名 `control_privileged` 计算），
+  错误信息直接给出超长字节数与 `--temp-root` 短路径提示；正式运行须显式传短
+  `--temp-root`（如 `/tmp/edgesched_mps`）。
+- **修复 3（测试卫生）**：`mps_queries` 重复 `import time`；4 个预先存在的
+  flaky 测试（硬编码假 PID 4321/4242 不装 `ProcessRegistry`，`pid_is_alive`
+  真去 `os.kill` 探测环境 PID，本机这些 PID 不存在必失败）按同文件既有
+  registry 模式修复；新增共享 `short_tmp` fixture（根 `conftest.py`，/tmp
+  短目录）供 daemon 启动类测试规避 pytest 长 `tmp_path` 触发的 socket 守卫。
+- 验证：`tests/elastic_residency/` 全量 **531 passed、5 skipped**（含枚举漂移
+  重试链、候选轨迹、平台误判回归测试）；守卫在默认长路径下 5s 内 fail-fast
+  且无目录残留；v5 run 证据含 `affinity_type_candidates_tried=[{type:0,rc:0}]`。
+- 备注：v5 唯一未过的 acceptance check 是 `git_provenance_complete`（运行工作区
+  含未提交修改）；正式归档前需先提交本次修复再以干净 commit 重跑一次。
+  `paper/experiment_data/01_paper_main/` 未动；SM-B 按门禁可以启动，
+  SM-C/D/E 待 SM-B 结果再排。
+
 ## 2026-09-21 归因分析（按长度归一 + 句数对齐）与设备时钟诊断
 
 - 背景：v2 正式比较中混合 `K24:T0` 全面占优，但两配置输出不同（80 token/9 句 vs 65 token/8 句），

@@ -163,6 +163,30 @@ H_D=\max k:\ M_L(k)+M_D(b=1)+G_{safe}\le V_{GPU}.
 `verdict=NO_GO`。因此 WSL2 路径暂停 SM-B/SM-C，不宣称受控 SM 分配，不修改在线规划器；
 待原生 Linux 重新运行 SM-A 后再决定是否恢复。Green Context 只保留只读能力探测结果，不自动转为生产后端。
 
+**SM-A 原生 Linux 重跑结果（2026-10-13，GO）**：`sm_a_20261013_native_linux_v5`
+在本机原生 Ubuntu 24.04（RTX 5070 Laptop、sm_120、driver 595.91.07、MPS control
+binary 13020）完成 100/75/50/25% 四配置，**verdict=GO**，七项 go_conditions 全真、
+`unsupported_reasons` 为空。不受控基线实测 36 个物理 SM；MPS active-thread
+percentage 下 `cuCtxGetExecAffinity` 客户端 context 实测有效 SM 数
+**36/26/18/8**（100/75/50/25%），四档 distinct、单调，`verified=true`，daemon
+清理 0 失败。按门禁可进入 SM-B。两条踩坑记录（均已修复并留回归测试）：
+
+1. `CU_EXEC_AFFINITY_TYPE_SM_COUNT` 枚举值实为 **0**（自 MPS 场景引入起，
+   DPDK 2021 cuExecAffinityParamType patch 可证）；代码曾误用 1，驱动对 1
+   恒返回 224 UNSUPPORTED_EXEC_AFFINITY，导致中间两次 run 误报 NO_GO。现按
+   候选序 (0, 1) 尝试，首个成功者生效，轨迹写入 `affinity_type_candidates_tried`。
+2. `cuDeviceGetExecAffinitySupport` 在**没有 current context** 时对 SM_COUNT
+   返回 0，有 context 时返回 1；该 API 描述设备级显式亲和性创建支持，
+   不能用来否证 MPS 分配的 SM 数查询（曾据此误写「平台不支持」，已移除）。
+
+运行注意：默认 `--output-root` 叠加私有目录后 control socket 路径超过 Unix
+domain socket 108 字节 `sun_path` 上限，daemon 会静默不写 PID 文件；
+`MpsRuntime.start` 已加 fail-fast 守卫，正式运行须显式传短 `--temp-root`
+（如 `/tmp/edgesched_mps`）。75%/25% 档驱动取整为 26/8，与请求估计 27/9
+不同，SM-B 设计档位时以实测为准。v5 唯一未过的 acceptance check 是
+`git_provenance_complete`（运行工作区含未提交修改），正式归档前需先提交
+再以干净 commit 重跑。
+
 已实现与待实现边界：
 
 ```text

@@ -32,6 +32,13 @@ from .mps_commands import (
 )
 from .mps_protocol import CommandRunner, subprocess_runner
 
+#: Unix domain socket ``sun_path`` 硬上限（含结尾 NUL 共 108 字节）。
+UNIX_SOCKET_PATH_MAX_BYTES = 108
+#: 实际可用的路径字节数（为 NUL 预留 1 字节）。
+UNIX_SOCKET_PATH_USABLE_BYTES = UNIX_SOCKET_PATH_MAX_BYTES - 1
+#: MPS 在 pipe 目录中创建的最长 socket 名（实测 ``control_privileged``）。
+_LONGEST_SOCKET_NAME = "control_privileged"
+
 
 class MpsRuntime:
     """MPS control daemon 的启动器；所有状态都限定在单次 run 的私有目录内。"""
@@ -102,6 +109,12 @@ class MpsRuntime:
         log_dir = root / "log"
         pipe_dir.mkdir(parents=False, exist_ok=False)
         log_dir.mkdir(parents=False, exist_ok=False)
+        try:
+            self._validate_socket_path(pipe_dir)
+        except MpsRuntimeError:
+            # 启动前失败：回收本次创建的私有目录，不留下误导性残留。
+            shutil.rmtree(root, ignore_errors=True)
+            raise
         env = dict(self._env_base)
         env[ENV_PIPE_DIRECTORY] = str(pipe_dir)
         env[ENV_LOG_DIRECTORY] = str(log_dir)
@@ -140,6 +153,26 @@ class MpsRuntime:
             handle.cleanup()
             raise
         return handle
+
+    @staticmethod
+    def _validate_socket_path(pipe_dir: Path) -> None:
+        """MPS control 通道走 Unix domain socket，路径有 108 字节硬上限。
+
+        daemon 绑不上 socket 时**不会**立即退出，只会一直不写 controller
+        PID 文件；调用方因此要空等整个启动超时，并拿到误导性的
+        ``controller_pid_file_missing``。这里在启动前 fail-fast，直接给出
+        可操作提示（换更短的 ``--temp-root``）。
+        """
+
+        longest = pipe_dir / _LONGEST_SOCKET_NAME
+        length = len(str(longest).encode("utf-8"))
+        if length > UNIX_SOCKET_PATH_USABLE_BYTES:
+            raise MpsRuntimeError(
+                f"MPS control socket 路径超长: {length} 字节 > "
+                f"{UNIX_SOCKET_PATH_USABLE_BYTES}（Unix domain socket sun_path "
+                f"上限 {UNIX_SOCKET_PATH_MAX_BYTES} 含 NUL）: {longest}；"
+                "请改用更短的 --temp-root（例如 /tmp/edgesched_mps）"
+            )
 
     def _create_private_root(self, *, label: str) -> Path:
         safe_label = "".join(

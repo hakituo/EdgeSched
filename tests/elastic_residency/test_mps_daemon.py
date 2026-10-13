@@ -10,8 +10,10 @@ import pytest
 from experiments.elastic_residency.sm.mps_commands import MpsRuntimeError
 from tests.elastic_residency.mps_daemon_helpers import (
     BINARY_NAME,
+    CONTROLLER_PID,
     SERVER_PID,
     LaunchRecorder,
+    ProcessRegistry,
     ScriptedRunner,
     build_handle,
     build_runtime,
@@ -25,12 +27,16 @@ def _allow_fake_binary(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(os, "access", lambda *_args: True)
 
 
-def test_controller_ready_does_not_require_server(tmp_path: Path) -> None:
+def test_controller_ready_does_not_require_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 假 controller PID 的存活状态由 registry 控制，不探测环境 PID。
+    ProcessRegistry(alive={CONTROLLER_PID}).install(monkeypatch)
     runner = ScriptedRunner()
     handle = build_handle(tmp_path, runner)
     evidence = handle.wait_until_controller_ready(timeout_s=0.2)
     assert evidence.ready is True
-    assert evidence.pid == 4242
+    assert evidence.pid == CONTROLLER_PID
     # server 列表为空是合法就绪状态，不能据此判定启动失败。
     assert handle.query_servers() == ()
 
@@ -44,11 +50,11 @@ def test_missing_pid_file_reports_controller_not_ready(tmp_path: Path) -> None:
         handle.wait_until_controller_ready(timeout_s=0.15)
 
 
-def test_start_failure_never_blames_missing_server(tmp_path: Path) -> None:
+def test_start_failure_never_blames_missing_server(short_tmp: Path) -> None:
     """启动失败必须来自 controller 未就绪，不能来自 server 未出现。"""
 
     runtime = build_runtime(
-        tmp_path,
+        short_tmp,
         ScriptedRunner(),
         launcher=LaunchRecorder(write_pid=False),
         start_timeout_s=0.15,
@@ -60,7 +66,7 @@ def test_start_failure_never_blames_missing_server(tmp_path: Path) -> None:
     assert "get_server_list" not in message
     assert not any(
         path.is_dir() and path.name.startswith("edgesched_mps_")
-        for path in tmp_path.iterdir()
+        for path in short_tmp.iterdir()
     )
 
 

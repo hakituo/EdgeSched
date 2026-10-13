@@ -10,8 +10,6 @@ import os
 import time
 from typing import Any
 
-import time
-
 from .mps_commands import (
     ControllerReadiness,
     MpsDaemonHealth,

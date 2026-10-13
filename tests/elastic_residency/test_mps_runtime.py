@@ -141,12 +141,25 @@ def test_unavailable_backend_fails_closed(tmp_path: Path) -> None:
     assert not any(tmp_path.iterdir()), "失败时不得残留私有目录"
 
 
-def test_start_launches_dash_d_and_creates_private_dirs(tmp_path: Path) -> None:
-    launcher = _LaunchRecorder()
-    runtime = _runtime(tmp_path, launcher)
+def test_start_launches_dash_d_and_creates_private_dirs(
+    short_tmp: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.elastic_residency.mps_daemon_helpers import (
+        ProcessRegistry,
+        QuitKillsController,
+    )
+
+    # 假 controller PID 的存活状态必须由 registry 控制；直接 os.kill 探测
+    # 环境 PID 会因 4321 恰好不存在而把正常启动误判为未就绪。
+    registry = ProcessRegistry(
+        alive=set(),
+        identities={4321: {"pid": 4321, "starttime": 1, "executable": "/ctl"}},
+    ).install(monkeypatch)
+    launcher = _LaunchRecorder(registry=registry)
+    runtime = _runtime(short_tmp, launcher, runner=QuitKillsController(registry))
     handle = runtime.start(label="pct50", run_id="rid")
     try:
-        binary = _write_fake_binary(tmp_path)
+        binary = _write_fake_binary(short_tmp)
         assert launcher.launches == [[binary, "-d"]]
         assert handle.pipe_dir.is_dir()
         assert handle.log_dir.is_dir()
@@ -158,11 +171,13 @@ def test_start_launches_dash_d_and_creates_private_dirs(tmp_path: Path) -> None:
         handle.cleanup()
 
 
-def test_start_failure_comes_from_missing_controller_pid(tmp_path: Path) -> None:
+def test_start_failure_comes_from_missing_controller_pid(
+    short_tmp: Path,
+) -> None:
     """controller 未写出 PID 文件才算启动失败，与 server 列表无关。"""
 
     launcher = _LaunchRecorder(write_pid=False)
-    runtime = _runtime(tmp_path, launcher, start_timeout_s=0.15)
+    runtime = _runtime(short_tmp, launcher, start_timeout_s=0.15)
     with pytest.raises(MpsRuntimeError) as excinfo:
         runtime.start(label="pct50")
     message = str(excinfo.value)
@@ -171,7 +186,7 @@ def test_start_failure_comes_from_missing_controller_pid(tmp_path: Path) -> None
 
 
 def test_start_creates_unique_private_roots(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    short_tmp: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # LaunchRecorder 写出的 controller PID 是 4321；写出时标记存活，
     # quit 时“进程退出”，随后清理成功（两次启动各自独立清理）。
@@ -185,7 +200,7 @@ def test_start_creates_unique_private_roots(
         identities={4321: {"pid": 4321, "starttime": 1, "executable": "/ctl"}},
     ).install(monkeypatch)
     launcher = _LaunchRecorder(registry=registry)
-    runtime = _runtime(tmp_path, launcher, runner=QuitKillsController(registry))
+    runtime = _runtime(short_tmp, launcher, runner=QuitKillsController(registry))
     first = runtime.start(label="pct50")
     first.cleanup()
     second = runtime.start(label="pct25")
@@ -193,3 +208,35 @@ def test_start_creates_unique_private_roots(
     assert first.root != second.root
     assert not first.root.exists()
     assert not second.root.exists()
+
+
+def test_start_fails_fast_when_socket_path_exceeds_unix_limit(
+    tmp_path: Path,
+) -> None:
+    """control socket 路径超过 108 字节时必须启动前 fail-fast。
+
+    daemon 绑不上超长 socket 路径时不会立即退出，只会一直不写 PID 文件；
+    没有守卫时调用方要空等整个启动超时并拿到误导性的
+    ``controller_pid_file_missing``，且永远启动不了 MPS。
+    """
+
+    # 构造一个保证超出上限的 temp_root：pipe/<control_privileged> 也要算进去。
+    deep = tmp_path / ("d" * 60) / ("e" * 60)
+    deep.mkdir(parents=True)
+    launcher = _LaunchRecorder()
+    runtime = MpsRuntime(
+        binary_path=_write_fake_binary(tmp_path),
+        temp_root=deep,
+        start_timeout_s=0.2,
+        command_timeout_s=0.1,
+        runner=_QuietRunner(),
+        env={"PATH": str(tmp_path)},
+        process_launcher=launcher,
+    )
+    with pytest.raises(MpsRuntimeError, match="socket 路径超长") as excinfo:
+        runtime.start(label="pct50")
+    message = str(excinfo.value)
+    assert "--temp-root" in message, "必须给出可操作的修复提示"
+    assert launcher.launches == [], "路径不合法时不得启动 daemon 进程"
+    # 启动前失败：回收本次创建的私有目录，不留下误导性残留。
+    assert not any(deep.iterdir()), "失败时不得残留私有目录"

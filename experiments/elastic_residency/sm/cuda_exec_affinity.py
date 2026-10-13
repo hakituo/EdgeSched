@@ -12,9 +12,17 @@ from typing import Any
 
 CUDA_SUCCESS = 0
 
-#: ``CUexecAffinityType``：CUDA 12.8 头文件中的取值。
-CU_EXEC_AFFINITY_TYPE_INVALID = 0
-CU_EXEC_AFFINITY_TYPE_SM_COUNT = 1
+#: ``CUexecAffinityType``：MPS 场景下检测 context 关联 SM 数的枚举值。
+#: **取值是 0，不是 1**——自该 API 为 MPS 引入起（见 DPDK 2021 年
+#: cuExecAffinityParamType patch，注释即 "useful for MPS to detect number
+#: of SMs associated to a CUDA context"）SM_COUNT 就是 0；本仓库早期版本
+#: 误按 1 调用，驱动对 1 一律返回 CUDA_ERROR_UNSUPPORTED_EXEC_AFFINITY(224)，
+#: 曾把 SM-A 误判为平台不支持。driver 595.91 实测：传 0 成功且会把
+#: ``param.type`` 写回 0。个别头文件出现过 INVALID=0/SM_COUNT=1 的编号，
+#: 因此查询按候选序尝试并把实际生效值写进证据。
+CU_EXEC_AFFINITY_TYPE_SM_COUNT = 0
+#: 候选枚举值（按序尝试；第一个成功且返回正数的即为实际生效值）。
+CU_EXEC_AFFINITY_TYPE_CANDIDATES = (0, 1)
 
 _LIBRARY_CANDIDATES = ("libcuda.so.1", "nvcuda.dll", "libcuda.dylib")
 
@@ -80,7 +88,7 @@ def load_cuda_library(
 def query_context_exec_affinity_sm_count() -> dict[str, Any]:
     """通过 ``cuCtxGetExecAffinity`` 查询当前 context 的有效 SM 数。
 
-    CUDA 12.8 头文件声明：
+    CUDA Driver API 声明：
 
     .. code-block:: c
 
@@ -90,7 +98,10 @@ def query_context_exec_affinity_sm_count() -> dict[str, Any]:
         );
 
     第二个参数是 ``CUexecAffinityType`` 枚举值（按 C ABI 以 ``int`` 传递），
-    **不是** 入/出元素个数指针。
+    **不是** 入/出元素个数指针。该枚举在不同驱动/头文件代际间编号有漂移
+    （MPS 场景自引入起 SM_COUNT=0，个别新头文件出现过 1），因此按
+    ``CU_EXEC_AFFINITY_TYPE_CANDIDATES`` 顺序尝试，第一个返回
+    CUDA_SUCCESS 且读出正 numSms 的候选即实际生效值，完整尝试轨迹写入证据。
     """
 
     result: dict[str, Any] = {
@@ -100,7 +111,8 @@ def query_context_exec_affinity_sm_count() -> dict[str, Any]:
         "library": None,
         "cu_init_returncode": None,
         "cu_query_returncode": None,
-        "requested_affinity_type": CU_EXEC_AFFINITY_TYPE_SM_COUNT,
+        "requested_affinity_type": None,
+        "affinity_type_candidates_tried": [],
         "layout": describe_param_layout(),
     }
     library, library_name = load_cuda_library()
@@ -132,24 +144,33 @@ def query_context_exec_affinity_sm_count() -> dict[str, Any]:
         result["context_sm_count_unavailable_reason"] = f"cuInit_rc_{init_rc}"
         return result
 
-    param = _CuExecAffinityParam()
-    param.type = CU_EXEC_AFFINITY_TYPE_SM_COUNT
-    query_rc = int(
-        cu_query(ctypes.byref(param), CU_EXEC_AFFINITY_TYPE_SM_COUNT)
+    for candidate in CU_EXEC_AFFINITY_TYPE_CANDIDATES:
+        param = _CuExecAffinityParam()
+        param.type = candidate
+        query_rc = int(cu_query(ctypes.byref(param), candidate))
+        result["affinity_type_candidates_tried"].append(
+            {"type": candidate, "returncode": query_rc}
+        )
+        result["cu_query_returncode"] = query_rc
+        result["requested_affinity_type"] = candidate
+        if query_rc != CUDA_SUCCESS:
+            # 枚举编号不匹配（典型为 224 UNSUPPORTED_EXEC_AFFINITY）时继续
+            # 尝试下一候选；全部失败时以最后一次返回码作为原因。
+            continue
+        if int(param.num_sms) <= 0:
+            result["context_sm_count_unavailable_reason"] = (
+                "driver_reported_zero_or_non_numeric_sm_count"
+            )
+            return result
+        result["context_effective_sm_count"] = int(param.num_sms)
+        result["context_sm_count_source"] = "cuda_driver_cuCtxGetExecAffinity"
+        return result
+    last_rc = result["cu_query_returncode"]
+    result["context_sm_count_unavailable_reason"] = (
+        f"cuCtxGetExecAffinity_rc_{last_rc}"
+        if last_rc is not None
+        else "cuCtxGetExecAffinity_not_attempted"
     )
-    result["cu_query_returncode"] = query_rc
-    if query_rc != CUDA_SUCCESS:
-        result["context_sm_count_unavailable_reason"] = (
-            f"cuCtxGetExecAffinity_rc_{query_rc}"
-        )
-        return result
-    if int(param.num_sms) <= 0:
-        result["context_sm_count_unavailable_reason"] = (
-            "driver_reported_zero_or_non_numeric_sm_count"
-        )
-        return result
-    result["context_effective_sm_count"] = int(param.num_sms)
-    result["context_sm_count_source"] = "cuda_driver_cuCtxGetExecAffinity"
     return result
 
 

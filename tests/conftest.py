@@ -1,5 +1,11 @@
 import os
+import shutil
 import sys
+import tempfile
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
 
 
 def _ensure_mvp_core_on_path() -> None:
@@ -23,3 +29,21 @@ def pytest_configure(config) -> None:
         "markers",
         "wsl_gpu: 需要 WSL2 + CUDA + MPS 的集成测试，默认不运行",
     )
+
+
+@pytest.fixture
+def short_tmp() -> Iterator[Path]:
+    """短绝对路径临时目录（MPS daemon 启动类测试专用）。
+
+    MPS control 通道是 Unix domain socket，``sun_path`` 上限 108 字节；
+    pytest 的 ``tmp_path`` 本身约 60+ 字节，叠加 ``edgesched_mps_*`` 私有
+    目录名与最长的 ``control_privileged`` socket 名后会超限，使
+    ``MpsRuntime.start`` 的路径守卫误伤正常启动路径。这里在 ``/tmp`` 下
+    创建短目录并结束后清理，既走真实 ``mkdtemp`` 路径又不触发守卫。
+    """
+
+    base = Path(tempfile.mkdtemp(prefix="mt_", dir="/tmp"))
+    try:
+        yield base
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
