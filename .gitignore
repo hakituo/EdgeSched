@@ -103,3 +103,6 @@ data/test_nvram.dat
 data/test_state_backplane.dat
 data/nvram.dat
 data/test_state_backplane.dat.bio
+
+# 给指导老师的私人材料，不入库
+paper/rewrite/teacher_brief/
