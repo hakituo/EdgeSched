@@ -1,14 +1,8 @@
 # EdgeSched（MVP Core）
 
-small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30 仅为容量候选，长上下文余量不足 16 MiB。下一步用户运行 `scripts/experiments/run_small_9b_tts_compat.ps1`，C512/K18 配 T0/T3 各 1 轮；加载期另需验证，不冻结阈值，见 [验收与命令](docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
+**2026-10-26 当前状态**：主开发环境为本机原生 Linux `/home/leslie/mvp_core`（2026-09-25 起，编辑、运行和 git 提交均在此处）。S0 v2 正式比较 `s0_formal_20260920_223105_8510199`（`K24:T0` vs `K0:T0` 各 5 轮，10/10、0 failure）显示混合在主指标上全面占优（首句波形就绪 4.384 vs 10.740 s、应用层供给缺口 0 vs 6 段），但输出文本/句数/token 未受控、设备时钟仍 pending，**不登记 Gate B Go**，结论维持“收缩主张”，planner 实现暂停。SM-A 已于 2026-10-13 在原生 Linux 转 **GO**（`sm_a_20261013_native_linux_v6`，`cuCtxGetExecAffinity` 实测有效 SM 36/26/18/8），SM-B 可按门禁启动，SM-C/D/E 待排。H_D 仍 pending；S0 设备层与 BGE 缓存补测仍待完成。环境注意：970 EVO 当前被改作 Ventoy，`models/llm/` 与 Forge 额外权重软链断裂，权重本体保留，跑相关实验前需先恢复挂载。
 
-已完成 [阶段组合离线筛选](docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md)：`scripts/experiments/run_small_9b_screen.ps1`。WSL 大版 9B 已按用户要求删除，小版和视觉文件保留；历史 large 复测入口需要恢复原文件。
-
-small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/预热 0.481 s、编码 0.147 s、释放 0.011 s，见 [阶段画像](docs/SMALL_9B_VISION_PROFILE_20260907.md)。这是独立进程画像，保温/提前释放策略仍待验证。
-
-完整曲线批次 `20260907_143917` 已离线逐条核验，288/288、swap 0，见 [16 档曲线与 KV 验收](docs/SMALL_9B_CURVES_20260907.md)。
-
-> **2026-09-07 9B 版本选定**：后续主模型为 small `1a35ab89…` + F16 projector `e36da9b9…`。纯文本对比 12/12、small 视觉 Answer 1/1 通过，固定图形内容描述完整；专用视觉启动器默认 Small，Large 可显式复测。新版本 C2 90/90、C3 150/150、KV 48/48 已通过，4B 对照与旧哈希证据保留。单图不是完整质量评测或 TTS 共置结论。详见 [选型与验收](docs/NINE_B_MODEL_COMPARISON.md)。
+9B 选型、small 曲线与视觉画像的既有证据分别见 [选型与验收](docs/NINE_B_MODEL_COMPARISON.md)、[16 档曲线与 KV 验收](docs/SMALL_9B_CURVES_20260907.md)、[视觉阶段画像](docs/SMALL_9B_VISION_PROFILE_20260907.md)。目录整理记录见 [文件夹归类地图](docs/FOLDER_MAP.md)。
 
 EdgeSched 是 Xiaoyou Core 的本地多模态调度研究原型，目录名沿用 `mvp_core`。项目围绕单 GPU/有限显存场景中的 LLM 常驻、图像突发、CPU backfill、迁移代价、准入控制和崩溃恢复开展实现与实验。
 
@@ -69,9 +63,9 @@ ResourceIsolationScheduler (C++ execution plane)
 | 用途 | 路径 |
 |---|---|
 | 代码与 git 仓库 | `/home/leslie/mvp_core`（`.git` 在工作树内，origin = `https://github.com/hakituo/EdgeSched`） |
-| 主虚拟环境 | `/home/leslie/xiaoyou-core/.venv`（共享，Python 3.13 / torch 2.12+cu130；`/home/leslie/.venvs/mvp_core-cu128` 为指向它的软链） |
+| 主虚拟环境 | `/home/leslie/xiaoyou-core/.venv`（共享，Python 3.13 / torch 2.11+cu128；`/home/leslie/.venvs/mvp_core-cu128` 为指向它的软链） |
 | Forge 虚拟环境 | `/home/leslie/.venvs/forge-cu128`（Python 3.10 / torch 2.10+cu128） |
-| GGUF 模型 | `/home/leslie/mvp_core/models/llm`（软链到 970 EVO，跑实验前确认盘已挂载） |
+| GGUF 模型 | `/home/leslie/mvp_core/models/llm`（软链到 970 EVO；2026-10-26 当前盘被改作 Ventoy，软链断裂，跑实验前需先恢复挂载） |
 | 图像模型 | `/home/leslie/mvp_core/models/Image`；Forge 额外权重软链自 970 EVO |
 | Forge | `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/` |
 

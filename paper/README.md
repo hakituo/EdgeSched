@@ -16,12 +16,12 @@
 | `experiment_data/01_paper_main/` | 新版正文数据区；当前未晋升任何新数据 |
 | `experiment_data/02_auxiliary/` | 新版辅助数据区 |
 | `experiment_data/03_raw_iterations/` | 新版晋升后的原始迭代证据区 |
-| `archive/pre_rewrite_20260830/` | 重写前的论文、图表、工具与实验数据完整快照 |
-| `archive/legacy_materials_before_rewrite/` | 更早的历史报告和旧产物 |
+| `archive/pre_rewrite_20260830/` | 重写前的论文、图表、工具与实验数据完整快照；`manuscript_variants/` 保存中文/其他版本旧稿 |
+| `archive/legacy_materials_before_rewrite/` | 更早的历史报告、旧产物和 `thesis_materials/` |
 
 ## 当前状态
 
-- 新版论文还没有可编译正文；旧 `main_en.tex` 及 `sections_en/` 已归档。
+- 新版论文还没有可编译正文；旧 `main_en.tex` 及 `sections_en/` 已归档，其他旧版本在 `archive/pre_rewrite_20260830/manuscript_variants/`。
 - 方法公式与系统架构图可以先独立维护，但不得提前填入尚未完成实验的性能结论。
 - 新版 `01_paper_main/` 为空，不能把 `experiment_results/` 中的探索数据直接写进正文。
 - 当前优先完成 C3 收尾、D/E 阶段真实实验和 Go/No-Go 判断，再冻结 Evaluation 数据和论文主张。
@@ -29,7 +29,7 @@
 
 ## 数据晋升
 
-1. 在冻结的 WSL2 环境完成正式运行。
+1. 在冻结的实验环境完成正式运行，manifest 记录主机形态、内存上限与 swap 状态。
 2. 核对真实后端、manifest、模型哈希、Git provenance、原始记录数和失败文件。
 3. 保留完整原始轮次并重建聚合结果。
 4. 人工确认后才复制到 `experiment_data/`。

@@ -1,16 +1,12 @@
 # EdgeSched / MVP Core 项目上下文
 
-small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30 仅为容量候选，长上下文余量不足 16 MiB。下一步用户运行 `scripts/experiments/run_small_9b_tts_compat.ps1`，C512/K18 配 T0/T3 各 1 轮；加载期另需验证，不冻结阈值，见 [验收与命令](SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
+**2026-10-26 当前状态**：主开发环境为本机原生 Linux `/home/leslie/mvp_core`（2026-09-25 起，编辑、运行和 git 提交均在此处）。S0 v2 正式比较 `s0_formal_20260920_223105_8510199`（`K24:T0` vs `K0:T0` 各 5 轮，10/10、0 failure）显示混合在主指标上全面占优（首句 4.384 vs 10.740 s、应用层供给缺口 0 vs 6 段），但输出文本/句数/token 未受控、设备时钟仍 pending，**不登记 Gate B Go**，结论维持“收缩主张”，planner 实现暂停。SM-A 已于 2026-10-13 在原生 Linux 转 **GO**（`sm_a_20261013_native_linux_v6`，`cuCtxGetExecAffinity` 实测有效 SM 36/26/18/8），SM-B 可按门禁启动，SM-C/D/E 待排。H_D 仍 pending；S0 设备层与 BGE 缓存补测待完成。9B 选型、small 曲线与视觉画像证据见 [选型与验收](NINE_B_MODEL_COMPARISON.md)、[16 档曲线与 KV 验收](SMALL_9B_CURVES_20260907.md)、[视觉阶段画像](SMALL_9B_VISION_PROFILE_20260907.md)。
 
-small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/预热 0.481 s、编码 0.147 s、释放 0.011 s，见 [阶段画像](SMALL_9B_VISION_PROFILE_20260907.md)。这是独立进程画像，保温/提前释放策略仍待验证。
+**文档版本**：1.1
 
-完整曲线批次 `20260907_143917` 已离线逐条核验，288/288、swap 0，见 [16 档曲线与 KV 验收](SMALL_9B_CURVES_20260907.md)。
+**最后核对**：2026-10-26
 
-> **2026-09-07 9B 版本选定**：后续主模型为 small `1a35ab89…` + F16 projector `e36da9b9…`。纯文本对比 12/12、small 视觉 Answer 1/1 通过，固定图形内容描述完整；专用视觉启动器默认 Small，Large 可显式复测。新版本 C2 90/90、C3 150/150、KV 48/48 已通过，4B 对照与旧哈希证据保留。单图不是完整质量评测或 TTS 共置结论。详见 [选型与验收](NINE_B_MODEL_COMPARISON.md)。
-
-**文档版本**：1.0  
-**最后核对**：2026-08-31
-**核对范围**：当前 Windows 工作副本中的源码、测试、实验入口、论文数据目录和 WSL2 脚本。
+**核对范围**：本机原生 Linux 工作树中的源码、测试、实验入口、论文数据目录与当前运行环境；WSL2/Windows 仅作历史记录。
 
 ## 1. 项目定位
 
@@ -23,7 +19,7 @@ small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/�
 - Phase-Aware workflow、GPU lease、迁移代价决策和 CPU backfill；
 - 可复现实验、原始迭代、聚合数据、图表和论文证据链。
 
-该目录可以独立运行演示服务和实验，但配置优先复用父仓库；真实模型、CUDA、Forge 和 C++ 构建的权威环境在 WSL2。
+该目录可以独立运行演示服务和实验，但配置优先复用父仓库；真实模型、CUDA、Forge 和 C++ 构建的权威环境自 2026-09-25 起为本机原生 Linux `/home/leslie/mvp_core`，不再使用 WSL2 双副本流程。
 
 ## 2. 当前成熟度与证据边界
 
@@ -291,7 +287,7 @@ GPU burst arrives
 | `experiments/phase_aware/` | Phase-Aware 三组实验 |
 | `experiments/overhead/` | 实现开销、综合实验和消融套件 |
 | `experiments/elastic_residency/` | 弹性驻留统一契约、物理核租约、资源与调度 jitter 采样、TTS swap/NVML 运行期证据及后续可行性实验 |
-| `experiments/elastic_residency/sm/` | GPU 计算份额（SM-A）子包：数据契约、MPS 生命周期、客户端探针、探针编排与 Green Context 只读探测 |
+| `experiments/elastic_residency/sm/` | GPU 计算份额（SM-A）子包：数据契约、MPS 生命周期、客户端探针、探针编排与 Green Context 只读探测；原生 Linux 2026-10-13 已 GO |
 | `experiments/elastic_residency/vision/` | 多模态端点门子包：GGUF 只读解析、artifact 对应关系、固定图片、libmtmd 真实执行、视觉证据语义与端点 smoke |
 | `experiment_results/` | 工作区运行产物和中间结果 |
 | `paper/experiment_data/01_paper_main/` | 新版正文聚合数据入口；当前尚未晋升数据 |
@@ -438,7 +434,7 @@ small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；�
 | Forge b=1 校准 | WSL2 `forge_b1_reprofile.py` + `forge_runtime_evidence.py` | 真实 Forge HTTP b=1、direct NVML 周期采样、idle/resident/每轮 measurement 逐窗 750 ms 样本年龄硬门、swap 增长与核心归还；2026-08-31 正式批次 5/5 通过，`M_D=5484 MiB` |
 | 弹性驻留 C1 | WSL2 `llm_residency_curve.py` + `c1_llm_residency_512_20260829_verified_v1` | K0/FULL 真实端点、精确 token/gap、阶段资源与 KV 保存恢复；不代替 C2 多轮曲线 |
 | KV 语义/容量 | `tests/elastic_residency/test_kv_measurement.py` + WSL2 `llm_kv_cache_calibration.py` | 字段语义、原生 position/`llm.n_tokens`、日志解析与缺字段失败；`c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 48/48 条正式容量矩阵，不作为性能计时证据 |
-| GPU 计算份额 SM-A | `tests/elastic_residency/test_sm_profiles.py`、`test_sm_capability.py`、`test_sm_probe_records.py`、`test_mps_commands.py`、`test_mps_runtime.py`、`test_mps_daemon*.py`、`test_cuda_exec_affinity.py`、`test_green_context_probe.py`、`test_sm_wsl_gates.py` + WSL2 `sm_capability.py` | Windows 静态测试与 WSL 门控均已执行。正式记录 `sm_a_20260830_direct_nvml_v1` 基于干净 `ca7a7ff`，真实 CUDA 基线、36 SM、direct NVML、0 failure/fallback/cleanup failure，但 `nvidia-cuda-mps-control` 不存在，WSL2 路径暂定 NO_GO；暂停 SM-B/SM-C，等待原生 Linux 重验，不修改生产调度器 |
+| GPU 计算份额 SM-A | `tests/elastic_residency/test_sm_profiles.py`、`test_sm_capability.py`、`test_sm_probe_records.py`、`test_mps_commands.py`、`test_mps_runtime.py`、`test_mps_daemon*.py`、`test_cuda_exec_affinity.py`、`test_green_context_probe.py`、`test_sm_wsl_gates.py` + 原生 Linux `sm_capability.py` | 原生 Linux 正式记录 `sm_a_20261013_native_linux_v6` 基于干净 `bb17b62`：100/75/50/25% 四配置，MPS 全部真实生效，`cuCtxGetExecAffinity` 实测有效 SM 36/26/18/8（distinct、单调、verified），七项 go_conditions 全真、清理 0 失败，verdict=GO，SM-B 可按门禁启动。WSL 旧记录 `sm_a_20260830_direct_nvml_v1` 因 `nvidia-cuda-mps-control` 不存在判定 NO_GO，仅作历史对照。探针不修改生产调度器 |
 | LLM+TTS 共置 | `test_llm_kv_colocated.py`、`test_analyze_colocated_results.py` + WSL2 `llm_tts_colocated.py` | `B_idle/B_LLM/P_colocated`、正残差和扣除 idle 后的容量裁决；9B 正式 30/30 已通过并冻结该模型的 `G_safe/H_TTS`，未晋升正文；4B+视觉须重跑并重新冻结 |
 | LLM+Forge 共置 | `test_llm_forge_plan.py`、`test_analyze_forge_colocated_results.py` + WSL2 `llm_forge_colocated.py` | 9B 的 K6/K4 smoke 分别因约 290.44/2070.32 MiB swap 增长失败，正式矩阵停止；入口与冻结分析待扩展到4B+真实 `mmproj` 后重新筛选 |
 | 多模态端点门 V1 | `test_vision_artifacts.py`、`test_vision_mtmd_runtime.py`、`test_vision_evidence.py`、`test_vision_endpoint_phases.py` + WSL2 `vision/vision_endpoint_smoke.py` | 静态层证明 GGUF 解析、artifact 对应关系、固定图片内容哈希、libmtmd 调用契约与失败路径、状态一致性门禁与聚合口径；真实层需要 WSL2 GPU 运行才能证明 projector 真实执行、视觉 token 数、输出文本、GPU/RSS 增量与 swap。假后端通过**不**代表多模态可用 |
