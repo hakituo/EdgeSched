@@ -269,7 +269,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--tts-model",
-        default="/home/leslie/xiaoyou-core/models/Qwen3-TTS-12Hz-0.6B-Base",
+        default="/home/leslie/Autarkia/models/Qwen3-TTS-12Hz-0.6B-Base",
     )
     parser.add_argument(
         "--ref-audio", default="/home/leslie/mvp_core/models/tts_refs/ref_calm.wav"

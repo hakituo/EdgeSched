@@ -13,6 +13,65 @@
 ## 条目格式
 
 ```
+## YYYY-MM-DD 标题
+
+- 背景：为什么改
+- 改动：改了哪些模块/口径，关键决策是什么
+- 验证：跑了什么测试、得到什么结果（Mock 与真实 GPU/Forge 必须区分）
+- 备注：遗留问题或后续动作
+```
+
+倒序追加，新条目放最上面。
+
+## 2026-10-27 删除双端自动同步 workflow（仓库准备公开）
+
+- 背景：仓库准备公开。`sync-local-linux.yml` / `sync-local.yml` 依赖本机 self-hosted runner，
+  在公开仓库里保留有安全风险，且 Windows 副本早已不是权威仓库。
+- 改动：删除 `.github/workflows/` 下两个文件（目录随之清空删除）；从 `docs/PROJECT_INDEX.md`、
+  `docs/FOLDER_MAP.md` 移除对应条目。2026-09-26 的新增记录保留为历史。
+- 备注：删除只影响之后的版本，git 历史里仍能看到这两个文件；GitHub 仓库设置里已注册的
+  self-hosted runner 需要到 Settings → Actions → Runners 手动移除。
+
+## 2026-10-26 论文主线改为余量感知调度；V0 定位 S0 共跑减速主因为 llama 线程超额订阅
+
+- 背景：Gate B 拿不到收益，原因是"放在哪"这个决策维度在实测数据下几乎没有选择空间。
+  与用户确认把主创新点改到时间维度（余量感知的驻留调度），先验证期望能否实现。
+  方向、证据与验证顺序见 `paper/thesis_experiment_guide/11_slack_aware_scheduling_direction.md`。
+  口径确认：16 GB 是整套服务的主机内存预算，不是物理内存；原生 Linux 正式实验须用 cgroup 强制。
+- 离线复算（新增 `experiments/elastic_residency/analyze_s0_slack.py`）：所有 S0 批次中，LLM 共跑速度
+  都比 C2/C3 隔离画像慢约 4–5 倍（v2 K24：3.43 对 14.0 tok/s），TTS 队列始终为空，不是背压；
+  v2 `K24:T0` 合成后余量中位 10.8 s（callback 代理口径）。
+- V0 真实诊断（新增 `experiments/elastic_residency/colocation/`，原生 Linux，9B K24，C512，S0 同款 prompt，
+  两批 `colocation_v0_20261026_v1`（8 单元 × 2 轮 × 3 次）与 `_v2`（4 单元 × 3 轮 × 3 次），28/28 通过，
+  所有单元输出完全一致：81 token、同一哈希）：
+  - LLM 单独跑：28 线程 9.7 tok/s（波动 6.6–11.7），**14 线程 13.1 tok/s**（12.4–13.2）；
+  - TTS 同进程持续合成 + 28 线程：0.83 tok/s（约 11.7 倍减速）；把 torch 线程设为 1、或把 TTS 放到
+    独立进程但与 LLM 共用核，结果不变（0.82 / 0.83）→ **不是 GIL，也不是 torch 线程池**；
+  - 只把 llama 线程降到 14：6.85 tok/s；TTS 独立进程且核不重叠 + 14 线程：7.81 tok/s；
+  - 结论：主因是 llama.cpp 28 个线程占满全部逻辑核，TTS 的主机线程一插进来就拖慢整组同步的线程（约 8 倍）；
+    去掉 CPU 争用后剩下约 1.7–1.9 倍是 GPU 争用，这是调度算法能处理的部分；TTS RTF 从 0.33 升到 0.41–0.43，仍 < 1。
+  - V0 放行条件（共跑速度恢复到隔离 50% 以上）满足：7.81/13.08 = 60%。
+- 环境修复（用户授权）：9B GGUF 与 mmproj 拷到本机 `models/llm_store/`（哈希与历史记录一致），
+  4B 软链改指 `/media/leslie/970EVO1`；`/home/leslie/.venvs/mvp_core-cu128` 改指 `/home/leslie/Autarkia/.venv`；
+  该 venv 的 numba 0.65.1→0.68.0（llvmlite 0.47.0→0.50.0）以兼容 numpy 2.5.2；新增
+  `scripts/experiments/edgesched_env.sh` 用 `LD_LIBRARY_PATH` 补 CUDA 12 库（系统 ld 配置仍指向已不存在的 xiaoyou-core）；
+  8 个实验入口的 TTS 默认路径改为 `/home/leslie/Autarkia/models/Qwen3-TTS-12Hz-0.6B-Base`。
+- 验证：`tests/elastic_residency/test_analyze_s0_slack.py`（3）、`test_colocation_v0_cells.py`（7）通过。
+- 备注：V0 两批运行时工作区 dirty（另一会话的整理改动未提交），manifest 已记录 commit 与 dirty 状态；
+  晋升正文前须在干净提交上重跑。历史 C2/C3 与 S0 都用了 28 线程，S0 需用 14 线程重跑后才能重新判读余量。
+
+## 2026-10-26 工作树整理：清理重复旧稿与垃圾文件，刷新导航状态
+
+- 背景：`docs/FOLDER_MAP.md` 扫描发现根目录、`paper/` 顶层和 `paper/experiment_data/01_paper_main/` 仍留有大量重复旧稿、旧日志和 5–6 月旧数据，导航文档开头也停在 2026-09-07。按该文件建议，在**不改变代码与实验口径**的前提下做一次工作树整理。
+- 改动：
+  - **垃圾与日志**：删除根目录空日志 `experiment_no_forge.log`、`s0_test_bp.log`；删除未入库的根目录 `TTS/`（`experiment_results/tts/` 为完整版，逐文件比对无独有内容）；其余 6 个根目录 `*.log` 与 `experiments/scheduler_flight_recorder.log` 按原修改日期移入 `logs/2026/<月>/<日>/`。
+  - **正文数据入口**：清空 `paper/experiment_data/01_paper_main/` 的 6 个 5–6 月旧 JSON 与 `migration/`，只保留 `README.md`；`02_auxiliary/`、`03_raw_iterations/` 未动。
+  - **paper 顶层旧稿**：与 `paper/archive/pre_rewrite_20260830/` 完全重复的删除顶层副本；归档中没有的旧版本（`main_cn.*`、`main_zh.tex`、`main_en_full.tex`、`main.pdf`、`sections_cn/`、`sections_zh/`、`SUMMARY.md`、`test_compile.tex`、`compile_cn.bat`）移入该归档的 `manuscript_variants/`；`thesis_materials/` 移入 `paper/archive/legacy_materials_before_rewrite/`。
+  - **根目录旧计划**：1326 行旧完整版 `THESIS_EXPERIMENT_GUIDE_DRAFT.md`、`TODO.md`、`EXPERIMENT_RERUN_PLAN.md`、`todo.txt` 移入 `docs/archive/pre_rewrite_20260830/`。
+  - **导航刷新**：`README.md`、`docs/PROJECT_INDEX.md`、`docs/PROJECT_CONTEXT.md` 的状态段更新为 2026-10-26 口径（S0 v2 不登记 Gate B Go、SM-A 原生 Linux GO、主环境原生 Linux）；同步更新 `paper/THESIS_EXPERIMENT_GUIDE_DRAFT.md` 兼容入口的一句话状态与 `docs/FOLDER_MAP.md` 的执行记录。
+- 验证：删除前逐项比对——`realistic_stress_test.json` 经 `diff --strip-trailing-cr` 与归档仅行尾/末行换行差异，其余旧 JSON 一致；`paper/sections_en/` 8 个文件仅 CRLF 差异；根 `TTS/` 与 `experiment_results/tts/` 共有文件内容一致。整理后 `paper/experiment_data/01_paper_main/` 仅剩 README，根目录与 `experiments/` 无散落 `*.log`。运行 `PYTHONPATH=/home/leslie python tests/scripts/verify_project_context.py` 检查文档链接与必需路径。
+- 备注：本次只动工作树，**未提交 git**；第 7 步（把早期调度器原型收进子目录）按 FOLDER_MAP 建议跳过，避免影响 import 路径和 `main.py`。设备层时钟、BGE 缓存补测等实验状态未变化。
+
 ## 2026-10-13 原生 Linux SM-A 首跑 GO：修复 exec affinity 枚举值错误与 MPS socket 路径陷阱
 
 - 背景：SM-A（GPU 计算份额能力探针）在 WSL2 因 `nvidia-cuda-mps-control` 不存在暂定
@@ -222,16 +281,6 @@
 - 验证：隔离环境 `llama_supports_gpu_offload()=True`（RTX 5070 8150 MiB）、
   `sounddevice 0.5.5`、`faster_qwen3_tts` 可导入；Windows 侧 `tests/elastic_residency`
   507 通过、5 项 GPU 门控跳过；S0 启动器契约测试通过（含两配置与后端/解释器选择）。
-
-## YYYY-MM-DD 标题
-
-- 背景：为什么改
-- 改动：改了哪些模块/口径，关键决策是什么
-- 验证：跑了什么测试、得到什么结果（Mock 与真实 GPU/Forge 必须区分）
-- 备注：遗留问题或后续动作
-```
-
-倒序追加，新条目放最上面。
 
 ## 2026-09-26（续）未跟踪文件圈定入库：285 个工作文件跟踪，wheel/运行时数据忽略
 

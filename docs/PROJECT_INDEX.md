@@ -1,15 +1,11 @@
 # EdgeSched / MVP Core 项目索引
 
-small 9B 离线筛选 `20260907_204516_653987` 已复算一致，实测修正 C512 上界为 K24（T3 最坏时刻在加载期），K28/K30 不再自动安排。**S0 静态放置基线已完成并冻结**（2026-09-08）：正式 5 轮 ×4 配置（K24:T0、K24:T3、K0:T0、K24:T4）共 20 条全部通过，K0:T4 全 CPU 降级负面边界收案；合并复算 `small_9b_s0_colocated_20260908_v1.json`（`colocated_batch_merge.py` + `--colocated-summaries`）冻结 `G_safe=915.015625 MiB` 与四候选 `H_TTS`。C512 的 LLM+TTS 容量/可行性口径收案；`H_D` 仍 pending，Go/No-Go 前仅剩端到端流水线证据，见 [验收与命令](SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
+**2026-10-26 当前状态**：主开发环境为本机原生 Linux `/home/leslie/mvp_core`（2026-09-25 起，编辑、运行和 git 提交均在此处）。S0 v2 正式比较 `s0_formal_20260920_223105_8510199`（`K24:T0` vs `K0:T0` 各 5 轮，10/10、0 failure）显示混合在主指标上全面占优（首句 4.384 vs 10.740 s、应用层供给缺口 0 vs 6 段），但输出文本/句数/token 未受控、设备时钟仍 pending，**不登记 Gate B Go**，结论维持“收缩主张”，planner 实现暂停。SM-A 已于 2026-10-13 在原生 Linux 转 **GO**（`sm_a_20261013_native_linux_v6`，实测有效 SM 36/26/18/8），SM-B 可按门禁启动，SM-C/D/E 待排。H_D 仍 pending；S0 设备层与 BGE 缓存补测仍待完成。
 
-small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/预热 0.481 s、编码 0.147 s、释放 0.011 s，见 [阶段画像](SMALL_9B_VISION_PROFILE_20260907.md)。这是独立进程画像，保温/提前释放策略仍待验证。
-
-完整曲线批次 `20260907_143917` 已离线逐条核验，288/288、swap 0，见 [16 档曲线与 KV 验收](SMALL_9B_CURVES_20260907.md)。
-
-> **2026-09-07 9B 版本选定**：后续主模型为 small `1a35ab89…` + F16 projector `e36da9b9…`。纯文本对比 12/12、small 视觉 Answer 1/1 通过，固定图形内容描述完整；专用视觉启动器默认 Small，Large 可显式复测。新版本 C2 90/90、C3 150/150、KV 48/48 已通过，4B 对照与旧哈希证据保留。单图不是完整质量评测或 TTS 共置结论。详见 [选型与验收](NINE_B_MODEL_COMPARISON.md)。
+9B 选型、small 曲线与视觉画像的既有证据见 [选型与验收](NINE_B_MODEL_COMPARISON.md)、[16 档曲线与 KV 验收](SMALL_9B_CURVES_20260907.md)、[视觉阶段画像](SMALL_9B_VISION_PROFILE_20260907.md)；目录整理记录见 [文件夹归类地图](FOLDER_MAP.md)。
 
 **用途**：给 Codex 和维护者提供低成本导航。  
-**最后核对**：2026-08-31（以当前目录实际文件为准）
+**最后核对**：2026-10-26（以当前目录实际文件为准）
 
 ## 先判断你要做什么
 
@@ -24,7 +20,7 @@ small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/�
 | S0 端到端流水线（协议 v2，已接入加速后端） | [E2 协议 `s0_protocol_v2`](../paper/thesis_experiment_guide/07_experiment_stages_and_matrix.md#e2无图像的-llmtts-流水线)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/s0_pipeline/`；入口 `s0_parent.py`（配置 × 启动策略轮转编排）、`s0_child.py`（单轮真实执行）、`s0_backends.py`（真实 LLM/TTS 加载，TTS 可选 `--tts-backend cuda_graph_static`（当前接入，加速 CUDA Graph，整模型 GPU/放置 T0）或 `upstream_dynamic`（旧后端，保留 T0–T4 分部件放置））；加速后端只存在于隔离 venv `faster-qwen3-tts/.venv`（依赖 transformers 5.x，装不进主环境），S0 为保持 LLM 与 TTS **同进程共置**默认用该环境解释器（已补装 `llama-cpp-python==0.3.35`(CUDA 编译) 与 `sounddevice==0.5.5`）；`s0_protocol_v2` 把正式配置由 4 档降为 2 档（`K24:T0`、`K0:T0`），`K24:T3`/`K24:T4` 因后端无分部件放置接口而排除；协议真源 `config.FROZEN_PROTOCOL`，测量范围 `measurement_scope.py`，启动策略 `startup.py`，门禁/指纹 `s0_evidence.py`；离线复算 `experiments/elastic_residency/analyze_s0_matrix.py` + `s0_matrix_metrics.py` + `s0_matrix_report.py`；启动器 `scripts/experiments/run_s0_pipeline.ps1` | `tests/elastic_residency/`（Windows 全量 500 通过、5 项 GPU 门控跳过；含 `test_s0_measurement_scope.py`、`test_s0_startup_policy.py`、`test_s0_protocol_freeze.py`、`test_analyze_s0_matrix.py`、`test_s0_tts_backend.py`、`test_s0_pipeline_launcher.ps1`）；测量范围分调度层（Gate B 判据）与设备层（时钟未验证前 pending）；真实批次：`s0_startup_20260917_v1` 与 `s0_formal_20260917_v1`（四配置 × 5 轮 = 20 次、19 通过，`K24:T4` r2 swap 失败计入分母）均为**旧后端 v1**；v2 首批 `s0_startup_20260917_v2`（加速后端）已完成：首句就绪 4.26 s、RTF 0.359、窗口内供给缺口 0、首播 proxy 4.28 s（预缓冲 26.65 s）；v2 正式比较 `s0_formal_20260920_223105_8510199`（`K24:T0` vs `K0:T0` 各 5 轮，10/10 通过、0 failure、来源干净）显示混合在主指标上全面一致占优（首句 4.384 vs 10.740 s、供给缺口 0 vs 6 段），但协变量未受控（输出 80/9 句 vs 65/8 句）＋设备层 pending，**仍不登记 Gate B Go**；归因已补两条（离线、不重跑）：按 token 归一后差距 2.22×→2.73×（未缩小），句数对齐到前 8 句后基线每句就绪都更慢且 5/5 一致（第 7 句 +34.76 s）；结论为**收缩主张**（收益未确证，非混合驻留被否定）：`K24:T3`/`K24:T4` 相对参考 `K24:T0` 未改善所报主指标，`K24:T0` 相对 `K0:T0` 的收益受输出差异影响尚未公平归因；本批四档都是部分驻留（`K24`=32 层上卡 24 层），不能反证完整共驻留可行；**暂停** planner 实现 |
 | 多模态端点门（9B 主模型 / 4B 对照 + `mmproj`） | [实现路线 P1-B](../paper/thesis_experiment_guide/06_implementation_and_roadmap.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/vision/` 子包；入口 `vision/vision_endpoint_smoke.py` | `tests/elastic_residency/test_vision_*.py`（静态/假后端 72 项通过）；真实端点门已通过（`v1_vision_endpoint_20260831_direct_nvml_v3`，4/4 单元）；`TEXT_ONLY` 与 `VISION_WARM_*` 证据必须分开，且这不是 4B 常驻画像或共置结论 |
 | Phase-Aware | `.trae/skills/xiaoyou-mvp-core/SKILL.md` | `services/phase_aware/`, `cpp_scheduler/core/phase_strategy.*` | `tests/test_phase_aware_quick.py`, `experiments/phase_aware/` |
-| GPU 计算份额（SM-A） | [CPU/SM 分配方法](../paper/thesis_experiment_guide/05_cpu_and_gpu_allocation.md)、[实现路线](../paper/thesis_experiment_guide/06_implementation_and_roadmap.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/sm/` 子包；入口 `sm/sm_capability.py` | WSL 正式记录 `sm_a_20260830_direct_nvml_v1`：基线成功、36 SM、0 failure/fallback/cleanup failure，但 MPS binary 不存在，暂定 NO_GO；SM-B/C 暂停，等待原生 Linux 恢复验证 |
+| GPU 计算份额（SM-A） | [CPU/SM 分配方法](../paper/thesis_experiment_guide/05_cpu_and_gpu_allocation.md)、[实现路线](../paper/thesis_experiment_guide/06_implementation_and_roadmap.md)、[当前门禁](../paper/thesis_experiment_guide/10_gates_and_current_status.md) | `experiments/elastic_residency/sm/` 子包；入口 `sm/sm_capability.py` | 原生 Linux 正式记录 `sm_a_20261013_native_linux_v6`（干净 `bb17b62`）：100/75/50/25% 四配置，`cuCtxGetExecAffinity` 实测有效 SM 36/26/18/8、七项 go_conditions 全真、verdict=GO；WSL 旧记录 `sm_a_20260830_direct_nvml_v1` 因 MPS binary 缺失为 NO_GO，仅作历史对照。SM-B 可按门禁启动，SM-C/D/E 待排 |
 | 崩溃恢复 | `docs/PROJECT_CONTEXT.md` | `services/state_backplane.py`, `services/task_scheduler.py` | `experiments/recovery/`, `experiments/semantic_validation/` |
 | C++ 调度器 | [cpp_scheduler/README.md](../cpp_scheduler/README.md) | `cpp_scheduler/core/`, `workers/`, `queue/`, `bindings/` | `cpp_scheduler/verify_bindings.py`, `tests/test_cpp_scheduler_minimal.py` |
 | 跑实验 | [experiments/README.md](../experiments/README.md) | `experiments/run_*.py`, 各实验子目录 | `experiment_results/`, manifest |
@@ -73,6 +69,9 @@ LLM_GPU/TTS_CPU 与 LLM_CPU/TTS_GPU 的旧结果定位、TTS 核数证据缺口�
 | `experiments/elastic_residency/llm_kv_cache_calibration.py` | KV 容量与语义校准（独立入口） | `c3_kv_cache_calibration_20260830_direct_nvml_v1` 已完成 16 configs × 3 contexts × 1 run = 48/48 条；以 `n_ctx=context+128` 匹配 C2/C3 推理后状态，不做性能计时 |
 | `experiments/elastic_residency/llm_tts_colocated.py` | LLM+TTS 真实共置显存测量 | direct NVML 整卡时间线、`B_idle/B_LLM/P_colocated`、正残差与扣除 idle 后的容量裁决；容量公式不重复叠加 idle 或 KV，每轮冻结非空 WAV 大小/SHA-256，正式组合支持 5 轮重复 |
 | `experiments/elastic_residency/s0_pipeline/` | S0 无图像 LLM→TTS 端到端流水线（pilot） | 子包按 `config`/`events`/`clock`/`s0_prompt`/`token_identity`/`token_source`/`tts_executor`/`playback`/`playback_buffer`/`playback_stats`/`playback_clock`/`playback_starvation`/`playback_smoke`/`text_contract`/`output_contract`/`runner`/`s0_backends`/`s0_child`/`s0_parent` 拆分（全部 ≤300 行）；播放侧把生产者下标与设备下标分开，断流按独立段落合并并分启动/句间/句内/收尾/未知阶段，时钟映射必须通过「单位一致 + 残差 + 漂移 + 单调」验证才可用于实际播放时刻；`playback_smoke.py` 只验测量能力，判定分 `measurement_ok` 与 `continuity_ok` 两层：LLM 流式→固定分句→有界队列→逐句合成→连续播放；输入适配层只管格式安全（`text_contract`）与判据（`output_contract`），思考正文与空输出只判失败不删除，保存原文/处理后文本/句子映射；`s0_prompt` 用模型自带模板渲染并追加空 think 块关闭 thinking；事件区分生成与交付时间、时钟域与时钟映射，播放侧分离供给不足与设备 underrun；入口 `s0_parent.py`（四配置 pilot），产物进 `experiment_results/elastic_residency/s0_pipeline/`；pilot 只验链路与采集，不下性能结论 |
+| `experiments/elastic_residency/colocation/` | V0 共跑减速诊断（2026-10-26） | `v0_parent.py` 逐单元起子进程：LLM 单独/TTS 驻留/同进程合成/分进程（核重叠或不重叠）× llama 线程数 × torch 线程数；产物 `experiment_results/elastic_residency/colocation_v0/`；结论见指南第 11 模块 3.1 |
+| `experiments/elastic_residency/analyze_s0_slack.py` | S0 播放余量与共跑减速离线复算 | 读 S0 `events.jsonl`，按批次给出交付速度、合成后余量与突发任务盈亏平衡；可对照 C2/C3 隔离画像 |
+| `scripts/experiments/edgesched_env.sh` | 原生 Linux 实验环境 | `source` 后得到 `$EDGESCHED_PYTHON`、CUDA 12 库路径与 TTS 权重路径（主 venv 为 `/home/leslie/Autarkia/.venv`） |
 | `experiments/elastic_residency/colocated_audio_artifact.py` | 共置音频 artifact 门禁 | 独立负责输出 WAV 的非空检查、大小和 SHA-256；不引入 GPU 依赖，不代替 waveform 或听感验收 |
 | `experiments/elastic_residency/colocated_capacity.py` | 共置容量纯计算口径 | `(P_colocated-B_idle)+G_safe`、物理峰值保护、正残差；供运行入口与离线复算共用 |
 | `experiments/elastic_residency/analyze_colocated_results.py` | 正式 LLM+TTS 共置离线复算 | 硬验正式重复矩阵、真实后端/direct NVML/新鲜度/swap/provenance，复算 G_safe 与按 context 冻结 H_TTS；`--screen-schema small` 经 `small_screen_view.py` 适配 small 9B 离线筛选产物，候选判据为“已画像档位内”并输出与离线边界的差异；H_D 保持待 LLM+Forge 共置 |
@@ -87,13 +86,12 @@ LLM_GPU/TTS_CPU 与 LLM_CPU/TTS_GPU 的旧结果定位、TTS 核数证据缺口�
 | `experiments/elastic_residency/analyze_results.py` | C 阶段 G_safe/H_TTS/H_D 筛选分析 | 纯标准库；合并 C2+C3 完整 16 档并读取 B2/Forge summary，输出 G_safe 分量、逐上下文 H 与 k±2/k±4 临界补测建议；只做容量筛选不做共置结论 |
 | `experiments/elastic_residency/colocated_runtime_evidence.py` | LLM+TTS 共置运行期证据门禁 | 对 TTS 执行窗口的周期 GPU 样本、参与 `B_LLM/P_colocated` 的同步快照和全生命周期 swap 增长执行硬门 |
 | `experiments/elastic_residency/colocated_plan.py` | LLM+TTS 显式候选矩阵 | 解析 `CONTEXT:LLM:TTS` 候选并按给定顺序生成重复轮次，避免筛选结果被扩成无关笛卡尔积；最紧候选可前置 fail-fast |
-| `experiments/elastic_residency/sm/sm_capability.py` | SM-A GPU 计算份额能力探针 | 独立实验基础设施，不改生产调度器；WSL 正式 probe 已因 `mps_binary_unavailable` 判定 NO_GO，当前只能保留普通 CUDA 不受控共享语义 |
+| `experiments/elastic_residency/sm/sm_capability.py` | SM-A GPU 计算份额能力探针 | 独立实验基础设施，不改生产调度器；原生 Linux 正式记录 `sm_a_20261013_native_linux_v6` 已 GO（四档有效 SM 36/26/18/8），SM-B 可按门禁启动；WSL 旧记录因 MPS binary 缺失为 NO_GO，仅作历史对照 |
 | `experiments/elastic_residency/vision/vision_endpoint_smoke.py` | V1 多模态端点 smoke（K0/FULL × TEXT_ONLY/VISION_WARM） | 先过 artifact/mmproj 能力门禁，再逐单元子进程真实执行；视觉轮次用 libmtmd 对固定图片实际执行 projector，`--vision-eval-mode split_encode` 额外分离 projector 编码时间与视觉嵌入证据 |
 | `experiments/elastic_residency/vision/vision_endpoint_gate.py` | artifact 与 mmproj 能力门禁 | 不加载模型；核验架构/层数/`projection_dim == embedding_length`/来源一致性/声明哈希与固定图片 |
 | `experiments/elastic_residency/vision/gguf_reader.py` | GGUF 头部元数据只读解析 | 纯标准库；只解析 KV 与张量计数，数组折叠为类型与数量，缺字段保持 `None` |
-| `paper/compile_en.bat` | Windows 英文论文编译 | LaTeX 产物属于生成文件 |
+| `paper/archive/pre_rewrite_20260830/manuscript/compile_en.bat` | 旧英文论文编译入口（已归档） | LaTeX 产物属于生成文件 |
 | `cpp_scheduler/build_wsl2.sh` | WSL2 原生扩展构建 | 使用 `mvp_core-cu128`（软链→共享 3.13 venv）、CUDA 12.8、sm_120 |
-| `.github/workflows/sync-local-linux.yml` / `sync-local.yml` | EdgeSched 双端自动同步（2026-09-26 新增） | push 到 main 后各端 self-hosted runner 自动 ff-only 追平：Linux → `/home/leslie/mvp_core`、Windows → `D:\AI\xiaoyou-core\legacy\mvp_core`；本机 `git status --porcelain` 非空时跳过，不覆盖未提交改动；remote 名为 `origin` |
 
 ## 真源优先级
 
@@ -110,7 +108,7 @@ LLM_GPU/TTS_CPU 与 LLM_CPU/TTS_GPU 的旧结果定位、TTS 核数证据缺口�
 - C++ 扩展能导入，不等于真实 GGUF 推理、KV Cache 保存恢复或端到端迁移已经通过。
 - `mmproj` 文件存在或 artifact 门禁通过，不等于 projector 已在真实图片上执行；必须看视觉 token 数、`mtmd` 返回码/嵌入证据与 GPU/RSS 增量。
 - `data/adapters/vl_adapter.py` 是独立 Qwen2-VL Transformers 路径，不能当作 Qwen3.5-4B GGUF + `mmproj` 统一执行链的证据。
-- Windows 文件存在，不等于 WSL2 运行副本和模型目录已同步。
+- Windows 旧副本存在，不等于本机 Linux 工作树已更新；2026-09-25 起不再有自动同步流程。
 - 父仓库 `.gitignore` 当前忽略整个 `/legacy/`；本目录修改默认不会出现在父仓库 Git 状态中。
 - Python 文件超过 300 行即违反 `AGENTS.md` 的规模上限；应按职责拆模块，而不是继续在同一文件里追加。
 
