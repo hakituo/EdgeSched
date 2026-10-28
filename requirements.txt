@@ -1,9 +1,9 @@
-# 2026-09-25 起主环境复用 /home/leslie/xiaoyou-core/.venv（Python 3.13，uv 管理）。
-# 本文件是“独立环境”的完整清单；向共享 venv 补装时不要整体执行，否则会降级
-# torch/pillow/onnxruntime 或把 numpy 升到 2.x，影响父项目。当前共享 venv 的实际口径：
-#   numpy 1.26.4（不升 2.x）、pillow 11.3、onnxruntime 1.26、safetensors 0.8；
-#   blendmodes/peft 在 mvp 源码中零导入，未安装；torch 由共享 venv 提供 2.12+cu130。
-# 缺包按 docs/PROJECT_CONTEXT.md 7.1 的 2026-09-25 快照清单单独补装。
+# 2026-10-26 起主环境复用父项目 Autarkia 的 /home/leslie/Autarkia/.venv（Python 3.13.15，uv 管理）。
+# 本文件是“独立环境”的完整清单；向共享 venv 补装时不要整体执行，否则可能降级
+# torch/pillow/onnxruntime 或改变 numpy，影响父项目。当前共享 venv 的实际口径：
+#   numpy 2.5.2 / numba 0.68.0、torch 2.11.0+cu128、torchvision 0.26.0+cu128、transformers 4.57.3；
+#   blendmodes/peft 在 mvp 源码中零导入，未安装。
+# 缺包按 docs/PROJECT_CONTEXT.md 第 7 节与 scripts/experiments/edgesched_env.sh 单独补装。
 
 # Core Framework
 fastapi>=0.110.0
@@ -32,8 +32,8 @@ qwen-vl-utils
 llama-cpp-python==0.3.35
 qwen-tts==0.1.1
 
-# Elastic-residency auxiliary CPU stages. These versions match the verified
-# Windows-side runtime and are installed into the WSL2 experiment environment.
+# Elastic-residency auxiliary CPU stages, installed into the native Linux
+# experiment environment (shared Autarkia venv).
 onnxruntime==1.23.2
 faster-whisper==1.2.1
 ctranslate2==4.7.2

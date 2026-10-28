@@ -1,7 +1,7 @@
 # 辅助任务 CPU 核数画像
 
-入口：`python -m experiments.elastic_residency.auxiliary_core_budget`，真实运行使用
-WSL2 `/home/leslie/.venvs/mvp_core-cu128/bin/python`，不修改在线调度器或 LLM 默认模型。
+入口：`python -m experiments.elastic_residency.auxiliary_core_budget`。当前主环境为原生 Linux，
+先 `source scripts/experiments/edgesched_env.sh`，再用 `"$EDGESCHED_PYTHON"` 调用；不修改在线调度器或 LLM 默认模型。
 
 ## 实现边界
 
@@ -32,15 +32,17 @@ D3 必须加入同一固定 LLM→TTS 主流水线、同放置无辅助任务配
 先在有音频的目录冻结输入（来源必须是至少十秒的 PCM16 中文语音）：
 
 ```bash
-python -m experiments.elastic_residency.auxiliary_inputs \
+source scripts/experiments/edgesched_env.sh
+
+"$EDGESCHED_PYTHON" -m experiments.elastic_residency.auxiliary_inputs \
   --output experiment_results/elastic_residency/auxiliary_inputs/my_inputs \
   --source-wav /absolute/path/to/chinese_tts.wav
 ```
 
-然后用完整、真实的 Windows Git commit 与工作区状态运行：
+然后用完整、真实的 Git commit 与工作区状态运行：
 
 ```bash
-python -m experiments.elastic_residency.auxiliary_core_budget \
+"$EDGESCHED_PYTHON" -m experiments.elastic_residency.auxiliary_core_budget \
   --run-id my_auxiliary_curve \
   --inputs experiment_results/elastic_residency/auxiliary_inputs/my_inputs/inputs.json \
   --system-cores 0 1 2 4 --repeats 5 \
@@ -48,7 +50,7 @@ python -m experiments.elastic_residency.auxiliary_core_budget \
   --source-git-dirty false --source-git-status-entry-count 0
 ```
 
-模型默认来自 WSL `models/auxiliary/`，支持 `--bge-model`/`--whisper-model` 覆盖。
+模型默认来自 `models/auxiliary/`，支持 `--bge-model`/`--whisper-model` 覆盖。
 只有显式 `--keep-going` 才跨过测量失败；SLA 不达标不属于测量失败。
 `--repeats 1` 是 smoke，不输出 p95 或最低核数结论。
 
@@ -79,14 +81,28 @@ R_sys=2 下，JSON RAG 1 核 p95=2.35 ms，Whisper 1 核 p95 RTF=0.691；BGE 全
 - 汇总按 `bge` / `bge_cached` 分开，SLA 仍为 150 ms。候选预计算只报告五轮原始值、
   mean/min/max，不把五个样本当作可靠 p95，也不将准备成本隐藏到请求指标里。
 - 缺少缓存、错误向量、请求重新编码候选、缓存身份不一致或启用了 query 缓存时不通过门禁。
-- 当前只通过静态和假 ONNX 后端测试；真实性能由用户执行下列命令后判断。
 
-从任意 PowerShell 目录运行：
+真实补测 `d1_bge_cached_20260906_195348` 已完成 15/15 次、90 个计时事件（WSL2，commit
+`39b8f0e`，工作区 dirty=true、19 个未提交条目），`measurement_valid=true`：
 
-```powershell
-& 'D:\AI\xiaoyou-core\legacy\mvp_core\scripts\experiments\run_auxiliary_cached.ps1'
+- 1/2/4 核 p95 分别为 30/17/13 ms，均满足 150 ms SLA；候选预计算 mean 1.22/0.70/0.52 s，
+  只报五轮原始值，不把五个样本当可靠 p95。
+- 数据未晋升论文正文，也不等于 D3 正式 R_sys 验收；WSL2 与当前原生 Linux 环境不同，
+  正式引用前应在当前环境补跑。
+
+在原生 Linux 下直接运行（不加载 LLM，也不重跑 JSON RAG/Whisper）：
+
+```bash
+source scripts/experiments/edgesched_env.sh
+
+"$EDGESCHED_PYTHON" -m experiments.elastic_residency.auxiliary_core_budget \
+  --run-id "d1_bge_cached_$(date +%Y%m%d_%H%M%S)" \
+  --tasks bge_cached --system-cores 2 --repeats 5 \
+  --inputs experiment_results/elastic_residency/auxiliary_inputs/d1_chinese_tts_crops_v1/inputs.json \
+  --source-git-commit "$(git rev-parse HEAD)" \
+  --source-git-dirty "$(test -n "$(git status --porcelain)" && echo true || echo false)" \
+  --source-git-status-entry-count "$(git status --porcelain | wc -l)"
 ```
 
-脚本自行定位项目、以 `-SkipGit` 增量同步、读取最新 Git 来源，生成带时间戳的新 run id，
-只运行 `--tasks bge_cached --system-cores 2 --repeats 5`，即 1/2/4 核共 15 次、90 个计时事件。
-不会加载 LLM，也不重跑 JSON RAG/Whisper。加 `-PrintOnly` 只显示命令，不同步、不启动 WSL。
+旧的 `scripts/experiments/run_auxiliary_cached.ps1` 依赖已废止的 Windows→WSL2 同步流程，
+仅作历史参考，不要再用它提交或启动实验。

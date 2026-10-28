@@ -35,7 +35,7 @@ GlobalTaskScheduler
 - C++ 负责原生任务队列、worker、llama.cpp 推理和可选 Phase-Aware 策略。
 - 绑定可导入只证明接口存在；真实 GGUF、CUDA、KV cache 和迁移仍需单独验证。
 
-## WSL2 构建
+## 本机 Linux 构建（脚本名沿用 `build_wsl2.sh`）
 
 推荐在 `/home/leslie/mvp_core` 中运行：
 
@@ -43,7 +43,7 @@ GlobalTaskScheduler
 bash cpp_scheduler/build_wsl2.sh
 ```
 
-脚本使用 `/home/leslie/.venvs/mvp_core-cu128`（2026-09-25 起为软链，实际是 `/home/leslie/xiaoyou-core/.venv` 的 Python 3.13），配置 CMake 后构建 `scheduler_py`；pybind11 取自该 venv（`pybind11.get_cmake_dir()`），CUDA 架构锁定 `CMAKE_CUDA_ARCHITECTURES=120`（RTX 5070 Laptop）。构建前确认当前 WSL2 源码已同步，CUDA 12.8、CMake、编译器和 Python 环境与目标实验一致；首次构建需要系统包 `libuv1-dev`。
+脚本使用 `/home/leslie/.venvs/mvp_core-cu128`（软链到父项目 `/home/leslie/Autarkia/.venv` 的 Python 3.13），配置 CMake 后构建 `scheduler_py`；pybind11 取自该 venv（`pybind11.get_cmake_dir()`），CUDA 架构锁定 `CMAKE_CUDA_ARCHITECTURES=120`（RTX 5070 Laptop）。构建前确认 CUDA 12.8、CMake、编译器和 Python 环境与目标实验一致；首次构建需要系统包 `libuv1-dev`。
 
 直接导入既有构建产物时，需要让动态链接器能找到 llama.cpp：
 
@@ -51,9 +51,7 @@ bash cpp_scheduler/build_wsl2.sh
 export LD_LIBRARY_PATH="/home/leslie/mvp_core/cpp_scheduler/build/bin:/home/leslie/mvp_core/cpp_scheduler/build/llama.cpp/src:${LD_LIBRARY_PATH:-}"
 ```
 
-2026-08-28 已在 `Ubuntu-24.04-E` 的 `mvp_core-cu128` 环境确认 `llama_cpp` 与 `scheduler_py` 均可导入；该结论不等同于真实 GGUF/CUDA 推理已经通过。
-
-2026-09-25 在 Python 3.13 共享 venv + CUDA 12.8 / sm_120 下全量重编通过，产物为 `build/scheduler_py.cpython-313-x86_64-linux-gnu.so`，设置 `LD_LIBRARY_PATH` 后可导入（旧的 cpython-310 产物随 `build/` 清理已不存在）；真实 GGUF/CUDA 推理仍未在本轮验证。
+2026-09-25 已在本机原生 Linux 的 Python 3.13 共享 venv + CUDA 12.8 / sm_120 下用该脚本全量重编通过，产物为 `build/scheduler_py.cpython-313-x86_64-linux-gnu.so`（旧的 cpython-310 产物随 `build/` 清理已不存在）；把 `cpp_scheduler/build` 加入 `PYTHONPATH` 后 `scheduler_py` 可导入，`llama_cpp` 也可导入。组合加载时注意 `build/bin` 的 `libggml*` 可能覆盖 `llama_cpp` 自带库。导入通过不等同于真实 GGUF/CUDA 推理已经通过。
 
 `build/` 包含第三方依赖源码和本机构建产物，体积很大；它不是源码真源，不应参与普通全文搜索、文档索引或提交。
 

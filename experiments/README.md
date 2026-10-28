@@ -1,5 +1,7 @@
 # EdgeSched 实验指南
 
+> **2026-10-28 状态说明**：本文件保留旧调度器论文链与 9B/视觉实验的历史命令（含 PowerShell 与 WSL 路径），不代表当前论文主线，也不保证在新环境下逐字可跑。当前主线见 [指南 11](../paper/thesis_experiment_guide/11_slack_aware_scheduling_direction.md)；在本机原生 Linux 运行任何入口前，先 `source scripts/experiments/edgesched_env.sh` 并用 `"$EDGESCHED_PYTHON"` 调用。
+
 small 9B 离线筛选 `20260907_204516_653987` 已复算一致：T0/K20、T3/K30 仅为容量候选，长上下文余量不足 16 MiB。下一步用户运行 `scripts/experiments/run_small_9b_tts_compat.ps1`，C512/K18 配 T0/T3 各 1 轮；加载期另需验证，不冻结阈值，见 [验收与命令](../docs/SMALL_9B_NEXT_COMBINATIONS_20260907.md)。
 
 small 9B 视觉生命周期五轮 `20260907_171635` 已 5/5、swap 0；加载/预热 0.481 s、编码 0.147 s、释放 0.011 s，见 [阶段画像](../docs/SMALL_9B_VISION_PROFILE_20260907.md)。这是独立进程画像，保温/提前释放策略仍待验证。

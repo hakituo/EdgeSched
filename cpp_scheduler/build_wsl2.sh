@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # 激活虚拟环境（稳定路径 mvp_core-cu128 现为软链；
-# 2026-09-25 起指向 /home/leslie/xiaoyou-core/.venv，Python 3.13 + torch 2.12+cu130）
+# 当前指向父项目 /home/leslie/Autarkia/.venv，Python 3.13 + torch 2.11+cu128）
 source /home/leslie/.venvs/mvp_core-cu128/bin/activate
 
 # CUDA 12.8（RTX 5070 Laptop = Blackwell sm_120，需要 12.8+）

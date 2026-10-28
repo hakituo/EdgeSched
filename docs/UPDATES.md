@@ -1,6 +1,6 @@
 # EdgeSched 更新记录
 
-本文件是 EdgeSched 独立仓库（`/home/leslie/mvp_core`，origin = `https://github.com/hakituo/EdgeSched`）的**详细**更新记录，与父仓库 `/home/leslie/xiaoyou-core/UPDATES.md` 无关，两者不要互写。
+本文件是 EdgeSched 独立仓库（`/home/leslie/mvp_core`，origin = `https://github.com/hakituo/EdgeSched`）的**详细**更新记录，与父项目 Autarkia 的更新记录无关，两者不要互写。
 
 ## 记录分工
 
@@ -22,6 +22,13 @@
 ```
 
 倒序追加，新条目放最上面。
+
+## 2026-10-28 刷新文档中的当前环境、论文状态与运行命令
+
+- 背景：README 仍把父项目写作 Xiaoyou Core，状态段停在 S0 v2 结论，环境表还指向旧路径，验证与实验命令直接调用裸 `python`（本机落在没有依赖的 uv CPython 上）。同一批旧口径散落在项目上下文、规则文件、依赖清单、C++ 构建说明、TTS 子系统和论文指南里：父项目路径已改为 `/home/leslie/Autarkia`，主环境软链改指其 `.venv`，OS 已是原生 Linux，9B 权重落在 `models/llm_store/`，4B 与 Forge 额外权重依赖未挂载的 970 EVO。
+- 改动：改称父项目 **Autarkia**（保留“原 Xiaoyou Core”说明历史命名）；README 状态段更新为余量感知主线、V0 放行/V0.5 待跑和 SM-A 原生 Linux GO，实验节拆成“当前论文主线”和“旧调度器实验”，演示、实验与验证命令统一改为先 `source scripts/experiments/edgesched_env.sh` 再用 `"$EDGESCHED_PYTHON"` 调用，辅助核数画像补上 `d1_bge_cached_20260906_195348` 的真实结果与“非 D3 正式验收”边界；`docs/PROJECT_CONTEXT.md` 更新状态头、环境表、原生 Linux 内存预算口径与辅助画像段；`docs/AUXILIARY_CORE_BUDGET.md` 删除 PowerShell 启动说明、改用原生 Linux 命令并记录 bge_cached 补测结论；`requirements.txt` / `requirements-wsl-cu128.txt` 文件头对齐 Autarkia venv 与实际版本，保留历史文件名；`paper/README.md` 当前状态改为指南 11 主线；`AGENTS.md`、`.codebuddy/rules/mvp-core-project/RULE.mdc`、`.trae/skills/xiaoyou-mvp-core/SKILL.md`、`cpp_scheduler/README.md`、`cpp_scheduler/build_wsl2.sh`、`docs/TTS_SUBSYSTEM.md`、`paper/thesis_experiment_guide/01_research_scope_and_workloads.md` 同步环境路径、构建产物、9B 模型位置与内存约束表述，并在 `experiments/README.md` 顶部标注历史命令不代表当前主线。历史快照（2026-09-25/27 等）保留并标注为历史。
+- 验证：`"$EDGESCHED_PYTHON" tests/scripts/verify_project_context.py` 通过；`pytest tests/test_chat_service.py tests/test_phase_aware_quick.py -q -o asyncio_mode=auto` 9 passed；`git diff --check` 无问题。
+- 备注：本次只改文档与注释，不动调度逻辑、实验数据与虚拟环境；`cpp_scheduler/docs/DEPLOYMENT_GUIDE.md`、`cpp_scheduler/docs/architecture_and_deployment.md` 的未提交改动属于其他会话，未纳入本次提交。
 
 ## 2026-10-27 删除双端自动同步 workflow（仓库准备公开）
 

@@ -1,16 +1,16 @@
 # EdgeSched / MVP Core 项目上下文
 
-**2026-10-26 当前状态**：主开发环境为本机原生 Linux `/home/leslie/mvp_core`（2026-09-25 起，编辑、运行和 git 提交均在此处）。S0 v2 正式比较 `s0_formal_20260920_223105_8510199`（`K24:T0` vs `K0:T0` 各 5 轮，10/10、0 failure）显示混合在主指标上全面占优（首句 4.384 vs 10.740 s、应用层供给缺口 0 vs 6 段），但输出文本/句数/token 未受控、设备时钟仍 pending，**不登记 Gate B Go**，结论维持“收缩主张”，planner 实现暂停。SM-A 已于 2026-10-13 在原生 Linux 转 **GO**（`sm_a_20261013_native_linux_v6`，`cuCtxGetExecAffinity` 实测有效 SM 36/26/18/8），SM-B 可按门禁启动，SM-C/D/E 待排。H_D 仍 pending；S0 设备层与 BGE 缓存补测待完成。9B 选型、small 曲线与视觉画像证据见 [选型与验收](NINE_B_MODEL_COMPARISON.md)、[16 档曲线与 KV 验收](SMALL_9B_CURVES_20260907.md)、[视觉阶段画像](SMALL_9B_VISION_PROFILE_20260907.md)。
+**2026-10-28 当前状态**：主开发环境为本机原生 Linux `/home/leslie/mvp_core`，编辑、运行和 git 提交都在此处。论文主线在 Gate B 收缩后转向**余量感知的驻留调度**（时间维度，见 `paper/thesis_experiment_guide/11_slack_aware_scheduling_direction.md`）。V0 共跑诊断已完成（`colocation_v0_20261026_v1|v2`，28/28 通过）：S0 共跑减速主因是 llama.cpp 28 线程超额订阅 CPU，降到 14 线程后共跑速度恢复到隔离画像的 60%，V0 放行；S0 v2 仍需用 14 线程重跑（V0.5）后才能重新判读余量。Gate B 仍不登记 Go，`paper/experiment_data/01_paper_main/` 尚未晋升数据。SM-A 已在原生 Linux 转 **GO**（`sm_a_20261013_native_linux_v6`，`cuCtxGetExecAffinity` 实测有效 SM 36/26/18/8），SM-B 待排。环境方面：9B 权重在本地 `models/llm_store/`；4B 与 Forge 额外权重依赖未挂载的 970 EVO；真实播放缺 PortAudio/SoX。9B 选型、small 曲线与视觉画像证据见 [选型与验收](NINE_B_MODEL_COMPARISON.md)、[16 档曲线与 KV 验收](SMALL_9B_CURVES_20260907.md)、[视觉阶段画像](SMALL_9B_VISION_PROFILE_20260907.md)。
 
-**文档版本**：1.1
+**文档版本**：1.2
 
-**最后核对**：2026-10-26
+**最后核对**：2026-10-28
 
 **核对范围**：本机原生 Linux 工作树中的源码、测试、实验入口、论文数据目录与当前运行环境；WSL2/Windows 仅作历史记录。
 
 ## 1. 项目定位
 
-`legacy/mvp_core` 是 Xiaoyou Core 内部的调度研究原型，论文对外名为 **EdgeSched**。它研究资源受限单机上的多模态本地 AI 调度，重点不是主应用的对话、人设或主动关怀，而是：
+本仓库是 **Autarkia**（原 Xiaoyou Core）的调度研究原型，目录名沿用 `mvp_core`，论文对外名为 **EdgeSched**。它研究资源受限单机上的多模态本地 AI 调度，重点不是主应用的对话、人设或主动关怀，而是：
 
 - LLM 常驻与图像突发任务之间的 GPU/显存竞争；
 - GPU→CPU 降级和 CPU→GPU 原子回迁；
@@ -19,14 +19,14 @@
 - Phase-Aware workflow、GPU lease、迁移代价决策和 CPU backfill；
 - 可复现实验、原始迭代、聚合数据、图表和论文证据链。
 
-该目录可以独立运行演示服务和实验，但配置优先复用父仓库；真实模型、CUDA、Forge 和 C++ 构建的权威环境自 2026-09-25 起为本机原生 Linux `/home/leslie/mvp_core`，不再使用 WSL2 双副本流程。
+本目录可以独立运行演示服务和实验，但配置优先复用父项目 Autarkia；真实模型、CUDA、Forge 和 C++ 构建的权威环境自 2026-09-25 起为本机原生 Linux `/home/leslie/mvp_core`，不再使用 WSL2 双副本流程。
 
 ## 2. 当前成熟度与证据边界
 
 | 区域 | 当前状态 | 可以证明什么 | 不能自动证明什么 |
 |---|---|---|---|
 | Python 调度器 | 有实现和 Mock/单元验证 | 优先级、队列、取消、背压、状态流转 | 真实 GPU 上的性能收益 |
-| C++ 调度器 | 有源码、pybind11 绑定和 WSL2 构建产物 | 当前绑定可导入，原生接口与调度机制可实现 | CUDA、真实 GGUF、迁移和性能一定可用 |
+| C++ 调度器 | 有源码、pybind11 绑定和本机原生 Linux 构建产物（`scheduler_py.cpython-313-x86_64-linux-gnu.so`） | 当前绑定可导入，原生接口与调度机制可实现 | CUDA、真实 GGUF、迁移和性能一定可用 |
 | 状态背板 | Python mmap 实现 + 恢复实验 | 固定槽位状态持久化和恢复语义 | 真实 PMEM/NVRAM 硬件性能 |
 | 资源迁移 | Python/C++ 桥接与实验脚本 | 迁移协议、降级/回迁路径可测试 | 任意模型/驱动环境都能无缝迁移 |
 | Phase-Aware | Python 和 C++ 两套策略实现 | 角色/亲和性/lease/cost/backfill 抽象 | 已成为所有主调度路径的默认生产策略 |
@@ -302,7 +302,7 @@ GPU burst arrives
 
 ### 数据晋升流程
 
-1. 在 WSL2 冻结代码、模型、环境变量和实验参数。
+1. 在冻结的实验环境完成正式运行；原生 Linux 上涉及主机内存边界的实验须用 cgroup 强制预算，并在 manifest 记录预算、上限与 swap 设置。
 2. 先运行单次 smoke，确认真实后端没有回退到 Mock。
 3. 按论文要求运行多次迭代，保留每次原始 JSON。
 4. 生成 manifest，记录随机种子、环境与配置哈希。
@@ -337,24 +337,31 @@ small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；�
 
 | 用途 | 路径/环境 |
 |---|---|
-| **主开发副本（唯一权威）** | `/home/leslie/mvp_core`，本机原生 Linux（Ubuntu-24.04-E，非 WSL2）；编辑、运行、git 提交/推送均在此处，`.git` 在工作树内（origin = `https://github.com/hakituo/EdgeSched`） |
+| **主开发副本（唯一权威）** | `/home/leslie/mvp_core`，本机原生 Linux（Ubuntu 24.04.5 LTS，非 WSL2）；编辑、运行、git 提交/推送均在此处，`.git` 在工作树内（origin = `https://github.com/hakituo/EdgeSched`） |
 | Windows 旧副本（已停用） | `D:\AI\xiaoyou-core\legacy\mvp_core`：2026-09-25 前的权威仓库，`.git` 已复制到 Linux 并校验；此后不再参与提交，`sync_to_wsl2_safe.ps1` 流程废止，保留仅作历史备份 |
 | 行尾/权限 | 仓库根 `.gitattributes` 统一文本 LF（2026-09-25 全量归一）；`core.fileMode=false`、`core.symlinks=true` |
-| 主实验环境 | `/home/leslie/.venvs/mvp_core-cu128`（稳定路径，**2026-09-25 起为软链**，实际指向 `/home/leslie/xiaoyou-core/.venv`：uv 管理 / Python 3.13.15 / **torch 2.11.0+cu128 / torchvision 0.26.0+cu128（2026-09-27 由 cu130 迁移，见 `docs/UPDATES.md` 2026-09-27 条目）** / transformers 4.57.3 / llama_cpp 0.3.35(CUDA 12.8 源码编译) / faster-qwen3-tts 0.2.6 / qwen-tts 0.1.1 / sounddevice / faster-whisper / onnxruntime。mvp 侧补装 diffusers 0.37.1、qwen-vl-utils、loguru、safetensors 0.8、pybind11。numpy 保持 1.26.4 不动。**CUDA 12 运行时不依赖系统 toolkit**：`nvidia-*-cu12` pip 包提供 `libcudart.so.12` / `libcublas.so.12` 等，`.../site-packages/nvidia/*/lib` 已写入 `/etc/ld.so.conf.d/xiaoyou-nvidia-cu12.conf` 并 `ldconfig`，`llama_cpp` 与 `cpp_scheduler` 的 `.so` 均可直接加载） |
+| 主实验环境 | `/home/leslie/Autarkia/.venv`（与父项目 Autarkia 共享；`/home/leslie/.venvs/mvp_core-cu128` 是指向它的软链）。Python 3.13.15 / torch 2.11.0+cu128 / torchvision 0.26.0+cu128 / torchaudio 2.11.0+cu128 / transformers 4.57.3 / numpy 2.5.2 / numba 0.68.0 / llama_cpp 0.3.35(CUDA 12.8 源码编译) / faster-qwen3-tts 0.2.6 / qwen-tts 0.1.1 / sounddevice / faster-whisper / onnxruntime。**CUDA 12 运行时不依赖系统 toolkit**：`nvidia-*-cu12` pip 包提供 `libcudart.so.12` / `libcublas.so.12` 等，但系统 `/etc/ld.so.conf.d/xiaoyou-nvidia-cu12.conf` 仍指向已不存在的 xiaoyou-core 路径；运行前须 `source scripts/experiments/edgesched_env.sh`，用 `LD_LIBRARY_PATH` 补齐且不修改系统配置 |
 | 遗留环境 | ① 2026-09-17 删除的 Python 3.10.19 / torch 2.10 / transformers 4.57.3 旧主环境；② 2026-09-17–24 软链目标 `/home/leslie/qwen3tts-cugraph-probe/faster-qwen3-tts/.venv`（Python 3.12 / torch 2.11+cu128 / transformers 5.15.1 的加速隔离环境）在系统迁移后已不存在（现为空的 3.10 venv）。旧后端脚本（`--tts-backend upstream_dynamic`、`run_small_9b_tts_compat/t4_isolate`、`services/tts/qwen3_tts_worker.py`）重跑前仍须按 TTS 文档准备环境；但 `cuda_graph_static` 加速后端**已验证可直接在共享 3.13 venv 运行**（faster-qwen3-tts 0.2.6 + transformers 4.57.3，稳态 RTF 0.3136，与历史 5.x 隔离环境 0.303–0.317 一致，见 7.1 与 TTS 文档；不要升级 transformers 5.x） |
 | Forge 环境 | `/home/leslie/.venvs/forge-cu128`（**2026-09-27 重装系统后再建**：`uv python install 3.10` + `uv venv --python 3.10 --seed` 创建，预装 torch 2.10.0+cu128 / torchvision 0.25.0+cu128（RTX 5070 不能用 launch.py 默认的 2.3.1+cu121），`setuptools` 已钉 69.5.1 以规避 84 版移除 `pkg_resources` 导致的老 CLIP 构建失败；其余依赖仍由 Forge `launch.py` 首次启动时按 `requirements_versions.txt` 安装，扩展装完后须把 numpy 钉回 1.26.2，CLIP 需免隔离预装，坑点详见 `docs/UPDATES.md` 2026-09-25 与 2026-09-27 条目。**Forge 本体扩展尚未安装、真实出图 smoke 未跑**） |
-| GGUF 模型 | `/home/leslie/mvp_core/models/llm` 下 4 个文件均为软链，真实权重在 970 EVO `/media/leslie/970EVO/xiaoyou-models/llm`（2026-09-25 sha256 四份逐一比对一致后替换；已实测 llama.cpp 经软链 mmap+生成正常）。**2026-09-27 起该盘被改作 Ventoy，软链当前断裂；权重本体保留，待迁回后恢复**；代码路径不变，可用性依赖 970 EVO 挂载 |
-| 当前 9B + 视觉副本 | 上述原生目录中的 `Qwen3.5-9B-q4_k_m.gguf` / `Qwen3.5-9B-f16.mmproj`；2026-09-06 从 D: 复制并核验两侧 SHA-256，见 [复核记录](VISION_9B_PROBE_20260906.md) |
-| TTS 模型 | `/home/leslie/xiaoyou-core/models/Qwen3-TTS-12Hz-0.6B-Base`（2026-09-25 起全部实验脚本默认指向；与 mvp_core 下旧副本 `diff -rq` 一致；可用 `XIAOYOU_BENCH_TTS_PATH` 覆盖） |
+| GGUF 模型 | 9B（`Qwen3.5-9B-Q4_K_M.gguf`、`Qwen3.5-9B-f16.mmproj`）已放在本地 `/home/leslie/mvp_core/models/llm_store/`，`models/llm/` 下为指向它的软链；4B（`Qwen3.5-4B-Q4_K_M.gguf`、`mmproj-BF16.gguf`）软链到 `/media/leslie/970EVO1/xiaoyou-models/llm`，**该盘当前未挂载**。代码路径不变，跑 4B 前需恢复该盘 |
+| 当前 9B + 视觉副本 | 本地 `models/llm_store/Qwen3.5-9B-Q4_K_M.gguf` / `Qwen3.5-9B-f16.mmproj`（2026-10-26 复制并核对哈希）；早期从 D: 复制与视觉 Answer 的复核记录见 [VISION_9B_PROBE_20260906.md](VISION_9B_PROBE_20260906.md) |
+| TTS 模型 | `/home/leslie/Autarkia/models/Qwen3-TTS-12Hz-0.6B-Base`（实验脚本默认值；可用 `XIAOYOU_BENCH_TTS_PATH` 覆盖） |
 | 辅助模型 | `/home/leslie/mvp_core/models/auxiliary`（Faster-Whisper Small、BGE-small-zh-v1.5） |
-| 图像模型 | `/home/leslie/mvp_core/models/Image`；970 EVO 额外权重（`/media/leslie/970EVO/xiaoyou-models/Image` 的 krea2/z-image checkpoint、4 个 VAE、openposeXL controlnet）已软链进 Forge `models/`。**2026-09-27 起 970 EVO 未接入，上述软链处于断裂状态**，迁回后恢复 |
+| 图像模型 | `/home/leslie/mvp_core/models/Image` 本地，含 SDXL Turbo；970 EVO 额外权重（krea2/z-image checkpoint、4 个 VAE、openposeXL controlnet）软链进 Forge `models/`，**当前 970 EVO 未接入，软链断裂**，迁回后恢复 |
 | Forge 服务 | `/home/leslie/mvp_core/stable-diffusion-webui-forge-main/` |
 
 **2026-09-25 起不再有 Windows→Linux 同步流程**：主开发与 git 操作都在 `/home/leslie/mvp_core` 原生 Linux 完成，直接 `git add`（显式路径）/ `git commit -m "一句话说明"` / `git push origin main`。`scripts/sync_to_wsl2_safe.ps1` 已废止，禁止再用于提交；其 `/models/` 排除语义只作为 `.gitignore` 的历史背景（根目录模型排除写成 `/models/`，避免误伤 `domain/models/`）。提交信息要求不变：一句话写清改动、禁止 auto/更新/同步 等无信息文案、细节写 `docs/UPDATES.md`；存在其他会话未提交改动时只暂存本任务文件。
 
 ### 7.1 当前 Linux 运行快照
 
-2026-09-27（**用户重装系统后重建环境；本段为当前有效状态**）：
+2026-10-26（**当前有效状态**）：
+
+- 9B GGUF 与 mmproj 已复制到本地 `models/llm_store/` 并核对哈希（与历史记录一致）；`models/llm/` 的 9B 软链改指本地副本，4B 软链改指 `/media/leslie/970EVO1/xiaoyou-models/llm`，该盘当前未挂载。
+- `/home/leslie/.venvs/mvp_core-cu128` 改指 `/home/leslie/Autarkia/.venv`；共享 venv 的 numba 0.65.1→0.68.0（llvmlite 0.47.0→0.50.0）以兼容 numpy 2.5.2。
+- 新增 `scripts/experiments/edgesched_env.sh`：用 `LD_LIBRARY_PATH` 补 CUDA 12 库（系统 ld 配置仍指向已不存在的 xiaoyou-core），并设置 `$EDGESCHED_PYTHON`、`$EDGESCHED_TTS_MODEL` 与 `PYTHONPATH`；8 个实验入口的 TTS 默认路径改为 Autarkia。
+- 真实播放/录音仍缺 PortAudio 与 SoX；不涉及设备播放的离线实验不受影响。
+
+2026-09-27（系统重装后重建环境，**历史快照，当前环境见上**）：
 
 - 系统重装为 Ubuntu 24.04.5（内核 7.0.0-31-generic），`/home` 由备份恢复；原根分区（ext4）现为 NTFS 卷 `E2BE475FBE472B7D`，当前根为 ext4 分区（UUID `ff6b633b-4bf8-451f-a8c0-5f78f69d110a`，278 G）。**NVMe 设备号（`nvme0`/`nvme1`）随 PCI 枚举顺序变化，本次重启即发生互换，定位分区请用 UUID，不要用设备名。**
 - NVIDIA 驱动重装 `nvidia-driver-595-open`（595.91.07）：dkms 编译通过、`nvidia-smi` 正常、`/dev/nvidia*` 齐全；GPU 仍为 RTX 5070 Laptop（8151 MiB，sm_120）。
@@ -404,7 +411,7 @@ small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；�
 
 ## 8. 配置与环境变量
 
-`config.py` 优先导入父仓库 `config.integrated_config.get_settings()`；独立部署导入失败时，才构造回退设置。高频变量：
+`config.py` 优先导入父项目 Autarkia 的 `config.integrated_config.get_settings()`；独立部署导入失败时，才构造回退设置。高频变量（`XIAOYOU_*` 为历史命名，保持兼容）：
 
 | 变量 | 用途 |
 |---|---|
@@ -423,6 +430,8 @@ small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；�
 实验记录不得写入密钥；环境 manifest 只记录必要、非敏感的运行参数。
 
 ## 9. 验证分层
+
+表中标注 WSL2 的条目是 2026-09-25 前的历史批次；入口脚本在原生 Linux 下同样可运行，当前结论以各自 manifest 与门禁为准。
 
 | 层级 | 示例 | 结论边界 |
 |---|---|---|
@@ -446,7 +455,7 @@ small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；�
 
 ## 10. 已知维护风险
 
-- 父仓库 `.gitignore` 含 `/legacy/`，当前目录全部被父仓库 Git 忽略；需要版本管理时必须先决定独立仓库或调整父仓库策略，不能误以为文档已被提交。
+- 本目录是独立 git 仓库，`.git` 在原生 Linux 工作树内；父仓库 `.gitignore` 含 `/legacy/` 规则，只影响父仓库视图，不代表本目录未纳入版本管理。提交与推送都直接在本目录完成。
 - `cpp_scheduler/build/` 约数百 MB，包含第三方源码和构建产物；搜索、统计和评审时必须排除。
 - `data/` 同时含源码适配器和本地 mmap/日志数据，修改时要精确到文件，不能整目录清理。
 - 重写前的旧需求说明已移至 `docs/archive/pre_rewrite_20260830/EDGE_SCHED_REQUIREMENTS_OLD.md`，不能代替当前论文总指南和执行计划。
@@ -465,7 +474,4 @@ small FULL 显存峰值少 90 MiB、RSS 峰值少 331.45 MiB、decode +2.05%；�
 
 ## 辅助任务 CPU 核数画像入口
 
-辅助任务 CPU 核数画像入口已实现：`experiments/elastic_residency/auxiliary_core_budget.py`，复用物理核租约与采样器，支持 JSON RAG 1/2 核、BGE/Whisper 1/2/4 核和 `R_sys=0/1/2/4` 隔离敏感性。模块职责、运行方法和 D3 正式并发验收边界见 [辅助核数画像](AUXILIARY_CORE_BUDGET.md)。
-
-
-BGE 画像已按职责拆出 `experiments/elastic_residency/auxiliary_bge.py`：保留 `bge` 全量重编码，新增 `bge_cached` 候选预计算模式，准备成本与请求耗时分别记录，任务名分组避免混用。`scripts/experiments/run_auxiliary_cached.ps1` 供用户从任意目录手动启动 15 次 BGE 补测；具体协议与已完成的 40/40 结果见 [辅助核数画像](AUXILIARY_CORE_BUDGET.md)。真实实验由用户执行。
+`experiments/elastic_residency/auxiliary_core_budget.py` 复用物理核租约与采样器，覆盖 JSON RAG 1/2 核、BGE/Whisper 1/2/4 核与 `R_sys=0/1/2/4` 隔离敏感性。BGE 候选缓存 `bge_cached` 已有真实补测 `d1_bge_cached_20260906_195348`（15/15 有效，WSL2，1/2/4 核 p95 30/17/13 ms），未晋升正文、不等于 D3 验收。原生 Linux 运行方式见 [辅助核数画像](AUXILIARY_CORE_BUDGET.md)；旧的 `run_auxiliary_cached.ps1` 依赖已废止的同步流程，仅作历史参考。

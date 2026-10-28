@@ -7,6 +7,7 @@
 | 路径 | 作用 |
 |---|---|
 | `thesis_experiment_guide/README.md` | 新版研究问题、实验顺序、证据口径和当前门禁的模块化索引 |
+| `thesis_experiment_guide/11_slack_aware_scheduling_direction.md` | 当前论文主线：余量感知的驻留调度，含既有证据、V0 结果与 V0–V4 验证顺序 |
 | `THESIS_EXPERIMENT_GUIDE_DRAFT.md` | 兼容入口，只负责把旧引用导航到模块化指南 |
 | `rewrite/README.md` | 新正文工作区状态与写作门槛 |
 | `rewrite/OUTLINE.md` | 按新版研究路线整理的章节骨架 |
@@ -22,9 +23,11 @@
 ## 当前状态
 
 - 新版论文还没有可编译正文；旧 `main_en.tex` 及 `sections_en/` 已归档，其他旧版本在 `archive/pre_rewrite_20260830/manuscript_variants/`。
+- 2026-10-26 起主线改为**余量感知的驻留调度**（时间维度），研究问题、证据与验证顺序见 `thesis_experiment_guide/11_slack_aware_scheduling_direction.md`；Gate B 收缩，S0 v2 不登记 Go。
+- V0 共跑诊断已完成并放行（`colocation_v0_20261026_v1|v2`，28/28 通过，共跑速度恢复到隔离画像的 60%）；下一步是 V0.5（S0 v2 用 14 线程重跑）和 V1（切换代价画像），再进入 V2 离线模拟。
+- SM-A 已在原生 Linux 转 GO（有效 SM 36/26/18/8），SM-B 待排。
 - 方法公式与系统架构图可以先独立维护，但不得提前填入尚未完成实验的性能结论。
 - 新版 `01_paper_main/` 为空，不能把 `experiment_results/` 中的探索数据直接写进正文。
-- 当前优先完成 C3 收尾、D/E 阶段真实实验和 Go/No-Go 判断，再冻结 Evaluation 数据和论文主张。
 - 旧稿可以用于理解历史背景，不能复制旧性能数字冒充当前 Qwen3.5/Qwen3-TTS/Forge 结果。
 
 ## 数据晋升

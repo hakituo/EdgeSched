@@ -1,25 +1,31 @@
-# EdgeSched WSL2 依赖（2026-09-25 更新）
+# EdgeSched 依赖（文件名保留历史命名；2026-10-28 更新）
 #
-# 当前主环境直接复用父项目 uv venv：/home/leslie/xiaoyou-core/.venv
-# （Python 3.13 / torch 2.12.0+cu130 / torchvision 0.27+cu130，torchaudio 沿用 venv 内版本），
-# 稳定路径 /home/leslie/.venvs/mvp_core-cu128 是指向它的软链。torch 三件套已在该 venv 中，
-# 不要用本文件把它们降级到 cu128；只补装缺失的上层依赖（uv pip install）。
+# 当前主环境直接复用父项目 Autarkia 的 uv venv：/home/leslie/Autarkia/.venv
+# （Python 3.13.15 / torch 2.11.0+cu128 / torchvision 0.26.0+cu128 / torchaudio 2.11.0+cu128 /
+# transformers 4.57.3 / numpy 2.5.2 / numba 0.68.0），稳定路径
+# /home/leslie/.venvs/mvp_core-cu128 是指向它的软链。torch 三件套已在该 venv 中，
+# 不要用本文件把它们降级或改写；只补装缺失的上层依赖（uv pip install）。
+#
+# CUDA 12 运行时来自 venv 内 nvidia-*-cu12 pip 包；系统
+# /etc/ld.so.conf.d/xiaoyou-nvidia-cu12.conf 仍指向已不存在的 xiaoyou-core 路径，
+# 因此运行前先 `source scripts/experiments/edgesched_env.sh`，用 LD_LIBRARY_PATH 补齐。
 #
 # 系统依赖（pip 无法安装）：
 #   sudo apt-get update
 #   sudo apt-get install -y sox libsox-fmt-all libportaudio2 \
 #     libasound2-plugins pulseaudio-utils alsa-utils libuv1-dev
+# 当前本机仍缺 PortAudio/SoX，真实播放和录音链路不可用；离线实验不受影响。
 #
 # llama-cpp-python 必须使用本机 CUDA 12.8 编译器构建（venv 内已装，重建命令）：
 #   PATH=/usr/local/cuda-12.8/bin:$PATH \
 #   CUDACXX=/usr/local/cuda-12.8/bin/nvcc \
 #   CMAKE_ARGS="-DGGML_CUDA=on -DGGML_CUDA_ARCHITECTURES=120" FORCE_CMAKE=1 \
-#   uv pip install --python /home/leslie/xiaoyou-core/.venv/bin/python \
+#   uv pip install --python /home/leslie/Autarkia/.venv/bin/python \
 #     --no-binary llama-cpp-python llama-cpp-python==0.3.35
 #
 # 这里强制从源码构建 llama-cpp-python，避免静默安装 CPU-only wheel。
 # 下方 torch==2.10.0+cu128 固定组仅适用于「独立重建 Python 3.10 实验环境」
-# （Forge 环境 /home/leslie/.venvs/forge-cu128 即按此组合）。
+# （Forge 环境 /home/leslie/.venvs/forge-cu128 即按此组合），不适用于共享 3.13 venv。
 # flash-attn 尚未在 RTX 5070 Laptop 上完成验证，不纳入可复现实验依赖。
 
 --extra-index-url https://download.pytorch.org/whl/cu128
@@ -27,7 +33,7 @@
 
 -r requirements.txt
 
-# 以下三行默认注释：共享主环境已自带 cu130 版本；独立重建 Python 3.10 环境（如 Forge）时再放开。
+# 以下三行默认注释：共享主环境已自带 cu128 版本；独立重建 Python 3.10 环境（如 Forge）时再放开。
 # torch==2.10.0+cu128
 # torchvision==0.25.0+cu128
 # torchaudio==2.10.0+cu128

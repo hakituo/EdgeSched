@@ -45,7 +45,7 @@ EdgeSched 面向单用户、单机、资源受限的本地多模态 AI 助手。
 | ASR | Faster-Whisper Small，CTranslate2 FP16 权重 | CPU 辅助阶段，不作为主要显存竞争者 |
 | RAG embedding | BGE-small-zh-v1.5，ONNX，512 维 | CPU 辅助阶段；dense embedding/rerank，不冒充 cross-encoder |
 
-当前 9B 为 small `1a35ab89…`，从 WSL 原生独立目录 `models/llm/comparison_1a35ab89/model.gguf` 读取，配对 F16 projector `e36da9b9…`。纯文本完整曲线/KV 已 288/288 通过，small 单轮视觉识图通过；旧 large 五轮视觉画像不属于当前哈希。所有正式实验仍须冻结量化、运行参数和哈希，见 [完整验收](../../docs/SMALL_9B_CURVES_20260907.md)。
+当前 9B 为 small `1a35ab89…`，在本机原生 Linux 从 `models/llm_store/Qwen3.5-9B-Q4_K_M.gguf` 读取（`models/llm/` 下为同名软链），配对 F16 projector `e36da9b9…`（`Qwen3.5-9B-f16.mmproj`）。纯文本完整曲线/KV 已 288/288 通过，small 单轮视觉识图通过；旧 large 五轮视觉画像不属于当前哈希。所有正式实验仍须冻结量化、运行参数和哈希，见 [完整验收](../../docs/SMALL_9B_CURVES_20260907.md)。
 
 **2026-09-06 主模型决定**：使用 Qwen3.5-9B + 真实执行的 F16 `mmproj`，取代 2026-08-31 的 4B 主模型选型。用户 FULL 文本/视觉端点 2/2 通过，五轮画像 5/5 已完成，回答主要内容正确但漏黑边；先离线筛容量与阶段切换候选，视觉与 TTS 共置仍待验证；4B 保留跨尺度对照，旧 9B 文本阈值不可自动用于视觉。详见 [复核记录](../../docs/VISION_9B_PROBE_20260906.md)。
 
@@ -56,12 +56,13 @@ EdgeSched 面向单用户、单机、资源受限的本地多模态 AI 助手。
 - GPU：NVIDIA GeForce RTX 5070 Laptop GPU，8151 MiB 可见显存
 - CPU：AMD Ryzen 9 8940HX
 - 主机内存：32GB DDR5
-- 正式实验约束：WSL2 实际可用内存上限约 16GB；必须在 manifest 中记录当次内存上限与 swap 状态
-- WSL2 运行副本：`/home/leslie/mvp_core`
-- 调度与实验环境：`/home/leslie/.venvs/mvp_core-cu128`（2026-09-25 起为软链，实际是 `/home/leslie/xiaoyou-core/.venv`：Python 3.13.15 / torch 2.11.0+cu128，2026-09-27 由 cu130 迁移；CUDA 12 运行时不装系统 toolkit，由 `nvidia-*-cu12` pip 包提供并经 `/etc/ld.so.conf.d/xiaoyou-nvidia-cu12.conf` 固化）
+- 正式实验约束：16GB 是主机内存预算，不是宿主机总容量；原生 Linux 上涉及主机内存边界的实验须用 cgroup 强制预算，并在 manifest 中记录预算、上限与 swap 状态
+- 运行目录：`/home/leslie/mvp_core`（本机原生 Linux，Ubuntu 24.04.5 LTS，内核 7.0.0-38-generic；2026-09-25 起不再使用 WSL2 双副本）
+- 调度与实验环境：`/home/leslie/.venvs/mvp_core-cu128`（软链到父项目 Autarkia 的 `/home/leslie/Autarkia/.venv`：Python 3.13.15 / torch 2.11.0+cu128 / torchvision 0.26.0+cu128 / transformers 4.57.3 / numpy 2.5.2；运行前 `source scripts/experiments/edgesched_env.sh` 注入 CUDA 12 库路径，系统 `/etc/ld.so.conf.d/xiaoyou-nvidia-cu12.conf` 指向的旧路径已失效）
 - Forge 环境：`/home/leslie/.venvs/forge-cu128`（Python 3.10.21 / torch 2.10.0+cu128；2026-09-27 重装系统后重建）
+- 外挂盘依赖：4B 跨尺度对照权重与 Forge 部分额外权重在 970 EVO（`/media/leslie/970EVO1`、`/media/leslie/970EVO`），跑对应实验前确认已挂载
 
-论文不得只写“32GB RAM”而隐藏 WSL2 的有效内存约束。宿主机容量与实验进程实际可用容量需要同时报告。
+论文不得只写“32GB RAM”而隐藏有效内存预算。宿主机容量与实验进程实际可用容量需要同时报告，原生 Linux 上以后者为准（用 cgroup 强制并在 manifest 记录）。
 
 ### 1.3 新版核心问题
 
